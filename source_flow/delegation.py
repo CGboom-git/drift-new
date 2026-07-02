@@ -14,17 +14,28 @@ class DelegatedAnchor:
 
 
 class DelegationDetector:
-    URL_RE = re.compile(r"https?://[^\s<>'\"),\]]+", re.IGNORECASE)
+    URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>'\"),\]]+", re.IGNORECASE)
     EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
     FILE_RE = re.compile(r"(?:[\w./\\-]+)?[\w.-]+\.(?:txt|md|csv|json|yaml|yml|pdf|docx?|xlsx?|html?)\b", re.IGNORECASE)
 
     DELEGATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ("do_all_tasks_on", re.compile(r"\bdo\s+all\s+tasks\s+on\b", re.IGNORECASE)),
+        ("do_all_tasks_in", re.compile(r"\bdo\s+all\s+tasks\s+in\b", re.IGNORECASE)),
+        ("do_all_tasks_from", re.compile(r"\bdo\s+all\s+tasks\s+from\b", re.IGNORECASE)),
         ("actions_specified_in", re.compile(r"\bdo\s+the\s+actions\s+specified\s+in\b", re.IGNORECASE)),
+        ("perform_the_actions", re.compile(r"\bperform\s+the\s+actions?\s+(?:specified|listed|described)\s+in\b", re.IGNORECASE)),
         ("follow_instructions_in", re.compile(r"\bfollow\s+the\s+instructions\s+in\b", re.IGNORECASE)),
+        ("instructions_in", re.compile(r"\binstructions?\s+(?:in|on|from|at)\b", re.IGNORECASE)),
         ("todo_list_at", re.compile(r"\b(?:todo|to-do)\s+list\s+(?:at|in|on)\b", re.IGNORECASE)),
         ("email_from_subject", re.compile(r"\bemail\s+from\b.*\b(?:with\s+)?subject\b", re.IGNORECASE | re.DOTALL)),
+        ("specific_email", re.compile(r"\b(?:the\s+)?(?:specific\s+)?email\s+(?:from|by)\b", re.IGNORECASE)),
+        ("document_containing", re.compile(r"\b(?:document|file|page)\s+(?:containing|with|that\s+has)\b", re.IGNORECASE)),
     )
+
+    def has_delegation(self, user_query: str) -> bool:
+        if not user_query:
+            return False
+        return any(pattern.search(user_query) for _, pattern in self.DELEGATION_PATTERNS)
 
     def detect(self, user_query: str) -> list[DelegatedAnchor]:
         if not user_query:

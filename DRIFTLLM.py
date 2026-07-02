@@ -42,6 +42,13 @@ class DRIFTLLM(PromptingLLM):
     def source_flow_validation_enabled(self):
         return bool(getattr(self.args, "source_flow_validation", False))
 
+    def controlled_action_extension_enabled(self):
+        return bool(getattr(self.args, "source_flow_validation", False)
+                     and getattr(self.args, "controlled_action_extension", False))
+
+    def delegated_task_source_enabled(self):
+        return not getattr(self.args, "disable_delegated_task_source", False)
+
     def start_source_flow_run(self, user_query):
         if not self.source_flow_enabled():
             return
@@ -235,22 +242,120 @@ class DRIFTLLM(PromptingLLM):
         if not self._source_flow_state_changed(snapshot):
             return
         self._source_flow_restore_trajectory_snapshot(snapshot)
-        warning = (
-            "Source-flow rejection happened after dynamic validation changed the trajectory/checklist; "
-            "restored the pre-dynamic-validation snapshot. TODO(Phase 3): replace this best-effort "
-            "rollback with Controlled Action Extension snapshot/commit semantics."
-        )
         if self.logger:
-            self.logger.info(warning)
+            self.logger.info("Source-flow rejection after dynamic validation; restored snapshot.")
         self.source_label_store.validation_trace.append(
             ValidationTraceEntry(
                 step=len(self.achieved_function_trajectory),
-                event="source_flow_dynamic_validation_state_restored",
-                details={"warning": warning},
+                event="source_flow_controlled_extension_rollback",
+                details={"reason": "source_flow_rejection_after_state_change"},
                 decision="warn",
                 would_reject=False,
             )
         )
+
+    def _is_action_tool(self, tool_name):
+        permission = self.tool_permissions.get(tool_name, "")
+        if permission in {"Write", "Execute"}:
+            return True
+        contract_type = self.source_flow_contract_helper.get_tool_type(tool_name)
+        return contract_type in {"action", "write", "execute"}
+
+    def _is_read_tool(self, tool_name):
+        permission = self.tool_permissions.get(tool_name, "")
+        if permission == "Read":
+            return True
+        contract_type = self.source_flow_contract_helper.get_tool_type(tool_name)
+        return contract_type in {"read", "observe"}
+
+    def _controlled_action_extension(self, tool_name, tool_args, query, messages,
+                                      thought_content, extended_trajectory,
+                                      extended_checklist):
+        snapshot = self._source_flow_trajectory_snapshot()
+
+        self.function_trajectory = extended_trajectory
+        try:
+            self.node_checklist = json.dumps(extended_checklist)
+        except Exception:
+            self.node_checklist = extended_checklist
+
+        trajectory_state = {
+            "function_trajectory": self.function_trajectory,
+            "achieved_function_trajectory": self.achieved_function_trajectory,
+            "node_checklist": self.node_checklist,
+            "tool_permissions": self.tool_permissions,
+        }
+
+        sink_specs = self.source_flow_compiler.spec_map(
+            self.node_checklist, tool_name, tool_args,
+        )
+        sink_evidence = self.source_flow_resolver.resolve_args(
+            tool_name, tool_args, sink_specs,
+            self.source_label_store, self.source_flow_contract_helper,
+        )
+        decision = self.source_flow_validator.validate(
+            tool_name=tool_name,
+            tool_args=tool_args,
+            compiled_sink_specs=sink_specs,
+            sink_evidence=sink_evidence,
+            source_store=self.source_label_store,
+            contract_helper=self.source_flow_contract_helper,
+            trajectory_state=trajectory_state,
+        )
+
+        if decision.reject:
+            self._source_flow_restore_trajectory_snapshot(snapshot)
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="controlled_action_extension_rejected",
+                    source_ids=[],
+                    details={
+                        "tool_name": tool_name,
+                        "reason": decision.blocked_flows[0]["reason"] if decision.blocked_flows else "unknown",
+                        "blocked_flows": decision.blocked_flows,
+                        "call_error_message": decision.call_error_message,
+                    },
+                    decision="reject",
+                    would_reject=True,
+                )
+            )
+            if self.logger:
+                self.logger.info(
+                    f"Controlled Action Extension rejected {tool_name}: "
+                    f"{decision.blocked_flows}"
+                )
+            return {
+                "allowed": False,
+                "reason": "source_flow_violation",
+                "call_error_message": decision.call_error_message,
+                "decision": decision,
+            }
+
+        if decision.warn and self.logger:
+            self.logger.info(
+                f"Controlled Action Extension allowed with warnings for {tool_name}: "
+                f"{decision.warnings}"
+            )
+
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="allow_insert_controlled_action_extension",
+                source_ids=[],
+                details={
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "decision": "allow" if not decision.warn else "warn",
+                    "warnings": decision.warnings,
+                },
+                decision="allow",
+                would_reject=False,
+            )
+        )
+        if self.logger:
+            self.logger.info(f"Controlled Action Extension allowed {tool_name}")
+        return {"allowed": True, "decision": decision}
 
     def _tool_message_to_user_message(self, tool_message) -> dict:
         """It places the output of the tool call in the <function_call> tags.
@@ -722,6 +827,8 @@ class DRIFTLLM(PromptingLLM):
 
     def trajectory_constraint_validation(self, to_call_function, output, query, messages):
         """Judge whether if the executing function trajectory conform the control constraints.
+
+        Phase 3: Adds Controlled Action Extension for trajectory-outside ACTION tools.
         """
                 
         align_error_message = None
@@ -757,19 +864,68 @@ class DRIFTLLM(PromptingLLM):
                 else:
                     latest_function_messages = "No Called Functions."
 
+                # Controlled Action Extension (Phase 3)
+                if self.controlled_action_extension_enabled() and self._is_action_tool(achieved_func):
+                    self.logger.info(
+                        f"Trajectory-outside ACTION {achieved_func} entering Controlled Action Extension"
+                    )
+
+                    json_tool_calls = [self._tool_call_to_str(tc) for tc in output["tool_calls"]]
+                    tool_args = {}
+                    for tc in json_tool_calls:
+                        if tc["function"]["name"] == achieved_func:
+                            try:
+                                tool_args = json.loads(tc["function"]["arguments"])
+                            except Exception:
+                                tool_args = {}
+                            break
+
+                    cae_result = self._controlled_action_extension(
+                        tool_name=achieved_func,
+                        tool_args=tool_args,
+                        query=query,
+                        messages=messages,
+                        thought_content=thought_content,
+                        extended_trajectory=extended_function_trajectory,
+                        extended_checklist=extended_checklist,
+                    )
+
+                    if not cae_result["allowed"]:
+                        output["tool_calls"] = []
+                        error_msg = {
+                            "role": "user",
+                            "content": (
+                                f"[CALL ERROR] Controlled Action Extension rejected {achieved_func}: "
+                                f"{cae_result.get('call_error_message', cae_result['reason'])}. "
+                                "Continue the original user task using authorized sources only."
+                            ),
+                        }
+                        if self.logger:
+                            self.logger.info(f"{achieved_func} rejected by Controlled Action Extension")
+                        return error_msg, output
+
+                    self.function_trajectory = extended_function_trajectory
+                    temp_achieved_trajectory.append(achieved_func)
+                    self.achieved_function_trajectory = temp_achieved_trajectory
+                    try:
+                        self.node_checklist = json.dumps(extended_checklist)
+                    except:
+                        self.node_checklist = extended_checklist
+                    continue
+
                 # Open Dynamic Updating
                 # =====================
-                try:
-                    # privilege judgement
-                    if self.tool_permissions[achieved_func] != "Read":
-                        # LLM_judge_result = False
-                        self.logger.info(f"Trajectory does not align, permission of '{achieved_func}' is {self.tool_permissions[achieved_func]}")
-                        # intent alignment judgement
-                        LLM_judge_result, _ = self.alignment_judge(query=query, last_function_messages=latest_function_messages, thought_content=thought_content, function_trajectory=self.function_trajectory, current_function_trajectory=extended_function_trajectory, conversations=messages)
-                    else:
-                        LLM_judge_result = True
-                except:
+                if self._is_read_tool(achieved_func):
                     LLM_judge_result = True
+                else:
+                    try:
+                        if self.tool_permissions[achieved_func] != "Read":
+                            self.logger.info(f"Trajectory does not align, permission of '{achieved_func}' is {self.tool_permissions[achieved_func]}")
+                            LLM_judge_result, _ = self.alignment_judge(query=query, last_function_messages=latest_function_messages, thought_content=thought_content, function_trajectory=self.function_trajectory, current_function_trajectory=extended_function_trajectory, conversations=messages)
+                        else:
+                            LLM_judge_result = True
+                    except:
+                        LLM_judge_result = True
                 # =====================
 
                 if LLM_judge_result:

@@ -51,6 +51,16 @@ def get_args(description='DRIFT'):
         action="store_true",
         help="Enable source-flow instrumentation for logging only; Phase 1 does not reject actions.",
     )
+    parser.add_argument(
+        "--controlled_action_extension",
+        action="store_true",
+        help="Enable Controlled Action Extension for trajectory-outside ACTION tools (Phase 3).",
+    )
+    parser.add_argument(
+        "--disable_delegated_task_source",
+        action="store_true",
+        help="Disable delegated task source detection (ablation).",
+    )
 
     # Environment
     parser.add_argument('--seed', type=int, default=98, help='Random Seed.')
