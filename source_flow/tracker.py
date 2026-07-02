@@ -49,6 +49,7 @@ class SourceLabelStore:
         self._raw_output_ids: dict[str, str] = {}
         self._record_keys: set[str] = set()
         self.last_raw_output_created = False
+        self._delegation_anchor_values: set[str] = set()
         self._run_started_at = datetime.now(timezone.utc).isoformat()
 
     def record_user_query(self, user_query: str) -> str:
@@ -72,6 +73,8 @@ class SourceLabelStore:
         )
 
         for anchor in self.delegation_detector.detect(user_query):
+            normalized = self._normalize(anchor.value)
+            self._delegation_anchor_values.add(normalized)
             self._add_record(
                 step=0,
                 owner="user",
@@ -108,6 +111,13 @@ class SourceLabelStore:
             self.last_raw_output_created = False
             return existing_source_id
 
+        source_labels = ["tool_output", "raw_observation", "raw_external_content"]
+        normalized_output = self._normalize(output)
+        for anchor_value in self._delegation_anchor_values:
+            if anchor_value and anchor_value in normalized_output:
+                source_labels = source_labels + ["user_specified_source", "delegated_task_source"]
+                break
+
         source_id = self._add_record(
             step=step,
             owner="tool",
@@ -115,7 +125,7 @@ class SourceLabelStore:
             tool=tool_name,
             source_kind="tool_raw_output",
             parent_sources=[],
-            source_labels=["tool_output", "raw_observation", "raw_external_content"],
+            source_labels=source_labels,
             evidence={
                 "tool_name": tool_name,
                 "tool_call_id": tool_call_id,

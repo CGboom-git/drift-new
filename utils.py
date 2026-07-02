@@ -49,7 +49,7 @@ def get_args(description='DRIFT'):
     parser.add_argument(
         "--source_flow_validation",
         action="store_true",
-        help="Enable source-flow instrumentation for logging only; Phase 1 does not reject actions.",
+        help="Enable Phase 2/3 source-flow validation to reject ACTION calls with unsafe provenance (injected, unknown_origin, origin_mismatch).",
     )
     parser.add_argument(
         "--controlled_action_extension",

@@ -279,6 +279,55 @@ class DRIFTLLM(PromptingLLM):
         except Exception:
             self.node_checklist = extended_checklist
 
+        if hasattr(self, "client") and self.client is not None:
+            try:
+                latest_function_messages = ""
+                if messages and messages[-1]["role"] == "tool":
+                    latest_function_messages = messages[-1].get("content", "")
+                side_ok, side_reason = self.alignment_judge(
+                    query=query,
+                    last_function_messages=latest_function_messages,
+                    thought_content=thought_content or "",
+                    function_trajectory=self.function_trajectory,
+                    current_function_trajectory=extended_trajectory,
+                    conversations=messages,
+                )
+                if not side_ok:
+                    self._source_flow_restore_trajectory_snapshot(snapshot)
+                    self.source_label_store.validation_trace.append(
+                        ValidationTraceEntry(
+                            step=len(self.achieved_function_trajectory),
+                            event="controlled_action_extension_rejected",
+                            source_ids=[],
+                            details={
+                                "tool_name": tool_name,
+                                "reason": "side_effect_mismatch",
+                                "side_reason": side_reason,
+                            },
+                            decision="reject",
+                            would_reject=True,
+                        )
+                    )
+                    if self.logger:
+                        self.logger.info(
+                            f"Controlled Action Extension rejected {tool_name}: "
+                            f"side_effect_mismatch: {side_reason}"
+                        )
+                    return {
+                        "allowed": False,
+                        "reason": "side_effect_mismatch",
+                        "call_error_message": (
+                            f"[CALL ERROR] Controlled Action Extension rejected {tool_name}: "
+                            f"side-effect does not align with user goal. Continue using authorized tools only."
+                        ),
+                    }
+            except Exception:
+                if self.logger:
+                    self.logger.info(
+                        f"Controlled Action Extension alignment_judge unavailable for {tool_name}; "
+                        "proceeding to source-flow validation."
+                    )
+
         trajectory_state = {
             "function_trajectory": self.function_trajectory,
             "achieved_function_trajectory": self.achieved_function_trajectory,
