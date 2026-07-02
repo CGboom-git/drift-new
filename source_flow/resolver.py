@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .compiler import SinkSpec
@@ -62,13 +63,14 @@ class SinkEvidenceResolver:
             )
 
         high_risk = contract_helper.is_high_risk_arg(tool_name, arg_name)
-        content_like = contract_helper.is_content_arg(tool_name, arg_name)
+        content_like = contract_helper.is_content_arg(tool_name, arg_name) and not high_risk
         records = list(getattr(source_store, "records", []))
+        normalized_candidates = self._candidate_normalizations(value)
 
         match_groups = [
-            ("normalized_exact_match", self._exact_matches(records, normalized), 0.95),
-            ("structured_field_match", self._kind_matches(records, normalized, {"structured_field"}), 0.9),
-            ("regex_entity_match", self._regex_matches(records, normalized), 0.85),
+            ("normalized_exact_match", self._exact_matches(records, normalized_candidates), 0.95),
+            ("structured_field_match", self._kind_matches(records, normalized_candidates, {"structured_field"}), 0.9),
+            ("regex_entity_match", self._regex_matches(records, normalized_candidates), 0.85),
         ]
         if not high_risk or len(normalized) >= 8:
             match_groups.append(("substring_match", self._substring_matches(records, normalized), 0.55))
@@ -110,21 +112,30 @@ class SinkEvidenceResolver:
             resolution_status="model_generated",
         )
 
-    def _exact_matches(self, records: list[Any], normalized: str) -> list[Any]:
-        return [record for record in records if record.normalized_value == normalized]
-
-    def _kind_matches(self, records: list[Any], normalized: str, kinds: set[str]) -> list[Any]:
+    def _exact_matches(self, records: list[Any], normalized_values: list[str]) -> list[Any]:
+        normalized_set = set(normalized_values)
         return [
             record
             for record in records
-            if record.source_kind in kinds and record.normalized_value == normalized
+            if normalized_set & set(self._candidate_normalizations(record.value))
         ]
 
-    def _regex_matches(self, records: list[Any], normalized: str) -> list[Any]:
+    def _kind_matches(self, records: list[Any], normalized_values: list[str], kinds: set[str]) -> list[Any]:
+        normalized_set = set(normalized_values)
         return [
             record
             for record in records
-            if record.source_kind.startswith("regex_") and record.normalized_value == normalized
+            if record.source_kind in kinds
+            and normalized_set & set(self._candidate_normalizations(record.value))
+        ]
+
+    def _regex_matches(self, records: list[Any], normalized_values: list[str]) -> list[Any]:
+        normalized_set = set(normalized_values)
+        return [
+            record
+            for record in records
+            if record.source_kind.startswith("regex_")
+            and normalized_set & set(self._candidate_normalizations(record.value))
         ]
 
     def _substring_matches(self, records: list[Any], normalized: str) -> list[Any]:
@@ -194,6 +205,39 @@ class SinkEvidenceResolver:
             except TypeError:
                 text = str(value)
         return re.sub(r"\s+", " ", text).strip().lower()
+
+    def _candidate_normalizations(self, value: Any) -> list[str]:
+        candidates = [self._normalize(value)]
+        amount_key = self._amount_key(value)
+        if amount_key:
+            candidates.append(amount_key)
+        return self._dedupe([candidate for candidate in candidates if candidate])
+
+    def _amount_key(self, value: Any) -> str | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float, Decimal)):
+            return self._canonical_decimal(str(value))
+        text = str(value)
+        if not (
+            re.fullmatch(r"\s*[+-]?\d[\d,]*(?:\.\d+)?\s*", text)
+            or re.search(r"[$€£]|\b(?:amount|total|price|cost|usd|eur|gbp|cny|rmb|dollars?|euros?|pounds?)\b", text, re.IGNORECASE)
+        ):
+            return None
+        match = re.search(r"[+-]?\d[\d,]*(?:\.\d+)?", text)
+        if not match:
+            return None
+        return self._canonical_decimal(match.group(0).replace(",", ""))
+
+    def _canonical_decimal(self, value: str) -> str | None:
+        try:
+            decimal = Decimal(value)
+        except (InvalidOperation, ValueError):
+            return None
+        normalized = format(decimal.normalize(), "f")
+        if "." in normalized:
+            normalized = normalized.rstrip("0").rstrip(".")
+        return normalized or "0"
 
     def _dedupe(self, values: list[str]) -> list[str]:
         seen: set[str] = set()

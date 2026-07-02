@@ -124,6 +124,11 @@ class DRIFTLLM(PromptingLLM):
         for tool_call in output["tool_calls"]:
             tool_name = tool_call.function
             tool_args = tool_call.args or {}
+            tool_type = self.source_flow_validator._tool_type(
+                tool_name,
+                self.source_flow_contract_helper,
+                trajectory_state,
+            )
             sink_specs = self.source_flow_compiler.spec_map(
                 self.node_checklist,
                 tool_name,
@@ -148,6 +153,34 @@ class DRIFTLLM(PromptingLLM):
             matched_sources = []
             for evidence in sink_evidence.values():
                 matched_sources.extend(evidence.matched_sources)
+            decision_text = "reject" if decision.reject else ("warn" if decision.warn else "allow")
+            flows_by_sink = {
+                flow.get("sink"): flow
+                for flow in [*decision.blocked_flows, *decision.warnings]
+                if flow.get("sink")
+            }
+            arg_validations = []
+            for sink, evidence in sink_evidence.items():
+                arg_name = sink.split(".", 1)[1] if "." in sink else sink
+                spec = sink_specs.get(sink)
+                flow = flows_by_sink.get(sink, {})
+                arg_validations.append(
+                    {
+                        "tool_name": tool_name,
+                        "tool_type": tool_type,
+                        "decision": "reject" if flow in decision.blocked_flows else ("warn" if flow else "allow"),
+                        "reason": flow.get("reason"),
+                        "sink": sink,
+                        "arg_name": arg_name,
+                        "sink_role": self.source_flow_contract_helper.get_arg_role(tool_name, arg_name),
+                        "actual_origin_tools": evidence.actual_origin_tools,
+                        "actual_origin_paths": evidence.actual_origin_paths,
+                        "source_labels": evidence.source_labels,
+                        "expected_root_tools": spec.expected_root_tools if spec else [],
+                        "resolution_status": evidence.resolution_status,
+                        "matched_sources": evidence.matched_sources,
+                    }
+                )
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
                     step=len(self.achieved_function_trajectory),
@@ -155,11 +188,16 @@ class DRIFTLLM(PromptingLLM):
                     source_ids=list(dict.fromkeys(matched_sources)),
                     details={
                         "tool_name": tool_name,
+                        "tool_type": tool_type,
+                        "decision": decision_text,
+                        "reason": decision.blocked_flows[0]["reason"] if decision.blocked_flows else None,
                         "tool_args": tool_args,
+                        "arg_validations": arg_validations,
                         "blocked_flows": decision.blocked_flows,
                         "warnings": decision.warnings,
+                        "call_error_message": decision.call_error_message,
                     },
-                    decision="reject" if decision.reject else ("warn" if decision.warn else "allow"),
+                    decision=decision_text,
                     would_reject=decision.reject,
                 )
             )
@@ -171,6 +209,48 @@ class DRIFTLLM(PromptingLLM):
                 self.logger.info(f"Source-flow validation warning for {tool_name}: {decision.warnings}")
 
         return None
+
+    def _source_flow_trajectory_snapshot(self):
+        return {
+            "function_trajectory": copy.deepcopy(self.function_trajectory),
+            "achieved_function_trajectory": copy.deepcopy(self.achieved_function_trajectory),
+            "node_checklist": copy.deepcopy(self.node_checklist),
+        }
+
+    def _source_flow_state_changed(self, snapshot):
+        if snapshot is None:
+            return False
+        return (
+            self.function_trajectory != snapshot["function_trajectory"]
+            or self.achieved_function_trajectory != snapshot["achieved_function_trajectory"]
+            or self.node_checklist != snapshot["node_checklist"]
+        )
+
+    def _source_flow_restore_trajectory_snapshot(self, snapshot):
+        self.function_trajectory = copy.deepcopy(snapshot["function_trajectory"])
+        self.achieved_function_trajectory = copy.deepcopy(snapshot["achieved_function_trajectory"])
+        self.node_checklist = copy.deepcopy(snapshot["node_checklist"])
+
+    def _source_flow_handle_rejection_after_dynamic_validation(self, snapshot):
+        if not self._source_flow_state_changed(snapshot):
+            return
+        self._source_flow_restore_trajectory_snapshot(snapshot)
+        warning = (
+            "Source-flow rejection happened after dynamic validation changed the trajectory/checklist; "
+            "restored the pre-dynamic-validation snapshot. TODO(Phase 3): replace this best-effort "
+            "rollback with Controlled Action Extension snapshot/commit semantics."
+        )
+        if self.logger:
+            self.logger.info(warning)
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="source_flow_dynamic_validation_state_restored",
+                details={"warning": warning},
+                decision="warn",
+                would_reject=False,
+            )
+        )
 
     def _tool_message_to_user_message(self, tool_message) -> dict:
         """It places the output of the tool call in the <function_call> tags.
@@ -900,6 +980,10 @@ class DRIFTLLM(PromptingLLM):
             to_call_function.append(call["function"]["name"])
 
         # Trajectory, Chechlist Validation
+        source_flow_pre_dynamic_state = None
+        if self.args.dynamic_validation and self.source_flow_validation_enabled():
+            source_flow_pre_dynamic_state = self._source_flow_trajectory_snapshot()
+
         if self.args.dynamic_validation:
             error_message, output = self.trajectory_constraint_validation(to_call_function, output, query, messages)
             if error_message:
@@ -913,6 +997,7 @@ class DRIFTLLM(PromptingLLM):
 
         source_flow_decision = self._source_flow_validate_tool_calls(output)
         if source_flow_decision is not None and source_flow_decision.reject:
+            self._source_flow_handle_rejection_after_dynamic_validation(source_flow_pre_dynamic_state)
             output["tool_calls"] = []
             error_message = {
                 "role": "user",

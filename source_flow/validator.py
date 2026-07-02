@@ -15,15 +15,40 @@ HIGH_RISK_ARG_NAMES = {
     "to",
     "email",
     "user_email",
+    "user",
+    "username",
+    "participants",
     "channel",
     "amount",
+    "account",
+    "iban",
     "file_id",
     "document_id",
+    "event_id",
+    "transaction_id",
     "url",
     "date",
     "command",
+    "destination",
+    "target",
+    "selector",
 }
 CONTENT_ARG_NAMES = {"body", "content", "message", "summary", "description", "subject"}
+HIGH_RISK_ROLES = {
+    "target",
+    "selector",
+    "control",
+    "financial_amount",
+    "credential",
+    "command",
+    "recipient",
+    "channel",
+    "file_id",
+    "url",
+    "amount",
+    "date",
+}
+CONTENT_ROLES = {"content", "body", "message", "summary", "description", "subject"}
 
 
 @dataclass
@@ -79,43 +104,64 @@ class ContractHelper:
         return "unknown"
 
     def get_side_effect(self, tool_name: str) -> str | None:
-        value = self._find_contract_value(tool_name, {"side_effect", "effect", "effects"})
+        value = self._find_contract_value(tool_name, {"side_effect", "effect", "effects", "sink_scope"})
         if value is None:
             return "none" if self.get_tool_type(tool_name) == "read" else "unknown"
         return str(value)
 
     def get_arg_role(self, tool_name: str, arg_name: str) -> str:
-        role = self._find_arg_contract_value(tool_name, arg_name, {"role", "arg_role", "sink_role"})
+        role = self._find_arg_contract_value(tool_name, arg_name, {"sink_role", "role", "arg_role"})
         if role:
             return str(role)
-        if self.is_high_risk_arg(tool_name, arg_name):
+        if self._fallback_is_high_risk_arg(arg_name):
             return "action_target"
-        if self.is_content_arg(tool_name, arg_name):
+        if self._fallback_is_content_arg(arg_name):
             return "content"
         return "argument"
 
+    def get_arg_deny_marks(self, tool_name: str, arg_name: str) -> list[str]:
+        value = self._find_arg_contract_value(tool_name, arg_name, {"deny_marks", "deny_mark", "denied_marks"})
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        if isinstance(value, str):
+            return [value]
+        return []
+
     def is_high_risk_arg(self, tool_name: str, arg_name: str) -> bool:
+        role = self._find_arg_contract_value(tool_name, arg_name, {"sink_role", "role", "arg_role"})
+        if role:
+            normalized_role = self._normalize_role(role)
+            if normalized_role in HIGH_RISK_ROLES:
+                return True
+            if normalized_role in CONTENT_ROLES:
+                return False
         value = self._find_arg_contract_value(tool_name, arg_name, {"high_risk", "is_high_risk", "risk"})
         if isinstance(value, bool):
             return value
         if isinstance(value, str) and value.lower() in {"high", "critical", "true"}:
             return True
-        name = arg_name.lower()
-        return name in HIGH_RISK_ARG_NAMES or name.endswith("_id")
+        return self._fallback_is_high_risk_arg(arg_name)
 
     def is_content_arg(self, tool_name: str, arg_name: str) -> bool:
+        role = self._find_arg_contract_value(tool_name, arg_name, {"sink_role", "role", "arg_role"})
+        if role:
+            normalized_role = self._normalize_role(role)
+            if normalized_role in CONTENT_ROLES:
+                return True
+            if normalized_role in HIGH_RISK_ROLES:
+                return False
         value = self._find_arg_contract_value(tool_name, arg_name, {"content_like", "is_content", "semantic_type"})
         if isinstance(value, bool):
             return value
         if isinstance(value, str) and value.lower() in {"content", "body", "message", "summary", "true"}:
             return True
-        return arg_name.lower() in CONTENT_ARG_NAMES
+        return self._fallback_is_content_arg(arg_name)
 
     def _load_contracts(self) -> list[Any]:
         contracts: list[Any] = []
         if not self.contracts_dir.exists():
             return contracts
-        for path in self.contracts_dir.glob("*.json"):
+        for path in self.contracts_dir.rglob("*.json"):
             try:
                 with path.open(encoding="utf-8") as f:
                     contracts.append(json.load(f))
@@ -126,6 +172,11 @@ class ContractHelper:
     def _find_contract_value(self, tool_name: str, keys: set[str]) -> Any:
         tool_node = self._find_tool_node(tool_name)
         if isinstance(tool_node, dict):
+            draft_contract = self._draft_contract_node(tool_node)
+            if isinstance(draft_contract, dict):
+                for key, value in draft_contract.items():
+                    if str(key).lower() in keys:
+                        return value
             for key, value in tool_node.items():
                 if str(key).lower() in keys:
                     return value
@@ -150,7 +201,7 @@ class ContractHelper:
     def _walk_for_tool(self, node: Any, tool_name: str) -> Any:
         if isinstance(node, dict):
             for key, value in node.items():
-                if str(key) == tool_name:
+                if str(key) == tool_name and isinstance(value, dict):
                     return value
             name = node.get("name") or node.get("tool_name") or node.get("tool")
             if name == tool_name:
@@ -169,6 +220,12 @@ class ContractHelper:
     def _find_arg_node(self, tool_node: Any, arg_name: str) -> Any:
         if not isinstance(tool_node, dict):
             return None
+        draft_contract = self._draft_contract_node(tool_node)
+        if isinstance(draft_contract, dict):
+            args = draft_contract.get("args")
+            found = self._walk_for_arg(args, arg_name)
+            if found is not None:
+                return found
         for arg_container_key in ("args", "arguments", "parameters", "params", "inputs"):
             container = tool_node.get(arg_container_key)
             found = self._walk_for_arg(container, arg_name)
@@ -195,6 +252,12 @@ class ContractHelper:
                     return found
         return None
 
+    def _draft_contract_node(self, tool_node: dict[str, Any]) -> Any:
+        draft_contract = tool_node.get("draft_contract")
+        if isinstance(draft_contract, dict):
+            return draft_contract
+        return tool_node
+
     def _map_tool_type(self, value: Any) -> str:
         if value is None:
             return "unknown"
@@ -206,6 +269,16 @@ class ContractHelper:
         if any(token in text for token in ("action", "write", "execute", "side_effect", "modify")):
             return "action"
         return "unknown"
+
+    def _fallback_is_high_risk_arg(self, arg_name: str) -> bool:
+        name = arg_name.lower()
+        return name in HIGH_RISK_ARG_NAMES or name.endswith("_id")
+
+    def _fallback_is_content_arg(self, arg_name: str) -> bool:
+        return arg_name.lower() in CONTENT_ARG_NAMES
+
+    def _normalize_role(self, role: Any) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", str(role).strip().lower()).strip("_")
 
 
 class FlowAwareValidator:
@@ -242,42 +315,144 @@ class FlowAwareValidator:
             )
             high_risk = contract_helper.is_high_risk_arg(tool_name, arg_name)
             content_like = contract_helper.is_content_arg(tool_name, arg_name)
+            sink_role = contract_helper.get_arg_role(tool_name, arg_name)
+            deny_marks = contract_helper.get_arg_deny_marks(tool_name, arg_name)
+            has_expectation = self._has_expectation(spec)
             labels = set(evidence.source_labels)
 
             if labels & self.INJECTED_LABELS:
-                blocked.append(self._blocked(sink, "injected_source", spec, evidence))
+                blocked.append(
+                    self._blocked(
+                        sink,
+                        "injected_source",
+                        spec,
+                        evidence,
+                        tool_name,
+                        arg_name,
+                        tool_type,
+                        sink_role,
+                        deny_marks,
+                    )
+                )
                 continue
 
             if spec.mode == "constant_check" and high_risk:
                 if self._matches_expected(value, spec.expected_values):
                     continue
-                blocked.append(self._blocked(sink, "constant_mismatch", spec, evidence))
+                blocked.append(
+                    self._blocked(
+                        sink,
+                        "constant_mismatch",
+                        spec,
+                        evidence,
+                        tool_name,
+                        arg_name,
+                        tool_type,
+                        sink_role,
+                        deny_marks,
+                    )
+                )
                 continue
 
             if spec.mode in {"origin_check", "placeholder_origin_check"} and spec.expected_root_tools:
                 if set(spec.expected_root_tools) & set(evidence.actual_origin_tools):
                     continue
                 if high_risk:
-                    blocked.append(self._blocked(sink, "origin_mismatch", spec, evidence))
+                    blocked.append(
+                        self._blocked(
+                            sink,
+                            "origin_mismatch",
+                            spec,
+                            evidence,
+                            tool_name,
+                            arg_name,
+                            tool_type,
+                            sink_role,
+                            deny_marks,
+                        )
+                    )
                 else:
-                    warnings.append(self._blocked(sink, "origin_mismatch_warn", spec, evidence))
+                    warnings.append(
+                        self._blocked(
+                            sink,
+                            "origin_mismatch_warn",
+                            spec,
+                            evidence,
+                            tool_name,
+                            arg_name,
+                            tool_type,
+                            sink_role,
+                            deny_marks,
+                        )
+                    )
                 continue
 
             if spec.mode == "synthesis_allowed":
                 if content_like and not (labels & self.INJECTED_LABELS):
                     continue
                 if high_risk:
-                    blocked.append(self._blocked(sink, "unsafe_synthesis_target", spec, evidence))
+                    blocked.append(
+                        self._blocked(
+                            sink,
+                            "unsafe_synthesis_target",
+                            spec,
+                            evidence,
+                            tool_name,
+                            arg_name,
+                            tool_type,
+                            sink_role,
+                            deny_marks,
+                        )
+                    )
                 else:
-                    warnings.append(self._blocked(sink, "synthesis_fallback", spec, evidence))
+                    warnings.append(
+                        self._blocked(
+                            sink,
+                            "synthesis_fallback",
+                            spec,
+                            evidence,
+                            tool_name,
+                            arg_name,
+                            tool_type,
+                            sink_role,
+                            deny_marks,
+                        )
+                    )
                 continue
 
             if high_risk and labels & self.UNKNOWN_LABELS:
-                blocked.append(self._blocked(sink, "unknown_high_risk_origin", spec, evidence))
+                issue = self._blocked(
+                    sink,
+                    "unknown_high_risk_origin",
+                    spec,
+                    evidence,
+                    tool_name,
+                    arg_name,
+                    tool_type,
+                    sink_role,
+                    deny_marks,
+                )
+                if has_expectation:
+                    blocked.append(issue)
+                else:
+                    issue["reason"] = "unknown_high_risk_origin_warn"
+                    warnings.append(issue)
                 continue
 
             if content_like and labels & self.UNKNOWN_LABELS:
-                warnings.append(self._blocked(sink, "unknown_content_origin", spec, evidence))
+                warnings.append(
+                    self._blocked(
+                        sink,
+                        "unknown_content_origin",
+                        spec,
+                        evidence,
+                        tool_name,
+                        arg_name,
+                        tool_type,
+                        sink_role,
+                        deny_marks,
+                    )
+                )
 
         if blocked:
             return FlowValidationDecision(
@@ -308,23 +483,43 @@ class FlowAwareValidator:
         actual = self._normalize(value)
         return any(actual == self._normalize(expected) for expected in expected_values)
 
+    def _has_expectation(self, spec: SinkSpec) -> bool:
+        return (
+            spec.mode != "track_only"
+            or bool(spec.expected_values)
+            or bool(spec.expected_root_tools)
+            or bool(spec.placeholder)
+        )
+
     def _blocked(
         self,
         sink: str,
         reason: str,
         spec: SinkSpec,
         evidence: SinkEvidence,
+        tool_name: str,
+        arg_name: str,
+        tool_type: str,
+        sink_role: str,
+        deny_marks: list[str],
     ) -> dict[str, Any]:
         return {
+            "tool_name": tool_name,
+            "tool_type": tool_type,
             "sink": sink,
+            "arg_name": arg_name,
+            "sink_role": sink_role,
             "reason": reason,
             "mode": spec.mode,
             "expected_values": spec.expected_values,
             "expected_root_tools": spec.expected_root_tools,
+            "deny_marks": deny_marks,
             "source_labels": evidence.source_labels,
             "actual_origin_tools": evidence.actual_origin_tools,
+            "actual_origin_paths": evidence.actual_origin_paths,
             "resolution_status": evidence.resolution_status,
             "matched_sources": evidence.matched_sources,
+            "evidence": evidence.evidence,
         }
 
     def _call_error(self, tool_name: str, blocked_flow: dict[str, Any]) -> str:

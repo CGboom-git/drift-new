@@ -12,9 +12,23 @@ from .records import SourceRecord, ValidationTraceEntry
 
 
 class SourceLabelStore:
-    URL_RE = re.compile(r"https?://[^\s<>'\"),\]]+", re.IGNORECASE)
+    URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>'\"),\]]+", re.IGNORECASE)
     EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
     AMOUNT_RE = re.compile(r"(?<!\w)(?:[$€£]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP|CNY|RMB|dollars?|euros?|pounds?))\b", re.IGNORECASE)
+    LABELED_AMOUNT_RE = re.compile(
+        r"\b(?:amount|total|price|cost)\s*[:=]\s*([+-]?(?:[$€£]\s*)?\d[\d,]*(?:\.\d+)?(?:\s?(?:USD|EUR|GBP|CNY|RMB|dollars?|euros?|pounds?))?)\b",
+        re.IGNORECASE,
+    )
+    IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b", re.IGNORECASE)
+    ACCOUNT_RE = re.compile(
+        r"\b(?:recipient|payee|iban|account(?:\s*(?:id|number|no\.?))?)\s*[:#=]\s*([A-Z0-9][A-Z0-9_-]{7,34})\b",
+        re.IGNORECASE,
+    )
+    TRANSACTION_ID_RE = re.compile(
+        r"\b(?:transaction|transfer|txn|tx)(?:\s*(?:id|number|no\.?))?\s*[:#=]\s*([A-Z0-9][A-Z0-9_-]{5,64})\b",
+        re.IGNORECASE,
+    )
+    SUBJECT_RE = re.compile(r"\b(?:subject|memo|description|title)\s*[:=]\s*([^\r\n;]+)", re.IGNORECASE)
     DATE_RE = re.compile(
         r"\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}/\d{1,2}/\d{2,4}|"
         r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{2,4})\b",
@@ -234,14 +248,20 @@ class SourceLabelStore:
                         tool=tool_name,
                         source_kind=f"regex_{entity_kind}",
                         parent_sources=[raw_source_id] if raw_source_id else [],
-                        source_labels=[owner + "_explicit" if owner == "user" else "tool_output", f"entity:{entity_kind}"],
+                        source_labels=[
+                            owner + "_explicit" if owner == "user" else "tool_output",
+                            "regex_extract",
+                            f"entity:{entity_kind}",
+                        ],
                         evidence={
                             "span": f"{match.start()}:{match.end()}",
                             "extractor": entity_kind,
+                            "entity_type": entity_kind,
                             "excerpt": self._excerpt(text_value, match.start(), match.end()),
                         },
                         confidence=0.65,
                         sanitized_visible=None,
+                        record_key=f"regex:{owner}:{tool_name}:{step}:{entity_kind}:{self._normalize(value)}",
                     )
                 )
         return source_ids
@@ -333,7 +353,12 @@ class SourceLabelStore:
         return (
             ("url", self.URL_RE),
             ("email", self.EMAIL_RE),
+            ("amount", self.LABELED_AMOUNT_RE),
             ("amount", self.AMOUNT_RE),
+            ("recipient", self.ACCOUNT_RE),
+            ("iban", self.IBAN_RE),
+            ("transaction_id", self.TRANSACTION_ID_RE),
+            ("subject", self.SUBJECT_RE),
             ("date", self.DATE_RE),
             ("file", self.FILE_RE),
             ("channel", self.CHANNEL_RE),
@@ -374,7 +399,7 @@ class SourceLabelStore:
             return None
 
     def _match_value(self, entity_kind: str, match: re.Match[str]) -> str:
-        if entity_kind == "person" and match.lastindex:
+        if entity_kind in {"amount", "recipient", "transaction_id", "subject", "person"} and match.lastindex:
             return match.group(1)
         return match.group(0)
 
