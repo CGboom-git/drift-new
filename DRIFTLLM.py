@@ -1,5 +1,12 @@
 from import_lib import *
-from source_flow import SourceLabelStore
+from source_flow import (
+    ContractHelper,
+    FlowAwareValidator,
+    FlowExpectationCompiler,
+    SinkEvidenceResolver,
+    SourceLabelStore,
+    ValidationTraceEntry,
+)
 
 class DRIFTLLM(PromptingLLM):
     def __init__(self, args, client, model: str | None = "", temperature: float | None = 0.0, logger=None) -> None:
@@ -20,6 +27,10 @@ class DRIFTLLM(PromptingLLM):
         self.initial_node_checklist = "None"
         self.tool_permissions = {}
         self.source_label_store = SourceLabelStore()
+        self.source_flow_contract_helper = ContractHelper("contracts")
+        self.source_flow_compiler = FlowExpectationCompiler(self.source_flow_contract_helper)
+        self.source_flow_resolver = SinkEvidenceResolver()
+        self.source_flow_validator = FlowAwareValidator()
         self._source_flow_run_active = False
 
     def source_flow_enabled(self):
@@ -27,6 +38,9 @@ class DRIFTLLM(PromptingLLM):
             getattr(self.args, "source_flow_log", None)
             or getattr(self.args, "source_flow_validation", False)
         )
+
+    def source_flow_validation_enabled(self):
+        return bool(getattr(self.args, "source_flow_validation", False))
 
     def start_source_flow_run(self, user_query):
         if not self.source_flow_enabled():
@@ -43,6 +57,17 @@ class DRIFTLLM(PromptingLLM):
             return tool_call.get("function") or tool_call.get("name") or "unknown_tool"
         return "unknown_tool"
 
+    def _source_flow_tool_call_id(self, tool_message):
+        tool_call_id = tool_message.get("tool_call_id")
+        if tool_call_id:
+            return tool_call_id
+        tool_call = tool_message.get("tool_call")
+        if hasattr(tool_call, "id"):
+            return tool_call.id
+        if isinstance(tool_call, dict):
+            return tool_call.get("id")
+        return None
+
     def _source_flow_tool_step(self, messages):
         return sum(1 for message in messages if message.get("role") == "tool")
 
@@ -55,29 +80,97 @@ class DRIFTLLM(PromptingLLM):
 
         tool_message = messages[-1]
         tool_name = self._source_flow_tool_name(tool_message)
+        tool_call_id = self._source_flow_tool_call_id(tool_message)
         step = self._source_flow_tool_step(messages)
         raw_source_id = self.source_label_store.record_tool_raw_output(
             tool_name,
             tool_message.get("content"),
             step,
+            tool_call_id=tool_call_id,
         )
-        self.source_label_store.record_structured_fields(
-            tool_name,
-            raw_source_id,
-            tool_message.get("content"),
-            step,
-        )
-        self.source_label_store.record_regex_entities(
-            tool_name,
-            raw_source_id,
-            tool_message.get("content"),
-            step,
-        )
+        raw_created = self.source_label_store.last_raw_output_created
+        if raw_created:
+            self.source_label_store.record_structured_fields(
+                tool_name,
+                raw_source_id,
+                tool_message.get("content"),
+                step,
+            )
+            self.source_label_store.record_regex_entities(
+                tool_name,
+                raw_source_id,
+                tool_message.get("content"),
+                step,
+            )
         return {
             "tool_name": tool_name,
             "step": step,
             "raw_source_id": raw_source_id,
+            "tool_call_id": tool_call_id,
+            "raw_created": raw_created,
         }
+
+    def _source_flow_validate_tool_calls(self, output):
+        if not self.source_flow_validation_enabled() or not output.get("tool_calls"):
+            return None
+
+        trajectory_state = {
+            "function_trajectory": self.function_trajectory,
+            "achieved_function_trajectory": self.achieved_function_trajectory,
+            "node_checklist": self.node_checklist,
+            "tool_permissions": self.tool_permissions,
+        }
+
+        for tool_call in output["tool_calls"]:
+            tool_name = tool_call.function
+            tool_args = tool_call.args or {}
+            sink_specs = self.source_flow_compiler.spec_map(
+                self.node_checklist,
+                tool_name,
+                tool_args,
+            )
+            sink_evidence = self.source_flow_resolver.resolve_args(
+                tool_name,
+                tool_args,
+                sink_specs,
+                self.source_label_store,
+                self.source_flow_contract_helper,
+            )
+            decision = self.source_flow_validator.validate(
+                tool_name=tool_name,
+                tool_args=tool_args,
+                compiled_sink_specs=sink_specs,
+                sink_evidence=sink_evidence,
+                source_store=self.source_label_store,
+                contract_helper=self.source_flow_contract_helper,
+                trajectory_state=trajectory_state,
+            )
+            matched_sources = []
+            for evidence in sink_evidence.values():
+                matched_sources.extend(evidence.matched_sources)
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="source_flow_action_validation",
+                    source_ids=list(dict.fromkeys(matched_sources)),
+                    details={
+                        "tool_name": tool_name,
+                        "tool_args": tool_args,
+                        "blocked_flows": decision.blocked_flows,
+                        "warnings": decision.warnings,
+                    },
+                    decision="reject" if decision.reject else ("warn" if decision.warn else "allow"),
+                    would_reject=decision.reject,
+                )
+            )
+            if decision.reject:
+                if self.logger:
+                    self.logger.info(f"Source-flow validation rejected {tool_name}: {decision.blocked_flows}")
+                return decision
+            if decision.warn and self.logger:
+                self.logger.info(f"Source-flow validation warning for {tool_name}: {decision.warnings}")
+
+        return None
 
     def _tool_message_to_user_message(self, tool_message) -> dict:
         """It places the output of the tool call in the <function_call> tags.
@@ -468,6 +561,14 @@ class DRIFTLLM(PromptingLLM):
                         source_flow_context["tool_name"],
                         source_flow_context["step"],
                         True,
+                        tool_call_id=source_flow_context["tool_call_id"],
+                    )
+                    self.source_label_store.record_tool_sanitized_output(
+                        source_flow_context["tool_name"],
+                        source_flow_context["raw_source_id"],
+                        messages[-1]["content"],
+                        source_flow_context["step"],
+                        tool_call_id=source_flow_context["tool_call_id"],
                     )
                 return True, messages, openai_messages
 
@@ -492,6 +593,7 @@ class DRIFTLLM(PromptingLLM):
                         source_flow_context["raw_source_id"],
                         item,
                         source_flow_context["step"],
+                        tool_call_id=source_flow_context["tool_call_id"],
                     )
                 messages[-1]["content"] = remove_sentence(messages[-1]["content"], item)
                 openai_messages[-1]["content"] = remove_sentence(openai_messages[-1]["content"], item)
@@ -507,6 +609,7 @@ class DRIFTLLM(PromptingLLM):
                         source_flow_context["tool_name"],
                         source_flow_context["step"],
                         True,
+                        tool_call_id=source_flow_context["tool_call_id"],
                     )
                 return False, messages, openai_messages
 
@@ -516,6 +619,14 @@ class DRIFTLLM(PromptingLLM):
                         source_flow_context["tool_name"],
                         source_flow_context["step"],
                         False,
+                        tool_call_id=source_flow_context["tool_call_id"],
+                    )
+                    self.source_label_store.record_tool_sanitized_output(
+                        source_flow_context["tool_name"],
+                        source_flow_context["raw_source_id"],
+                        messages[-1]["content"],
+                        source_flow_context["step"],
+                        tool_call_id=source_flow_context["tool_call_id"],
                     )
                 return True, messages, openai_messages
 
@@ -525,6 +636,7 @@ class DRIFTLLM(PromptingLLM):
                     source_flow_context["tool_name"],
                     source_flow_context["step"],
                     True,
+                    tool_call_id=source_flow_context["tool_call_id"],
                 )
             return False, messages, openai_messages
 
@@ -739,6 +851,7 @@ class DRIFTLLM(PromptingLLM):
                 source_flow_context["tool_name"],
                 source_flow_context["step"],
                 True,
+                tool_call_id=source_flow_context["tool_call_id"],
             )
                 
         # thought-calling
@@ -797,5 +910,14 @@ class DRIFTLLM(PromptingLLM):
             if error_message:
                 error_message["content"] = f"</function_error>\n{error_message}\n</function_error>"
                 return query, runtime, env, [*messages, output, error_message], extra_args
+
+        source_flow_decision = self._source_flow_validate_tool_calls(output)
+        if source_flow_decision is not None and source_flow_decision.reject:
+            output["tool_calls"] = []
+            error_message = {
+                "role": "user",
+                "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
+            }
+            return query, runtime, env, [*messages, output, error_message], extra_args
 
         return query, runtime, env, [*messages, output], extra_args

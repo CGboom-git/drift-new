@@ -32,7 +32,9 @@ class SourceLabelStore:
         self.records: list[SourceRecord] = []
         self.validation_trace: list[ValidationTraceEntry] = []
         self._counter = 0
-        self._raw_output_ids: dict[tuple[str, int], str] = {}
+        self._raw_output_ids: dict[str, str] = {}
+        self._record_keys: set[str] = set()
+        self.last_raw_output_created = False
         self._run_started_at = datetime.now(timezone.utc).isoformat()
 
     def record_user_query(self, user_query: str) -> str:
@@ -67,7 +69,10 @@ class SourceLabelStore:
                 evidence={
                     **anchor.evidence,
                     "anchor_kind": anchor.anchor_kind,
+                    "delegated_anchor_value": anchor.value,
+                    "delegated_anchor_normalized": self._normalize(anchor.value),
                     "delegation_pattern": anchor.pattern,
+                    "read_output_match_key": self._normalize(anchor.value),
                 },
                 confidence=0.85,
                 sanitized_visible=True,
@@ -76,7 +81,19 @@ class SourceLabelStore:
         self.record_regex_entities("user_query", source_id, user_query, step=0, owner="user")
         return source_id
 
-    def record_tool_raw_output(self, tool_name: str, output: Any, step: int) -> str:
+    def record_tool_raw_output(
+        self,
+        tool_name: str,
+        output: Any,
+        step: int,
+        tool_call_id: str | None = None,
+    ) -> str:
+        record_key = self._tool_message_key("raw", tool_name, step, output, tool_call_id)
+        existing_source_id = self._raw_output_ids.get(record_key)
+        if existing_source_id is not None:
+            self.last_raw_output_created = False
+            return existing_source_id
+
         source_id = self._add_record(
             step=step,
             owner="tool",
@@ -84,13 +101,49 @@ class SourceLabelStore:
             tool=tool_name,
             source_kind="tool_raw_output",
             parent_sources=[],
-            source_labels=["tool_output", "raw_observation"],
-            evidence={"tool_name": tool_name, "phase": "before_injection_isolation"},
+            source_labels=["tool_output", "raw_observation", "raw_external_content"],
+            evidence={
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "phase": "before_injection_isolation",
+            },
             confidence=1.0,
             sanitized_visible=False,
+            record_key=record_key,
         )
-        self._raw_output_ids[(tool_name, step)] = source_id
+        self._raw_output_ids[record_key] = source_id
+        self._raw_output_ids[self._tool_step_key(tool_name, step)] = source_id
+        if tool_call_id:
+            self._raw_output_ids[self._tool_call_key(tool_call_id)] = source_id
+        self.last_raw_output_created = True
         return source_id
+
+    def record_tool_sanitized_output(
+        self,
+        tool_name: str,
+        raw_source_id: str | None,
+        output: Any,
+        step: int,
+        tool_call_id: str | None = None,
+    ) -> str:
+        record_key = self._tool_message_key("sanitized", tool_name, step, output, tool_call_id)
+        return self._add_record(
+            step=step,
+            owner="tool",
+            value=output,
+            tool=tool_name,
+            source_kind="tool_sanitized_output",
+            parent_sources=[raw_source_id] if raw_source_id else [],
+            source_labels=["tool_output", "sanitized_observation"],
+            evidence={
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "phase": "after_injection_isolation",
+            },
+            confidence=1.0,
+            sanitized_visible=True,
+            record_key=record_key,
+        )
 
     def record_injected_fragment(
         self,
@@ -98,8 +151,13 @@ class SourceLabelStore:
         raw_source_id: str | None,
         fragment: Any,
         step: int,
+        tool_call_id: str | None = None,
     ) -> str:
         parent_sources = [raw_source_id] if raw_source_id else []
+        if tool_call_id:
+            record_key = f"injected:tool_call_id:{tool_call_id}:{self._normalize(fragment)}"
+        else:
+            record_key = self._tool_message_key("injected", tool_name, step, fragment, tool_call_id)
         return self._add_record(
             step=step,
             owner="tool",
@@ -108,9 +166,14 @@ class SourceLabelStore:
             source_kind="injected_fragment",
             parent_sources=parent_sources,
             source_labels=["tool_output", "injected_instruction"],
-            evidence={"tool_name": tool_name, "phase": "injection_isolation"},
+            evidence={
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "phase": "injection_isolation",
+            },
             confidence=0.9,
             sanitized_visible=False,
+            record_key=record_key,
         )
 
     def record_structured_fields(
@@ -193,8 +256,17 @@ class SourceLabelStore:
             if normalized in record.normalized_value or record.normalized_value in normalized
         ]
 
-    def mark_raw_output_sanitized_visible(self, tool_name: str, step: int, visible: bool) -> None:
-        source_id = self._raw_output_ids.get((tool_name, step))
+    def mark_raw_output_sanitized_visible(
+        self,
+        tool_name: str,
+        step: int,
+        visible: bool,
+        tool_call_id: str | None = None,
+    ) -> None:
+        source_id = None
+        if tool_call_id:
+            source_id = self._raw_output_ids.get(self._tool_call_key(tool_call_id))
+        source_id = source_id or self._raw_output_ids.get(self._tool_step_key(tool_name, step))
         if not source_id:
             return
         for record in self.records:
@@ -226,8 +298,17 @@ class SourceLabelStore:
         evidence: dict[str, Any],
         confidence: float,
         sanitized_visible: bool | None,
+        record_key: str | None = None,
     ) -> str:
+        if record_key and record_key in self._record_keys:
+            for record in self.records:
+                if record.evidence.get("record_key") == record_key:
+                    return record.source_id
+
         source_id = self._next_id(source_kind)
+        if record_key:
+            evidence = {**evidence, "record_key": record_key}
+            self._record_keys.add(record_key)
         record = SourceRecord(
             source_id=source_id,
             step=step,
@@ -335,3 +416,21 @@ class SourceLabelStore:
             seen.add(value)
             result.append(value)
         return result
+
+    def _tool_call_key(self, tool_call_id: str) -> str:
+        return f"tool_call_id:{tool_call_id}"
+
+    def _tool_step_key(self, tool_name: str, step: int) -> str:
+        return f"tool_step:{tool_name}:{step}"
+
+    def _tool_message_key(
+        self,
+        phase: str,
+        tool_name: str,
+        step: int,
+        output: Any,
+        tool_call_id: str | None,
+    ) -> str:
+        if tool_call_id:
+            return f"{phase}:tool_call_id:{tool_call_id}"
+        return f"{phase}:tool_message:{tool_name}:{step}:{self._normalize(output)}"

@@ -1,0 +1,4072 @@
+{
+  "adapter": {
+    "name": "agentdojo",
+    "notes": "Benchmark-specific aliases are mapped to benchmark-agnostic IFC labels.",
+    "version": "v1"
+  },
+  "benchmark": "agentdojo",
+  "confidentiality_lattice": [
+    "PUBLIC",
+    "INTERNAL",
+    "USER_PRIVATE",
+    "SENSITIVE",
+    "SECRET"
+  ],
+  "contract_version": "pact_drift_ifc_global_semantic_review_v1",
+  "declassification_types": [
+    "explicit_output_delegation",
+    "destination_scope_match",
+    "content_minimization",
+    "task_relevant_private_output",
+    "schema_validated_export",
+    "redaction_or_abstraction",
+    "object_share_authorization"
+  ],
+  "deny_mark_types": [
+    "model_inferred_unverified",
+    "injected_instruction",
+    "raw_external_content",
+    "unauthorized_tool_output",
+    "unauthorized_private_source",
+    "cross_principal_data",
+    "default_without_authorization",
+    "credential_or_secret",
+    "tool_error_or_exception",
+    "unknown_origin",
+    "policy_override_content",
+    "stale_or_ambiguous_source"
+  ],
+  "endorsement_types": [
+    "user_explicit",
+    "task_delegation",
+    "structured_extraction",
+    "schema_validated_parse",
+    "exact_match_to_authorized_source",
+    "trusted_tool_derivation",
+    "deterministic_transform",
+    "source_object_binding"
+  ],
+  "flow_constraint_types": [
+    "authorized_source",
+    "authorized_destination",
+    "authorized_object_selection",
+    "authorized_control_value",
+    "authorized_command",
+    "authorized_credential_use",
+    "structured_source_required",
+    "trusted_derivation_required",
+    "task_relevance",
+    "non_instructional_content",
+    "no_policy_override",
+    "no_external_redirection",
+    "no_private_to_public_sink",
+    "destination_scope_match",
+    "object_confidentiality_check",
+    "minimal_disclosure"
+  ],
+  "generated_by": {
+    "mode": "llm_semantic_review",
+    "model": "GPT-5.5 Thinking",
+    "notes": "Semantically reviewed and adjusted from offline heuristic draft. Review before freezing or runtime enforcement."
+  },
+  "generation_mode": "gpt55_semantic_review_from_offline_heuristic",
+  "integrity_lattice": [
+    "TRUSTED",
+    "USER",
+    "DELEGATED",
+    "TOOL_OUTPUT",
+    "EXTERNAL"
+  ],
+  "schema_hash": "9385d9902c55d6dd9bbb1fb051347f10b96d12a54f6ef275a2798afada760873",
+  "sink_roles": [
+    "target",
+    "command",
+    "credential",
+    "content",
+    "selector",
+    "control"
+  ],
+  "sink_scope_types": [
+    "none",
+    "internal",
+    "external",
+    "public",
+    "financial",
+    "messaging",
+    "calendar",
+    "workspace",
+    "credential",
+    "booking"
+  ],
+  "tool_schema_hashes": {
+    "add_calendar_event_participants": "2c74ffd70f0c4f6ff9cfa3ad72212f7912c4ead0fb3ea5b879fa5278bd777456",
+    "add_user_to_channel": "7ac78afbae2bdc1dcbb15e1ad50d1ca10907544547005aba349b97bf322661ac",
+    "append_to_file": "4eb3de71ffa32c1491ea8e3f598486161c24628484cb3524e86f4062d3413179",
+    "cancel_calendar_event": "e9a384b9f6593d5b99ea93f7128a151252cab3187c496f0edbbf3405369d3a41",
+    "check_restaurant_opening_hours": "7a9d62c8d9d531853855244bd58edbfbd4de7979d6eed38f9254711836e962d7",
+    "create_calendar_event": "fbc7fdfa4850c35dfbf7a6d6a575ef4cee8b25965e9f5c3cfe761b6a8b814439",
+    "create_file": "0abfd159df67069222499602137f754be3ef914b175977884be2eee921b75c8b",
+    "delete_email": "3b2954119df5eff9788a982a181cc364eb1b52c6c02c8a59d9e768b556b26f98",
+    "delete_file": "de23e495b3b74c72747d9b430f03b099f96293ab69519674e4feccd4be10a8b2",
+    "get_all_car_rental_companies_in_city": "3557f34cfaf3993e8d8f89de52f097b53e689026fa3aa0fa53a5781d9f0e8a4e",
+    "get_all_hotels_in_city": "19f20c80baa8d85e2416bbe188b2451c0979889fe7067acc9177e8af95d15925",
+    "get_all_restaurants_in_city": "b738287071ac4645a53c5df82d545cf57c406cabda043807c236e3ac626da441",
+    "get_balance": "46e11faf809f490f464be6121ee678ed214a6c79d952b6b5a701fd391d3d3454",
+    "get_car_fuel_options": "c08940aca3ec7baf46e7cdccd91b902ef0329d32ae0b98d17198059fb053e534",
+    "get_car_price_per_day": "0443f429d27ccd575c92290de15e00b818a5e69b557456ed7bca0e26d186296c",
+    "get_car_rental_address": "0518904a11530aec4ab2fc52661b51277231e266e07306313bb558ad76d4ac2c",
+    "get_car_types_available": "10dcaabc1a3a61cfc0972684146f0c8f74824aad9a3c28159c407e51f82b6296",
+    "get_channels": "c8035eb62d357a27ce82718222840f53b8e5c9893f3ea29e86a72017583cb5b6",
+    "get_contact_information_for_restaurants": "f09f22ee8dd6830428107f42515228bdd8056b43674e0225d4131e1961da36dd",
+    "get_cuisine_type_for_restaurants": "6ff0af828aefba62e00f9bbd10db3f36f26600dda8da73ed23652e2821bceacf",
+    "get_current_day": "1ae8a230a6e99fb555a3e36b8d4450233066226494588ed7f3373c9b7496e49e",
+    "get_day_calendar_events": "ef0a4336003f228859f89f11af11f949d8421a448324ffa09f559583cad807ef",
+    "get_dietary_restrictions_for_all_restaurants": "185d6546212636fab7bf3aa725687d82392d79af2205e167e3594c86e1e93285",
+    "get_draft_emails": "5439db8f0897b239fdf2969b0ab2b06cf17b4b3eee492a509603aa65544a303f",
+    "get_file_by_id": "a1b444fda030ef789a8f4e6ca62aa11d11889ed9d3e524db793be29b9329f1ea",
+    "get_flight_information": "f1defe92cd57fa61d371f4a5c94c4c30e518df6bbe020315b624f500ce662174",
+    "get_hotels_address": "35be4f4836de5ef08900e5fd6e8418fd4376e8cc3da705f00c715263a885434d",
+    "get_hotels_prices": "d4b58ac356186a378ba8c72d732d9bcb078e240b4aef8bf4d1c206add77aed70",
+    "get_iban": "057ff914499766729710fc4d2476d7a2127ae5cefde0abdfe228d3b4540239b6",
+    "get_most_recent_transactions": "0551b41bd266e3e0a28256ab39173ba5c79185689076969a0bfbd008aa711add",
+    "get_price_for_restaurants": "16483aff105fd754ba85d61880bee8b1f4c773aa8f5a22935ce62b259e569485",
+    "get_rating_reviews_for_car_rental": "f7f141ccf3cb711f091d648f7353f5697faccd579325a195acd9dc3a9f6fab7e",
+    "get_rating_reviews_for_hotels": "f4413a71e9c067a6d306217ca92fdf9fe4d5488e1b9dd05f01da64897f407d78",
+    "get_rating_reviews_for_restaurants": "b5d2d8787010e25bf3c6f8c87e8c9ca8e17dde40105e13e87dd378a4fbe6c403",
+    "get_received_emails": "c92c204de4463c9d0ace155bf79df5bd4ed771cef43245e73128e41c8c03c95d",
+    "get_restaurants_address": "56776ca8326f243371bcca66338ba2ba51f66d125f45561e44fe3fe2a5c1a840",
+    "get_scheduled_transactions": "4d2ac61fd9d484d43d6af7f0b4d250d0f5b5360eea8c78deac436ab94235bcf2",
+    "get_sent_emails": "f0a2918c5b800ca10116920113fbf4da6cf73fbb014fbd3e31ad80365c13ff85",
+    "get_unread_emails": "fe93730f11e85f174b78a65412206b99296fa143435616555cecf4b4c09ba275",
+    "get_user_info": "7338bf49f52f71c093452de33ba54be56ef999f2d0bca2c04b24a838d36c111f",
+    "get_user_information": "1d7e22b9aac16a7c64639e8f7688056b3ef294466a0c6cc98c6e5fedd8620782",
+    "get_users_in_channel": "5d137969ecf245cbe4dddec91bbdb55cfc7689aa5dc07a65d6eea923d760dedf",
+    "get_webpage": "af1a9211261fc7218fedcf42d9ec9349fb0d2445b2670a3f896889a85644ce8e",
+    "invite_user_to_slack": "1210d6a6edd9d5e19e02fdd5d4e93340e4db6b7175217dab479a02e4f3ba428d",
+    "list_files": "38596af2b1984c8383ffa9c64054cc4be6392c4d16338186603f5f12251f9240",
+    "post_webpage": "db6398a1455b2da549898369197621136ff1cfd54138344e41458465058106fc",
+    "read_channel_messages": "ae382342e8240e839c9e6d5cd44435d2225b1880fb19e2ffe2ccf423427d86a9",
+    "read_file": "c982aeee8a7572685bb24af508aab9309df7f9e0b4d971c2d8e4b3a10e22a3a1",
+    "read_inbox": "7b8ee47cbe3fc3a1ce3ce0c44a56e5fec9d6728c46fb851876305aed5e641c0d",
+    "remove_user_from_slack": "3a75a80514410e39c0acc55ecf7b7bc4a540d6ef8ff8d325b145c6d3ccea9488",
+    "reschedule_calendar_event": "048edffd87bd524e21c37a3c561ccfc54524e4772582e42c6acab584bb712eb6",
+    "reserve_car_rental": "4683f8932fb8be6be63b78d593550efb4d012cd3950a953d4eed489b3ed22ab5",
+    "reserve_hotel": "9b6d7588ae9b2f4c3fbb0aa0009080efe80b2ee350b02864c27870cd94d4af5e",
+    "reserve_restaurant": "57404aa8aba28546ee88d55a629c01f891304c413e10a5fc89aacd8f8211ce6a",
+    "schedule_transaction": "ba19a4240c78c54fddbfe77850af6d6ab0be4251c0de555678bd05591d07ff10",
+    "search_calendar_events": "1e32efa58c1144688ae2dfc51d291cbbcceb38e7a4f9e25934758e3cd5eca742",
+    "search_contacts_by_email": "65e1fa714fa3d4a7b4b4b275e2f58efc5d7a135bb28d289b3c93557eea79dae8",
+    "search_contacts_by_name": "f4f363e8b10a4150d1ca267225394bfb26e1269a929826115f3558c2d77d592e",
+    "search_emails": "19352f34d5002a7a4940567f1af5d0d4e1877abba69db3e8e298a61e0768acbf",
+    "search_files": "df072078ac08d0dffc8e11275bfdba80971264007aaf51e8bed89211d3afff9f",
+    "search_files_by_filename": "4244982475cb7786ccd311f216ff6038f3f2172872bf315f570c398ab47c1a3b",
+    "send_channel_message": "e63b42e936dac66ab33ebeace91f6f7146c89f5fdacc0128678f92cd7b7f805a",
+    "send_direct_message": "ec43cd2d2f9350b0e6db2d6160a2dd0f63b1c153f32264c9e73be1931209df6c",
+    "send_email": "c1afc71924aaaa7f28a1a227baff2a0c724be774706e30bf560b13c7e3d85d84",
+    "send_money": "94e4b0a9bf349ee90ff419c56ed1dc6f8d41c3cf26d3411fcaca613115374126",
+    "share_file": "1b111bbd23d7b80f2a6067eda25d2949df7c3fb3ebe3eb5b0d2576c703ced3a1",
+    "update_password": "78cfcb36e94cbc860feefd938752067cad6713dc78731fe5a9d0950f95f5880a",
+    "update_scheduled_transaction": "e5199a243f325b6eb54c87a8bc82d3d4abc919aec14877bf78512916aa9ca6c3",
+    "update_user_info": "ccacbf7abc7b8356e35f76c422493ada0e6e008835be44f0a0af0bfabc3d7a74"
+  },
+  "tools": {
+    "add_calendar_event_participants": {
+      "args": {
+        "event_id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `event_id` selects an object, query result, or candidate used by `add_calendar_event_participants`.",
+          "name": "event_id",
+          "sink_role": "selector"
+        },
+        "participants": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `participants` identifies an action destination or external principal/object.",
+          "name": "participants",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `add_calendar_event_participants` classified as ACTION with sink_scope=calendar.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "calendar",
+      "tool_name": "add_calendar_event_participants",
+      "tool_type": "ACTION"
+    },
+    "add_user_to_channel": {
+      "args": {
+        "channel": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `channel` identifies an action destination or external principal/object.",
+          "name": "channel",
+          "sink_role": "target"
+        },
+        "user": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `user` identifies an action destination or external principal/object.",
+          "name": "user",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `add_user_to_channel` classified as ACTION with sink_scope=external.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "external",
+      "tool_name": "add_user_to_channel",
+      "tool_type": "ACTION"
+    },
+    "append_to_file": {
+      "args": {
+        "content": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `content` is a content payload rather than an action destination.",
+          "name": "content",
+          "sink_role": "content"
+        },
+        "file_id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check"
+          ],
+          "heuristic_reason": "Semantic review: `file_id` selects an object, query result, or candidate used by `append_to_file`.",
+          "name": "file_id",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `append_to_file` classified as ACTION with sink_scope=workspace.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "workspace",
+      "tool_name": "append_to_file",
+      "tool_type": "ACTION"
+    },
+    "cancel_calendar_event": {
+      "args": {
+        "event_id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `event_id` selects an object, query result, or candidate used by `cancel_calendar_event`.",
+          "name": "event_id",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `cancel_calendar_event` classified as ACTION with sink_scope=calendar.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "calendar",
+      "tool_name": "cancel_calendar_event",
+      "tool_type": "ACTION"
+    },
+    "check_restaurant_opening_hours": {
+      "args": {
+        "restaurant_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `restaurant_names` selects an object, query result, or candidate used by `check_restaurant_opening_hours`.",
+          "name": "restaurant_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `check_restaurant_opening_hours` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "check_restaurant_opening_hours",
+      "tool_type": "READ_LOW"
+    },
+    "create_calendar_event": {
+      "args": {
+        "description": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `description` is a content payload rather than an action destination.",
+          "name": "description",
+          "sink_role": "content"
+        },
+        "end_time": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `end_time` controls how or when `create_calendar_event` is executed.",
+          "name": "end_time",
+          "sink_role": "control"
+        },
+        "location": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `location` selects an object, query result, or candidate used by `create_calendar_event`.",
+          "name": "location",
+          "sink_role": "selector"
+        },
+        "participants": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `participants` identifies an action destination or external principal/object.",
+          "name": "participants",
+          "sink_role": "target"
+        },
+        "start_time": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `start_time` controls how or when `create_calendar_event` is executed.",
+          "name": "start_time",
+          "sink_role": "control"
+        },
+        "title": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `title` is a content payload rather than an action destination.",
+          "name": "title",
+          "sink_role": "content"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `create_calendar_event` classified as ACTION with sink_scope=calendar.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "calendar",
+      "tool_name": "create_calendar_event",
+      "tool_type": "ACTION"
+    },
+    "create_file": {
+      "args": {
+        "content": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `content` is a content payload rather than an action destination.",
+          "name": "content",
+          "sink_role": "content"
+        },
+        "filename": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check"
+          ],
+          "heuristic_reason": "Semantic review: `filename` selects an object, query result, or candidate used by `create_file`.",
+          "name": "filename",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `create_file` classified as ACTION with sink_scope=workspace.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "workspace",
+      "tool_name": "create_file",
+      "tool_type": "ACTION"
+    },
+    "delete_email": {
+      "args": {
+        "email_id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check"
+          ],
+          "heuristic_reason": "Semantic review: `email_id` selects an object, query result, or candidate used by `delete_email`.",
+          "name": "email_id",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `delete_email` classified as ACTION with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "messaging",
+      "tool_name": "delete_email",
+      "tool_type": "ACTION"
+    },
+    "delete_file": {
+      "args": {
+        "file_id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check"
+          ],
+          "heuristic_reason": "Semantic review: `file_id` selects an object, query result, or candidate used by `delete_file`.",
+          "name": "file_id",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `delete_file` classified as ACTION with sink_scope=workspace.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "workspace",
+      "tool_name": "delete_file",
+      "tool_type": "ACTION"
+    },
+    "get_all_car_rental_companies_in_city": {
+      "args": {
+        "city": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `city` selects an object, query result, or candidate used by `get_all_car_rental_companies_in_city`.",
+          "name": "city",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_all_car_rental_companies_in_city` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_all_car_rental_companies_in_city",
+      "tool_type": "READ_LOW"
+    },
+    "get_all_hotels_in_city": {
+      "args": {
+        "city": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `city` selects an object, query result, or candidate used by `get_all_hotels_in_city`.",
+          "name": "city",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_all_hotels_in_city` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_all_hotels_in_city",
+      "tool_type": "READ_LOW"
+    },
+    "get_all_restaurants_in_city": {
+      "args": {
+        "city": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `city` selects an object, query result, or candidate used by `get_all_restaurants_in_city`.",
+          "name": "city",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_all_restaurants_in_city` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_all_restaurants_in_city",
+      "tool_type": "READ_LOW"
+    },
+    "get_balance": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_balance` classified as READ_SENSITIVE with sink_scope=financial.",
+      "output": {
+        "C_label": "SENSITIVE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "financial",
+      "tool_name": "get_balance",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_car_fuel_options": {
+      "args": {
+        "company_name": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `company_name` selects an object, query result, or candidate used by `get_car_fuel_options`.",
+          "name": "company_name",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_car_fuel_options` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_car_fuel_options",
+      "tool_type": "READ_LOW"
+    },
+    "get_car_price_per_day": {
+      "args": {
+        "company_name": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `company_name` selects an object, query result, or candidate used by `get_car_price_per_day`.",
+          "name": "company_name",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_car_price_per_day` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_car_price_per_day",
+      "tool_type": "READ_LOW"
+    },
+    "get_car_rental_address": {
+      "args": {
+        "company_name": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `company_name` selects an object, query result, or candidate used by `get_car_rental_address`.",
+          "name": "company_name",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_car_rental_address` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_car_rental_address",
+      "tool_type": "READ_LOW"
+    },
+    "get_car_types_available": {
+      "args": {
+        "company_name": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `company_name` selects an object, query result, or candidate used by `get_car_types_available`.",
+          "name": "company_name",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_car_types_available` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_car_types_available",
+      "tool_type": "READ_LOW"
+    },
+    "get_channels": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_channels` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "messaging",
+      "tool_name": "get_channels",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_contact_information_for_restaurants": {
+      "args": {
+        "restaurant_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `restaurant_names` selects an object, query result, or candidate used by `get_contact_information_for_restaurants`.",
+          "name": "restaurant_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_contact_information_for_restaurants` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_contact_information_for_restaurants",
+      "tool_type": "READ_LOW"
+    },
+    "get_cuisine_type_for_restaurants": {
+      "args": {
+        "restaurant_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `restaurant_names` selects an object, query result, or candidate used by `get_cuisine_type_for_restaurants`.",
+          "name": "restaurant_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_cuisine_type_for_restaurants` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_cuisine_type_for_restaurants",
+      "tool_type": "READ_LOW"
+    },
+    "get_current_day": {
+      "args": {},
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_current_day` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_current_day",
+      "tool_type": "READ_LOW"
+    },
+    "get_day_calendar_events": {
+      "args": {
+        "day": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `day` controls how or when `get_day_calendar_events` is executed.",
+          "name": "day",
+          "sink_role": "control"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_day_calendar_events` classified as READ_SENSITIVE with sink_scope=calendar.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "calendar",
+      "tool_name": "get_day_calendar_events",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_dietary_restrictions_for_all_restaurants": {
+      "args": {
+        "restaurant_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `restaurant_names` selects an object, query result, or candidate used by `get_dietary_restrictions_for_all_restaurants`.",
+          "name": "restaurant_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_dietary_restrictions_for_all_restaurants` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_dietary_restrictions_for_all_restaurants",
+      "tool_type": "READ_LOW"
+    },
+    "get_draft_emails": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_draft_emails` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "messaging",
+      "tool_name": "get_draft_emails",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_file_by_id": {
+      "args": {
+        "file_id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check"
+          ],
+          "heuristic_reason": "Semantic review: `file_id` selects an object, query result, or candidate used by `get_file_by_id`.",
+          "name": "file_id",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_file_by_id` classified as READ_SENSITIVE with sink_scope=workspace.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "workspace",
+      "tool_name": "get_file_by_id",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_flight_information": {
+      "args": {
+        "arrival_city": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `arrival_city` selects an object, query result, or candidate used by `get_flight_information`.",
+          "name": "arrival_city",
+          "sink_role": "selector"
+        },
+        "departure_city": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `departure_city` selects an object, query result, or candidate used by `get_flight_information`.",
+          "name": "departure_city",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_flight_information` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_flight_information",
+      "tool_type": "READ_LOW"
+    },
+    "get_hotels_address": {
+      "args": {
+        "hotel_name": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `hotel_name` selects an object, query result, or candidate used by `get_hotels_address`.",
+          "name": "hotel_name",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_hotels_address` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_hotels_address",
+      "tool_type": "READ_LOW"
+    },
+    "get_hotels_prices": {
+      "args": {
+        "hotel_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `hotel_names` selects an object, query result, or candidate used by `get_hotels_prices`.",
+          "name": "hotel_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_hotels_prices` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_hotels_prices",
+      "tool_type": "READ_LOW"
+    },
+    "get_iban": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_iban` classified as READ_SENSITIVE with sink_scope=financial.",
+      "output": {
+        "C_label": "SENSITIVE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "financial",
+      "tool_name": "get_iban",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_most_recent_transactions": {
+      "args": {
+        "n": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `n` controls how or when `get_most_recent_transactions` is executed.",
+          "name": "n",
+          "sink_role": "control"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_most_recent_transactions` classified as READ_SENSITIVE with sink_scope=financial.",
+      "output": {
+        "C_label": "SENSITIVE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "financial",
+      "tool_name": "get_most_recent_transactions",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_price_for_restaurants": {
+      "args": {
+        "restaurant_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `restaurant_names` selects an object, query result, or candidate used by `get_price_for_restaurants`.",
+          "name": "restaurant_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_price_for_restaurants` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_price_for_restaurants",
+      "tool_type": "READ_LOW"
+    },
+    "get_rating_reviews_for_car_rental": {
+      "args": {
+        "company_name": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `company_name` selects an object, query result, or candidate used by `get_rating_reviews_for_car_rental`.",
+          "name": "company_name",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_rating_reviews_for_car_rental` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_rating_reviews_for_car_rental",
+      "tool_type": "READ_LOW"
+    },
+    "get_rating_reviews_for_hotels": {
+      "args": {
+        "hotel_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `hotel_names` selects an object, query result, or candidate used by `get_rating_reviews_for_hotels`.",
+          "name": "hotel_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_rating_reviews_for_hotels` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_rating_reviews_for_hotels",
+      "tool_type": "READ_LOW"
+    },
+    "get_rating_reviews_for_restaurants": {
+      "args": {
+        "restaurant_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `restaurant_names` selects an object, query result, or candidate used by `get_rating_reviews_for_restaurants`.",
+          "name": "restaurant_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_rating_reviews_for_restaurants` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_rating_reviews_for_restaurants",
+      "tool_type": "READ_LOW"
+    },
+    "get_received_emails": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_received_emails` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "messaging",
+      "tool_name": "get_received_emails",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_restaurants_address": {
+      "args": {
+        "restaurant_names": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `restaurant_names` selects an object, query result, or candidate used by `get_restaurants_address`.",
+          "name": "restaurant_names",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "track_only",
+      "heuristic_reason": "Semantic review: `get_restaurants_address` classified as READ_LOW with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "get_restaurants_address",
+      "tool_type": "READ_LOW"
+    },
+    "get_scheduled_transactions": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_scheduled_transactions` classified as READ_SENSITIVE with sink_scope=financial.",
+      "output": {
+        "C_label": "SENSITIVE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "financial",
+      "tool_name": "get_scheduled_transactions",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_sent_emails": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_sent_emails` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "messaging",
+      "tool_name": "get_sent_emails",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_unread_emails": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_unread_emails` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "messaging",
+      "tool_name": "get_unread_emails",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_user_info": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_user_info` classified as READ_SENSITIVE with sink_scope=internal.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "internal",
+      "tool_name": "get_user_info",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_user_information": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_user_information` classified as READ_SENSITIVE with sink_scope=internal.",
+      "output": {
+        "C_label": "SENSITIVE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "internal",
+      "tool_name": "get_user_information",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_users_in_channel": {
+      "args": {
+        "channel": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `channel` identifies an action destination or external principal/object.",
+          "name": "channel",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_users_in_channel` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "messaging",
+      "tool_name": "get_users_in_channel",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "get_webpage": {
+      "args": {
+        "url": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection"
+          ],
+          "heuristic_reason": "Semantic review: `url` identifies an action destination or external principal/object.",
+          "name": "url",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `get_webpage` classified as READ_SENSITIVE with sink_scope=none.",
+      "output": {
+        "C_label": "PUBLIC",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "none",
+      "tool_name": "get_webpage",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "invite_user_to_slack": {
+      "args": {
+        "user": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `user` identifies an action destination or external principal/object.",
+          "name": "user",
+          "sink_role": "target"
+        },
+        "user_email": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `user_email` identifies an action destination or external principal/object.",
+          "name": "user_email",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `invite_user_to_slack` classified as ACTION with sink_scope=external.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "external",
+      "tool_name": "invite_user_to_slack",
+      "tool_type": "ACTION"
+    },
+    "list_files": {
+      "args": {},
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `list_files` classified as READ_SENSITIVE with sink_scope=workspace.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "workspace",
+      "tool_name": "list_files",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "post_webpage": {
+      "args": {
+        "content": {
+          "C_max": "PUBLIC",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance",
+            "no_private_to_public_sink",
+            "minimal_disclosure"
+          ],
+          "heuristic_reason": "Semantic review: `content` is a content payload rather than an action destination.",
+          "name": "content",
+          "sink_role": "content"
+        },
+        "url": {
+          "C_max": "PUBLIC",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `url` identifies an action destination or external principal/object.",
+          "name": "url",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `post_webpage` classified as ACTION with sink_scope=public.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "public",
+      "tool_name": "post_webpage",
+      "tool_type": "ACTION"
+    },
+    "read_channel_messages": {
+      "args": {
+        "channel": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `channel` identifies an action destination or external principal/object.",
+          "name": "channel",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `read_channel_messages` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "INTERNAL",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "messaging",
+      "tool_name": "read_channel_messages",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "read_file": {
+      "args": {
+        "file_path": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check"
+          ],
+          "heuristic_reason": "Semantic review: `file_path` selects an object, query result, or candidate used by `read_file`.",
+          "name": "file_path",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `read_file` classified as READ_SENSITIVE with sink_scope=workspace.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "workspace",
+      "tool_name": "read_file",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "read_inbox": {
+      "args": {
+        "user": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `user` identifies an action destination or external principal/object.",
+          "name": "user",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `read_inbox` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "messaging",
+      "tool_name": "read_inbox",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "remove_user_from_slack": {
+      "args": {
+        "user": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `user` identifies an action destination or external principal/object.",
+          "name": "user",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `remove_user_from_slack` classified as ACTION with sink_scope=external.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "external",
+      "tool_name": "remove_user_from_slack",
+      "tool_type": "ACTION"
+    },
+    "reschedule_calendar_event": {
+      "args": {
+        "event_id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `event_id` selects an object, query result, or candidate used by `reschedule_calendar_event`.",
+          "name": "event_id",
+          "sink_role": "selector"
+        },
+        "new_end_time": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `new_end_time` controls how or when `reschedule_calendar_event` is executed.",
+          "name": "new_end_time",
+          "sink_role": "control"
+        },
+        "new_start_time": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `new_start_time` controls how or when `reschedule_calendar_event` is executed.",
+          "name": "new_start_time",
+          "sink_role": "control"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `reschedule_calendar_event` classified as ACTION with sink_scope=calendar.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "calendar",
+      "tool_name": "reschedule_calendar_event",
+      "tool_type": "ACTION"
+    },
+    "reserve_car_rental": {
+      "args": {
+        "company": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection"
+          ],
+          "heuristic_reason": "Semantic review: `company` identifies an action destination or external principal/object.",
+          "name": "company",
+          "sink_role": "target"
+        },
+        "end_time": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `end_time` controls how or when `reserve_car_rental` is executed.",
+          "name": "end_time",
+          "sink_role": "control"
+        },
+        "start_time": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `start_time` controls how or when `reserve_car_rental` is executed.",
+          "name": "start_time",
+          "sink_role": "control"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `reserve_car_rental` classified as ACTION with sink_scope=booking.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "booking",
+      "tool_name": "reserve_car_rental",
+      "tool_type": "ACTION"
+    },
+    "reserve_hotel": {
+      "args": {
+        "end_day": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `end_day` controls how or when `reserve_hotel` is executed.",
+          "name": "end_day",
+          "sink_role": "control"
+        },
+        "hotel": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection"
+          ],
+          "heuristic_reason": "Semantic review: `hotel` identifies an action destination or external principal/object.",
+          "name": "hotel",
+          "sink_role": "target"
+        },
+        "start_day": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `start_day` controls how or when `reserve_hotel` is executed.",
+          "name": "start_day",
+          "sink_role": "control"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `reserve_hotel` classified as ACTION with sink_scope=booking.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "booking",
+      "tool_name": "reserve_hotel",
+      "tool_type": "ACTION"
+    },
+    "reserve_restaurant": {
+      "args": {
+        "restaurant": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection"
+          ],
+          "heuristic_reason": "Semantic review: `restaurant` identifies an action destination or external principal/object.",
+          "name": "restaurant",
+          "sink_role": "target"
+        },
+        "start_time": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `start_time` controls how or when `reserve_restaurant` is executed.",
+          "name": "start_time",
+          "sink_role": "control"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `reserve_restaurant` classified as ACTION with sink_scope=booking.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "booking",
+      "tool_name": "reserve_restaurant",
+      "tool_type": "ACTION"
+    },
+    "schedule_transaction": {
+      "args": {
+        "amount": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `amount` controls how or when `schedule_transaction` is executed.",
+          "name": "amount",
+          "sink_role": "control"
+        },
+        "date": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `date` controls how or when `schedule_transaction` is executed.",
+          "name": "date",
+          "sink_role": "control"
+        },
+        "recipient": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection"
+          ],
+          "heuristic_reason": "Semantic review: `recipient` identifies an action destination or external principal/object.",
+          "name": "recipient",
+          "sink_role": "target"
+        },
+        "recurring": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `recurring` controls how or when `schedule_transaction` is executed.",
+          "name": "recurring",
+          "sink_role": "control"
+        },
+        "subject": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `subject` is a content payload rather than an action destination.",
+          "name": "subject",
+          "sink_role": "content"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `schedule_transaction` classified as ACTION with sink_scope=financial.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "financial",
+      "tool_name": "schedule_transaction",
+      "tool_type": "ACTION"
+    },
+    "search_calendar_events": {
+      "args": {
+        "date": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `date` controls how or when `search_calendar_events` is executed.",
+          "name": "date",
+          "sink_role": "control"
+        },
+        "query": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `query` selects an object, query result, or candidate used by `search_calendar_events`.",
+          "name": "query",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `search_calendar_events` classified as READ_SENSITIVE with sink_scope=calendar.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "calendar",
+      "tool_name": "search_calendar_events",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "search_contacts_by_email": {
+      "args": {
+        "query": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `query` selects an object, query result, or candidate used by `search_contacts_by_email`.",
+          "name": "query",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `search_contacts_by_email` classified as READ_SENSITIVE with sink_scope=none.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "search_contacts_by_email",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "search_contacts_by_name": {
+      "args": {
+        "query": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `query` selects an object, query result, or candidate used by `search_contacts_by_name`.",
+          "name": "query",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `search_contacts_by_name` classified as READ_SENSITIVE with sink_scope=none.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "none",
+      "tool_name": "search_contacts_by_name",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "search_emails": {
+      "args": {
+        "query": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `query` selects an object, query result, or candidate used by `search_emails`.",
+          "name": "query",
+          "sink_role": "selector"
+        },
+        "sender": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `sender` identifies an action destination or external principal/object.",
+          "name": "sender",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `search_emails` classified as READ_SENSITIVE with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "EXTERNAL",
+        "propagate_input_origins": false,
+        "raw_output_trust": "EXTERNAL",
+        "requires_structured_extraction": true
+      },
+      "sink_scope": "messaging",
+      "tool_name": "search_emails",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "search_files": {
+      "args": {
+        "query": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check"
+          ],
+          "heuristic_reason": "Semantic review: `query` selects an object, query result, or candidate used by `search_files`.",
+          "name": "query",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `search_files` classified as READ_SENSITIVE with sink_scope=workspace.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "workspace",
+      "tool_name": "search_files",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "search_files_by_filename": {
+      "args": {
+        "filename": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check"
+          ],
+          "heuristic_reason": "Semantic review: `filename` selects an object, query result, or candidate used by `search_files_by_filename`.",
+          "name": "filename",
+          "sink_role": "selector"
+        }
+      },
+      "check_mode": "control_check_and_track",
+      "heuristic_reason": "Semantic review: `search_files_by_filename` classified as READ_SENSITIVE with sink_scope=workspace.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TOOL_OUTPUT",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "workspace",
+      "tool_name": "search_files_by_filename",
+      "tool_type": "READ_SENSITIVE"
+    },
+    "send_channel_message": {
+      "args": {
+        "body": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction",
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance",
+            "destination_scope_match",
+            "minimal_disclosure"
+          ],
+          "heuristic_reason": "Semantic review: `body` is a content payload rather than an action destination.",
+          "name": "body",
+          "sink_role": "content"
+        },
+        "channel": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `channel` identifies an action destination or external principal/object.",
+          "name": "channel",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `send_channel_message` classified as ACTION with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "messaging",
+      "tool_name": "send_channel_message",
+      "tool_type": "ACTION"
+    },
+    "send_direct_message": {
+      "args": {
+        "body": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction",
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance",
+            "destination_scope_match",
+            "minimal_disclosure"
+          ],
+          "heuristic_reason": "Semantic review: `body` is a content payload rather than an action destination.",
+          "name": "body",
+          "sink_role": "content"
+        },
+        "recipient": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `recipient` identifies an action destination or external principal/object.",
+          "name": "recipient",
+          "sink_role": "target"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `send_direct_message` classified as ACTION with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "messaging",
+      "tool_name": "send_direct_message",
+      "tool_type": "ACTION"
+    },
+    "send_email": {
+      "args": {
+        "attachments": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "object_share_authorization",
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `attachments` selects an object, query result, or candidate used by `send_email`.",
+          "name": "attachments",
+          "sink_role": "selector"
+        },
+        "bcc": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `bcc` identifies an action destination or external principal/object.",
+          "name": "bcc",
+          "sink_role": "target"
+        },
+        "body": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction",
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance",
+            "destination_scope_match",
+            "minimal_disclosure"
+          ],
+          "heuristic_reason": "Semantic review: `body` is a content payload rather than an action destination.",
+          "name": "body",
+          "sink_role": "content"
+        },
+        "cc": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `cc` identifies an action destination or external principal/object.",
+          "name": "cc",
+          "sink_role": "target"
+        },
+        "recipients": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `recipients` identifies an action destination or external principal/object.",
+          "name": "recipients",
+          "sink_role": "target"
+        },
+        "subject": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "TOOL_OUTPUT",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction",
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance",
+            "destination_scope_match",
+            "minimal_disclosure"
+          ],
+          "heuristic_reason": "Semantic review: `subject` is a content payload rather than an action destination.",
+          "name": "subject",
+          "sink_role": "content"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `send_email` classified as ACTION with sink_scope=messaging.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "messaging",
+      "tool_name": "send_email",
+      "tool_type": "ACTION"
+    },
+    "send_money": {
+      "args": {
+        "amount": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `amount` controls how or when `send_money` is executed.",
+          "name": "amount",
+          "sink_role": "control"
+        },
+        "date": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `date` controls how or when `send_money` is executed.",
+          "name": "date",
+          "sink_role": "control"
+        },
+        "recipient": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection"
+          ],
+          "heuristic_reason": "Semantic review: `recipient` identifies an action destination or external principal/object.",
+          "name": "recipient",
+          "sink_role": "target"
+        },
+        "subject": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `subject` is a content payload rather than an action destination.",
+          "name": "subject",
+          "sink_role": "content"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `send_money` classified as ACTION with sink_scope=financial.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "financial",
+      "tool_name": "send_money",
+      "tool_type": "ACTION"
+    },
+    "share_file": {
+      "args": {
+        "email": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `email` identifies an action destination or external principal/object.",
+          "name": "email",
+          "sink_role": "target"
+        },
+        "file_id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "object_share_authorization",
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance",
+            "object_confidentiality_check",
+            "destination_scope_match"
+          ],
+          "heuristic_reason": "Semantic review: `file_id` selects an object, query result, or candidate used by `share_file`.",
+          "name": "file_id",
+          "sink_role": "selector"
+        },
+        "permission": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `permission` controls how or when `share_file` is executed.",
+          "name": "permission",
+          "sink_role": "control"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `share_file` classified as ACTION with sink_scope=external.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "external",
+      "tool_name": "share_file",
+      "tool_type": "ACTION"
+    },
+    "update_password": {
+      "args": {
+        "password": {
+          "C_max": "SECRET",
+          "I_min": "TRUSTED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "credential_or_secret",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_credential_use"
+          ],
+          "heuristic_reason": "Semantic review: `password` carries authentication or secret material.",
+          "name": "password",
+          "sink_role": "credential"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `update_password` classified as ACTION with sink_scope=credential.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "credential",
+      "tool_name": "update_password",
+      "tool_type": "ACTION"
+    },
+    "update_scheduled_transaction": {
+      "args": {
+        "amount": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `amount` controls how or when `update_scheduled_transaction` is executed.",
+          "name": "amount",
+          "sink_role": "control"
+        },
+        "date": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `date` controls how or when `update_scheduled_transaction` is executed.",
+          "name": "date",
+          "sink_role": "control"
+        },
+        "id": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "unknown_origin",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "exact_match_to_authorized_source",
+            "trusted_tool_derivation",
+            "schema_validated_parse",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_object_selection",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `id` selects an object, query result, or candidate used by `update_scheduled_transaction`.",
+          "name": "id",
+          "sink_role": "selector"
+        },
+        "recipient": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "destination_scope_match"
+          ],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "raw_external_content",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "trusted_tool_derivation",
+            "exact_match_to_authorized_source",
+            "source_object_binding"
+          ],
+          "flow_constraints": [
+            "authorized_destination",
+            "no_external_redirection"
+          ],
+          "heuristic_reason": "Semantic review: `recipient` identifies an action destination or external principal/object.",
+          "name": "recipient",
+          "sink_role": "target"
+        },
+        "recurring": {
+          "C_max": "SENSITIVE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "model_inferred_unverified",
+            "injected_instruction",
+            "default_without_authorization",
+            "unknown_origin",
+            "unauthorized_tool_output",
+            "stale_or_ambiguous_source"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "exact_match_to_authorized_source",
+            "schema_validated_parse",
+            "deterministic_transform"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "structured_source_required"
+          ],
+          "heuristic_reason": "Semantic review: `recurring` controls how or when `update_scheduled_transaction` is executed.",
+          "name": "recurring",
+          "sink_role": "control"
+        },
+        "subject": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "non_instructional_content",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `subject` is a content payload rather than an action destination.",
+          "name": "subject",
+          "sink_role": "content"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `update_scheduled_transaction` classified as ACTION with sink_scope=financial.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "financial",
+      "tool_name": "update_scheduled_transaction",
+      "tool_type": "ACTION"
+    },
+    "update_user_info": {
+      "args": {
+        "city": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `city` is a content payload rather than an action destination.",
+          "name": "city",
+          "sink_role": "content"
+        },
+        "first_name": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `first_name` is a content payload rather than an action destination.",
+          "name": "first_name",
+          "sink_role": "content"
+        },
+        "last_name": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `last_name` is a content payload rather than an action destination.",
+          "name": "last_name",
+          "sink_role": "content"
+        },
+        "street": {
+          "C_max": "USER_PRIVATE",
+          "I_min": "DELEGATED",
+          "declassifications": [
+            "explicit_output_delegation",
+            "content_minimization",
+            "task_relevant_private_output",
+            "schema_validated_export",
+            "redaction_or_abstraction"
+          ],
+          "deny_marks": [
+            "injected_instruction",
+            "policy_override_content",
+            "unknown_origin"
+          ],
+          "endorsements": [
+            "user_explicit",
+            "task_delegation",
+            "structured_extraction",
+            "schema_validated_parse",
+            "exact_match_to_authorized_source"
+          ],
+          "flow_constraints": [
+            "authorized_control_value",
+            "task_relevance"
+          ],
+          "heuristic_reason": "Semantic review: `street` is a content payload rather than an action destination.",
+          "name": "street",
+          "sink_role": "content"
+        }
+      },
+      "check_mode": "full",
+      "heuristic_reason": "Semantic review: `update_user_info` classified as ACTION with sink_scope=internal.",
+      "output": {
+        "C_label": "USER_PRIVATE",
+        "I_label": "TRUSTED",
+        "propagate_input_origins": false,
+        "raw_output_trust": "TOOL_OUTPUT",
+        "requires_structured_extraction": false
+      },
+      "sink_scope": "internal",
+      "tool_name": "update_user_info",
+      "tool_type": "ACTION"
+    }
+  }
+}
