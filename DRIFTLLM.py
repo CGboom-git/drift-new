@@ -78,6 +78,14 @@ class DRIFTLLM(PromptingLLM):
     def _source_flow_tool_step(self, messages):
         return sum(1 for message in messages if message.get("role") == "tool")
 
+    def _source_flow_tool_args(self, tool_message):
+        tool_call = tool_message.get("tool_call")
+        if hasattr(tool_call, "args"):
+            return tool_call.args
+        if isinstance(tool_call, dict):
+            return tool_call.get("args") or {}
+        return {}
+
     def _source_flow_record_tool_message(self, messages):
         if not self.source_flow_enabled() or len(messages) == 0 or messages[-1]["role"] != "tool":
             return None
@@ -88,6 +96,7 @@ class DRIFTLLM(PromptingLLM):
         tool_message = messages[-1]
         tool_name = self._source_flow_tool_name(tool_message)
         tool_call_id = self._source_flow_tool_call_id(tool_message)
+        tool_args = self._source_flow_tool_args(tool_message)
         step = self._source_flow_tool_step(messages)
         raw_source_id = self.source_label_store.record_tool_raw_output(
             tool_name,
@@ -97,6 +106,14 @@ class DRIFTLLM(PromptingLLM):
         )
         raw_created = self.source_label_store.last_raw_output_created
         if raw_created:
+            content = tool_message.get("content")
+            if self.source_label_store.has_delegation_anchor(content):
+                self.source_label_store.mark_read_output_as_delegated(raw_source_id)
+            else:
+                for arg_value in tool_args.values():
+                    if self.source_label_store.has_delegation_anchor(arg_value):
+                        self.source_label_store.mark_read_output_as_delegated(raw_source_id)
+                        break
             self.source_label_store.record_structured_fields(
                 tool_name,
                 raw_source_id,
@@ -273,12 +290,6 @@ class DRIFTLLM(PromptingLLM):
                                       extended_checklist):
         snapshot = self._source_flow_trajectory_snapshot()
 
-        self.function_trajectory = extended_trajectory
-        try:
-            self.node_checklist = json.dumps(extended_checklist)
-        except Exception:
-            self.node_checklist = extended_checklist
-
         if hasattr(self, "client") and self.client is not None:
             try:
                 latest_function_messages = ""
@@ -288,12 +299,11 @@ class DRIFTLLM(PromptingLLM):
                     query=query,
                     last_function_messages=latest_function_messages,
                     thought_content=thought_content or "",
-                    function_trajectory=self.function_trajectory,
+                    function_trajectory=snapshot["function_trajectory"],
                     current_function_trajectory=extended_trajectory,
                     conversations=messages,
                 )
                 if not side_ok:
-                    self._source_flow_restore_trajectory_snapshot(snapshot)
                     self.source_label_store.validation_trace.append(
                         ValidationTraceEntry(
                             step=len(self.achieved_function_trajectory),
@@ -327,6 +337,12 @@ class DRIFTLLM(PromptingLLM):
                         f"Controlled Action Extension alignment_judge unavailable for {tool_name}; "
                         "proceeding to source-flow validation."
                     )
+
+        self.function_trajectory = extended_trajectory
+        try:
+            self.node_checklist = json.dumps(extended_checklist)
+        except Exception:
+            self.node_checklist = extended_checklist
 
         trajectory_state = {
             "function_trajectory": self.function_trajectory,

@@ -112,11 +112,6 @@ class SourceLabelStore:
             return existing_source_id
 
         source_labels = ["tool_output", "raw_observation", "raw_external_content"]
-        normalized_output = self._normalize(output)
-        for anchor_value in self._delegation_anchor_values:
-            if anchor_value and anchor_value in normalized_output:
-                source_labels = source_labels + ["user_specified_source", "delegated_task_source"]
-                break
 
         source_id = self._add_record(
             step=step,
@@ -141,6 +136,26 @@ class SourceLabelStore:
             self._raw_output_ids[self._tool_call_key(tool_call_id)] = source_id
         self.last_raw_output_created = True
         return source_id
+
+    def has_delegation_anchor(self, value: Any) -> bool:
+        normalized = self._normalize(value)
+        if not normalized:
+            return False
+        return any(
+            anchor and anchor in normalized
+            for anchor in self._delegation_anchor_values
+        )
+
+    def mark_read_output_as_delegated(self, source_id: str) -> None:
+        for record in self.records:
+            if record.source_id == source_id:
+                current = record.source_labels
+                if "delegated_task_source" not in current:
+                    record.source_labels = current + [
+                        "user_specified_source",
+                        "delegated_task_source",
+                    ]
+                return
 
     def record_tool_sanitized_output(
         self,
