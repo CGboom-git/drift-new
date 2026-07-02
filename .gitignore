@@ -1,2 +1,9 @@
 runs_
 *log.txt
+
+# Ignore private/helper files
+y
+y.pub
+Agent
+PUSH_GUIDE.md
+quick_push.py
