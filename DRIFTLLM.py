@@ -579,7 +579,13 @@ class DRIFTLLM(PromptingLLM):
                     if '(' in item:
                         fixed_items.append(item)
                     elif '=' in item:
-                        fixed_items.append(item)
+                        key, _, val = item.partition("=")
+                        val = val.strip()
+                        if val in ("...", "None", "null", "Null"):
+                            val = "..." if val == "..." else "None"
+                            fixed_items.append(f"{key}={val}")
+                        else:
+                            fixed_items.append(item)
                     elif re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', item):
                         fixed_items.append(f'{item}()')
                     else:
