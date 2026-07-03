@@ -31,17 +31,29 @@ class SinkEvidenceResolver:
         source_store,
         contract_helper,
     ) -> dict[str, SinkEvidence]:
-        return {
-            f"{tool_name}.{arg_name}": self.resolve_arg(
+        result: dict[str, SinkEvidence] = {}
+        for arg_name, value in tool_args.items():
+            sink = f"{tool_name}.{arg_name}"
+            if isinstance(value, list):
+                for idx, elem in enumerate(value):
+                    item_sink = f"{sink}[{idx}]"
+                    result[item_sink] = self.resolve_arg(
+                        tool_name=tool_name,
+                        arg_name=arg_name,
+                        value=elem,
+                        sink_spec=compiled_sink_specs.get(sink),
+                        source_store=source_store,
+                        contract_helper=contract_helper,
+                    )
+            result[sink] = self.resolve_arg(
                 tool_name=tool_name,
                 arg_name=arg_name,
                 value=value,
-                sink_spec=compiled_sink_specs.get(f"{tool_name}.{arg_name}"),
+                sink_spec=compiled_sink_specs.get(sink),
                 source_store=source_store,
                 contract_helper=contract_helper,
             )
-            for arg_name, value in tool_args.items()
-        }
+        return result
 
     def resolve_arg(
         self,

@@ -18,6 +18,9 @@ HIGH_RISK_ARG_NAMES = {
     "user",
     "username",
     "participants",
+    "attendees",
+    "invitees",
+    "recipients",
     "channel",
     "amount",
     "account",
@@ -306,6 +309,29 @@ class FlowAwareValidator:
         controlled_ext = bool((trajectory_state or {}).get("controlled_extension"))
 
         for arg_name, value in tool_args.items():
+            high_risk = contract_helper.is_high_risk_arg(tool_name, arg_name)
+            content_like = contract_helper.is_content_arg(tool_name, arg_name)
+            sink_role = contract_helper.get_arg_role(tool_name, arg_name)
+            deny_marks = contract_helper.get_arg_deny_marks(tool_name, arg_name)
+
+            if isinstance(value, list) and high_risk:
+                for idx, elem in enumerate(value):
+                    item_sink = f"{tool_name}.{arg_name}[{idx}]"
+                    item_evidence = sink_evidence.get(item_sink) or SinkEvidence(
+                        sink=item_sink,
+                        value=elem,
+                        source_labels=["unknown_origin", "model_generated"],
+                        resolution_status="model_generated",
+                    )
+                    item_labels = set(item_evidence.source_labels)
+                    if item_labels & self.INJECTED_LABELS:
+                        blocked.append(
+                            self._blocked(item_sink, "injected_source",
+                                          SinkSpec(sink=item_sink, mode="track_only"),
+                                          item_evidence, tool_name, arg_name,
+                                          tool_type, sink_role, deny_marks))
+                continue
+
             sink = f"{tool_name}.{arg_name}"
             spec = compiled_sink_specs.get(sink) or SinkSpec(sink=sink, mode="track_only")
             evidence = sink_evidence.get(sink) or SinkEvidence(
@@ -314,10 +340,6 @@ class FlowAwareValidator:
                 source_labels=["unknown_origin", "model_generated"],
                 resolution_status="model_generated",
             )
-            high_risk = contract_helper.is_high_risk_arg(tool_name, arg_name)
-            content_like = contract_helper.is_content_arg(tool_name, arg_name)
-            sink_role = contract_helper.get_arg_role(tool_name, arg_name)
-            deny_marks = contract_helper.get_arg_deny_marks(tool_name, arg_name)
             has_expectation = self._has_expectation(spec)
             labels = set(evidence.source_labels)
 
