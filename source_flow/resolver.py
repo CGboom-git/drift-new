@@ -77,6 +77,10 @@ class SinkEvidenceResolver:
 
         for status, matches, confidence in match_groups:
             if matches:
+                clean = [m for m in matches if "injected_instruction" not in set(getattr(m, "source_labels", []))]
+                if clean:
+                    return self._from_matches(sink, value, matches, status, confidence,
+                                              extra_labels=["clean_support_preferred"])
                 return self._from_matches(sink, value, matches, status, confidence)
 
         if content_like:

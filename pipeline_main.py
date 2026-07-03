@@ -134,9 +134,14 @@ def main(args, suite_type):
         attack = load_attack(attacker, task_suite, tools_pipeline)
         target_injection_tasks = args.target_injection_tasks
         if target_injection_tasks is not None:
+            raw_ids = args.target_injection_tasks.split(",")
             injection_tasks_to_run = {
-            injection_task_id: suite.get_injection_task_by_id(injection_task_id)
-            for injection_task_id in args.target_injection_tasks.split(",")
+                (
+                    rid if rid.startswith("injection_task_") else f"injection_task_{rid}"
+                ): suite.get_injection_task_by_id(
+                    rid if rid.startswith("injection_task_") else f"injection_task_{rid}"
+                )
+                for rid in raw_ids
             }
             logger.info(f"Injection Tasks of {target_injection_tasks}.")
         else:

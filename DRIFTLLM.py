@@ -220,6 +220,7 @@ class DRIFTLLM(PromptingLLM):
                         "blocked_flows": decision.blocked_flows,
                         "warnings": decision.warnings,
                         "call_error_message": decision.call_error_message,
+                        "controlled_extension": False,
                     },
                     decision=decision_text,
                     would_reject=decision.reject,
@@ -254,6 +255,23 @@ class DRIFTLLM(PromptingLLM):
         self.function_trajectory = copy.deepcopy(snapshot["function_trajectory"])
         self.achieved_function_trajectory = copy.deepcopy(snapshot["achieved_function_trajectory"])
         self.node_checklist = copy.deepcopy(snapshot["node_checklist"])
+
+    def _source_flow_sanitize_rejected_output(self, output, call_error_message):
+        output["tool_calls"] = []
+        content = output.get("content", "") or ""
+        cleaned = re.sub(
+            r"<function_call>.*?</function_call>",
+            "<function_call>[]</function_call>",
+            content,
+            flags=re.DOTALL,
+        )
+        if call_error_message:
+            cleaned = (
+                cleaned.strip()
+                + "\n\n"
+                + call_error_message
+            )
+        output["content"] = cleaned
 
     def _source_flow_handle_rejection_after_dynamic_validation(self, snapshot):
         if not self._source_flow_state_changed(snapshot):
@@ -290,6 +308,21 @@ class DRIFTLLM(PromptingLLM):
                                       extended_checklist):
         snapshot = self._source_flow_trajectory_snapshot()
 
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="controlled_action_extension_candidate",
+                source_ids=[],
+                details={
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "extended_trajectory": extended_trajectory,
+                },
+                decision="log_only",
+                would_reject=False,
+            )
+        )
+
         if hasattr(self, "client") and self.client is not None:
             try:
                 latest_function_messages = ""
@@ -313,6 +346,7 @@ class DRIFTLLM(PromptingLLM):
                                 "tool_name": tool_name,
                                 "reason": "side_effect_mismatch",
                                 "side_reason": side_reason,
+                                "controlled_extension": True,
                             },
                             decision="reject",
                             would_reject=True,
@@ -338,6 +372,20 @@ class DRIFTLLM(PromptingLLM):
                         "proceeding to source-flow validation."
                     )
 
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="side_effect_alignment_passed",
+                source_ids=[],
+                details={
+                    "tool_name": tool_name,
+                    "controlled_extension": True,
+                },
+                decision="allow",
+                would_reject=False,
+            )
+        )
+
         self.function_trajectory = extended_trajectory
         try:
             self.node_checklist = json.dumps(extended_checklist)
@@ -349,6 +397,8 @@ class DRIFTLLM(PromptingLLM):
             "achieved_function_trajectory": self.achieved_function_trajectory,
             "node_checklist": self.node_checklist,
             "tool_permissions": self.tool_permissions,
+            "controlled_extension": True,
+            "trajectory_outside_action": True,
         }
 
         sink_specs = self.source_flow_compiler.spec_map(
@@ -380,6 +430,7 @@ class DRIFTLLM(PromptingLLM):
                         "reason": decision.blocked_flows[0]["reason"] if decision.blocked_flows else "unknown",
                         "blocked_flows": decision.blocked_flows,
                         "call_error_message": decision.call_error_message,
+                        "controlled_extension": True,
                     },
                     decision="reject",
                     would_reject=True,
@@ -956,7 +1007,10 @@ class DRIFTLLM(PromptingLLM):
                     )
 
                     if not cae_result["allowed"]:
-                        output["tool_calls"] = []
+                        self._source_flow_sanitize_rejected_output(
+                            output,
+                            cae_result.get("call_error_message", cae_result["reason"]),
+                        )
                         error_msg = {
                             "role": "user",
                             "content": (
@@ -1219,7 +1273,9 @@ class DRIFTLLM(PromptingLLM):
         source_flow_decision = self._source_flow_validate_tool_calls(output)
         if source_flow_decision is not None and source_flow_decision.reject:
             self._source_flow_handle_rejection_after_dynamic_validation(source_flow_pre_dynamic_state)
-            output["tool_calls"] = []
+            self._source_flow_sanitize_rejected_output(
+                output, source_flow_decision.call_error_message
+            )
             error_message = {
                 "role": "user",
                 "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",

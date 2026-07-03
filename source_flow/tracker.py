@@ -73,7 +73,7 @@ class SourceLabelStore:
         )
 
         for anchor in self.delegation_detector.detect(user_query):
-            normalized = self._normalize(anchor.value)
+            normalized = self._normalize_source_anchor(anchor.value)
             self._delegation_anchor_values.add(normalized)
             self._add_record(
                 step=0,
@@ -138,11 +138,11 @@ class SourceLabelStore:
         return source_id
 
     def has_delegation_anchor(self, value: Any) -> bool:
-        normalized = self._normalize(value)
+        normalized = self._normalize_source_anchor(self._to_text(value))
         if not normalized:
             return False
         return any(
-            anchor and anchor in normalized
+            anchor and (anchor in normalized or normalized in anchor)
             for anchor in self._delegation_anchor_values
         )
 
@@ -436,6 +436,17 @@ class SourceLabelStore:
     def _normalize(self, value: Any) -> str:
         text = self._to_text(value)
         return re.sub(r"\s+", " ", text).strip().lower()
+
+    def _normalize_source_anchor(self, value: str) -> str:
+        if not value:
+            return ""
+        text = value.strip()
+        text = re.sub(r'[!?.?,;:)\]}"\']+$', '', text)
+        text = text.rstrip('/')
+        text = re.sub(r'^https?://(?:www\.)?', '', text.lower())
+        text = re.sub(r'^www\.', '', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
 
     def _to_text(self, value: Any) -> str:
         if value is None:

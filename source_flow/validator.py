@@ -303,6 +303,7 @@ class FlowAwareValidator:
 
         blocked: list[dict[str, Any]] = []
         warnings: list[dict[str, Any]] = []
+        controlled_ext = bool((trajectory_state or {}).get("controlled_extension"))
 
         for arg_name, value in tool_args.items():
             sink = f"{tool_name}.{arg_name}"
@@ -320,20 +321,53 @@ class FlowAwareValidator:
             has_expectation = self._has_expectation(spec)
             labels = set(evidence.source_labels)
 
-            if labels & self.INJECTED_LABELS:
-                blocked.append(
-                    self._blocked(
-                        sink,
-                        "injected_source",
-                        spec,
-                        evidence,
-                        tool_name,
-                        arg_name,
-                        tool_type,
-                        sink_role,
-                        deny_marks,
+            if controlled_ext and high_risk and not content_like:
+                clean_support = labels - self.INJECTED_LABELS - self.UNKNOWN_LABELS
+                if not clean_support:
+                    blocked.append(
+                        self._blocked(
+                            sink,
+                            "controlled_extension_unknown_high_risk",
+                            spec,
+                            evidence,
+                            tool_name,
+                            arg_name,
+                            tool_type,
+                            sink_role,
+                            deny_marks,
+                        )
                     )
-                )
+                    continue
+
+            if labels & self.INJECTED_LABELS:
+                if content_like and "clean_support_preferred" in labels:
+                    warnings.append(
+                        self._blocked(
+                            sink,
+                            "injected_overlap_with_clean_support",
+                            spec,
+                            evidence,
+                            tool_name,
+                            arg_name,
+                            tool_type,
+                            sink_role,
+                            deny_marks,
+                        )
+                    )
+                else:
+                    blocked.append(
+                        self._blocked(
+                            sink,
+                            "injected_source",
+                            spec,
+                            evidence,
+                            tool_name,
+                            arg_name,
+                            tool_type,
+                            sink_role,
+                            deny_marks,
+                        )
+                    )
                 continue
 
             if spec.mode == "constant_check" and high_risk:
@@ -536,6 +570,11 @@ class FlowAwareValidator:
             detail = f"The argument `{sink}` does not match the checklist value."
         elif reason == "unknown_high_risk_origin":
             detail = f"The high-risk argument `{sink}` has unknown or model-generated provenance."
+        elif reason == "controlled_extension_unknown_high_risk":
+            detail = (
+                f"The trajectory-outside high-risk argument `{sink}` has unknown or model-generated provenance "
+                "and is not supported by user, task anchor, or delegated task sources."
+            )
         else:
             detail = f"The argument `{sink}` failed source-flow validation."
         return (
