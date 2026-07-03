@@ -83,6 +83,30 @@ class SinkEvidenceResolver:
                                               extra_labels=["clean_support_preferred"])
                 return self._from_matches(sink, value, matches, status, confidence)
 
+        if high_risk and not content_like:
+            selection_words = {"most", "largest", "highest", "best", "smallest", "cheapest",
+                                "latest", "newest", "nearest", "closest", "select", "choose", "pick"}
+            read_outputs = [
+                r for r in records
+                if r.source_kind in ("tool_raw_output", "tool_sanitized_output", "structured_field")
+                and "injected_instruction" not in set(r.source_labels)
+            ]
+            selection_value_in_output = any(
+                normalized in r.normalized_value or r.normalized_value in normalized
+                for r in read_outputs
+            )
+            if selection_value_in_output:
+                return SinkEvidence(
+                    sink=sink,
+                    value=value,
+                    matched_sources=[r.source_id for r in read_outputs if normalized in r.normalized_value or r.normalized_value in normalized],
+                    actual_origin_tools=list(set(r.tool for r in read_outputs if r.tool)),
+                    source_labels=["tool_output", "selection_from_read_result"],
+                    evidence=[{"source_id": r.source_id, "source_kind": r.source_kind} for r in read_outputs[:3]],
+                    confidence=0.5,
+                    resolution_status="selection_from_read_result",
+                )
+
         if content_like:
             expected_roots = sink_spec.expected_root_tools if sink_spec else []
             root_records = [
