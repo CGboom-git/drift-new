@@ -278,9 +278,10 @@ class DRIFTLLM(PromptingLLM):
                         "warnings": decision.warnings,
                         "call_error_message": decision.call_error_message,
                         "controlled_extension": False,
+                        "terminal_reject": decision.reject,
                     },
                     decision=decision_text,
-                    would_reject=decision.reject,
+                    would_reject=decision.reject or decision.repair_required,
                 )
             )
             if decision.reject:
@@ -608,6 +609,30 @@ class DRIFTLLM(PromptingLLM):
                 would_reject=True,
             )
         )
+        # Hard reject if over budget or repeated bad flow
+        max_attempts = 2
+        if self._source_flow_recovery_state["attempts"] > max_attempts:
+            self._source_flow_exit_recovery("budget_exceeded")
+            return
+
+    def _source_flow_exit_recovery(self, reason: str):
+        if not self._source_flow_recovery_state.get("active"):
+            return
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="source_flow_recovery_exit",
+                source_ids=[],
+                details={
+                    "reason": reason,
+                    "blocked_tool": self._source_flow_recovery_state.get("blocked_tool"),
+                    "attempts": self._source_flow_recovery_state.get("attempts"),
+                },
+                decision="allow",
+                would_reject=False,
+            )
+        )
+        self._source_flow_recovery_state = self._source_flow_reset_recovery()
 
     def _tool_message_to_user_message(self, tool_message) -> dict:
         """It places the output of the tool call in the <function_call> tags.
@@ -1288,9 +1313,11 @@ class DRIFTLLM(PromptingLLM):
         if not node_check_result:
             self.logger.info(f"{json_tool_calls} does not align well with checklist, sending request to user.")
 
-            if self.source_flow_validation_enabled():
+            is_function_mismatch = "function name does not align" in node_judge_reason.lower()
+
+            if self.source_flow_validation_enabled() and not is_function_mismatch:
                 self.logger.info(
-                    "Source-flow validation active; downgrading checklist mismatch to warning. "
+                    "Source-flow validation active; downgrading parameter checklist mismatch. "
                     "Source-flow validator will make the final decision."
                 )
                 return None, output
@@ -1491,16 +1518,24 @@ class DRIFTLLM(PromptingLLM):
                 }
                 return query, runtime, env, [*messages, output, error_message], extra_args
             if source_flow_decision.repair_required:
-                tool_name = (source_flow_decision.repair_obligations[0].get("tool_name")
-                             if source_flow_decision.repair_obligations else "unknown")
                 self._source_flow_sanitize_rejected_output(
                     output, source_flow_decision.call_error_message
                 )
-                self._source_flow_enter_recovery(tool_name, source_flow_decision)
+                self._source_flow_enter_recovery(
+                    source_flow_decision.tool_name, source_flow_decision
+                )
                 error_message = {
                     "role": "user",
                     "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
                 }
                 return query, runtime, env, [*messages, output, error_message], extra_args
+
+            # Exit recovery if blocked tool just passed validation
+            if self._source_flow_recovery_state.get("active"):
+                for tc in output.get("tool_calls", []):
+                    fn = tc.function if hasattr(tc, "function") else tc.get("function", "")
+                    fn_name = fn if isinstance(fn, str) else getattr(fn, "name", "") if hasattr(fn, "name") else ""
+                    if fn_name == self._source_flow_recovery_state.get("blocked_tool"):
+                        self._source_flow_exit_recovery("evidence_collected")
 
         return query, runtime, env, [*messages, output], extra_args

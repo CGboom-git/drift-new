@@ -60,6 +60,7 @@ class FlowValidationDecision:
     reject: bool = False
     warn: bool = False
     repair_required: bool = False
+    tool_name: str = ""
     call_error_message: str | None = None
     blocked_flows: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[dict[str, Any]] = field(default_factory=list)
@@ -456,6 +457,7 @@ class FlowAwareValidator:
         if blocked:
             return FlowValidationDecision(
                 allow=False, reject=True, warn=bool(warnings),
+                tool_name=tool_name,
                 call_error_message=self._call_error(tool_name, blocked[0]),
                 blocked_flows=blocked, warnings=warnings,
                 valid_args=valid_args, invalid_args=invalid_args,
@@ -463,6 +465,7 @@ class FlowAwareValidator:
         if repairs:
             return FlowValidationDecision(
                 allow=False, reject=False, repair_required=True, warn=bool(warnings),
+                tool_name=tool_name,
                 call_error_message=self._build_repair_call_error(tool_name, valid_args, invalid_args, repair_obligations),
                 blocked_flows=repairs + blocked, warnings=warnings,
                 repair_obligations=repair_obligations,
@@ -470,6 +473,7 @@ class FlowAwareValidator:
             )
         return FlowValidationDecision(
             allow=True, reject=False, repair_required=False, warn=bool(warnings),
+            tool_name=tool_name,
             warnings=warnings, valid_args=valid_args, invalid_args=invalid_args,
         )
 
