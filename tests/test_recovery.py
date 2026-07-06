@@ -208,6 +208,39 @@ class RecoveryValidationTests(unittest.TestCase):
         )
         self.assertTrue(decision.repair_required or decision.reject)
 
+    def test_enter_recovery_returns_none_for_first_entry(self):
+        raw_id = self.store.record_tool_raw_output(
+            "get_balance", {"amount": 500}, step=1,
+        )
+        self.store.record_structured_fields(
+            "get_balance", raw_id, {"amount": 500}, step=1,
+        )
+        checklist = [
+            {
+                "name": "send_money",
+                "required parameters": {"amount": "amount extracted from read_file"},
+                "conditions": {"amount": "extracted from read_file"},
+            }
+        ]
+        decision = self._validate("send_money", {"amount": 500}, checklist)
+        self.assertTrue(decision.repair_required or decision.reject)
+
+    def test_read_tool_allowed_during_any_state(self):
+        decision = self._validate(
+            "read_file",
+            {"file_path": "test.txt"},
+            [{"name": "read_file", "required parameters": {"file_path": None}, "conditions": None}],
+        )
+        self.assertTrue(decision.allow)
+
+    def test_decision_tool_name_present(self):
+        decision = self._validate(
+            "send_money",
+            {"recipient": "Alice", "amount": 500, "subject": "test", "date": "2024-01-01"},
+            [{"name": "send_money", "required parameters": {"recipient": None, "amount": None}, "conditions": None}],
+        )
+        self.assertEqual(decision.tool_name, "send_money")
+
 
 if __name__ == "__main__":
     unittest.main()

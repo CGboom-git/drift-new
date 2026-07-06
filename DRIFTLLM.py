@@ -34,6 +34,7 @@ class DRIFTLLM(PromptingLLM):
         self.source_flow_validator = FlowAwareValidator()
         self._source_flow_run_active = False
         self._source_flow_recovery_state = self._source_flow_reset_recovery()
+        self._source_flow_repeated_bad_flow_counts = {}
 
     def source_flow_enabled(self):
         return bool(
@@ -58,6 +59,7 @@ class DRIFTLLM(PromptingLLM):
         self.source_label_store.record_user_query(user_query)
         self._source_flow_run_active = True
         self._source_flow_recovery_state = self._source_flow_reset_recovery()
+        self._source_flow_clear_bad_flow_counts()
 
     def _source_flow_tool_name(self, tool_message):
         tool_call = tool_message.get("tool_call")
@@ -594,7 +596,6 @@ class DRIFTLLM(PromptingLLM):
         return {"allowed": True, "decision": decision}
 
     def _source_flow_reset_recovery(self):
-        self._source_flow_repeated_bad_flow_counts = {}
         return {
             "active": False,
             "blocked_tool": None,
@@ -605,6 +606,9 @@ class DRIFTLLM(PromptingLLM):
             "bad_flows": [],
         }
 
+    def _source_flow_clear_bad_flow_counts(self):
+        self._source_flow_repeated_bad_flow_counts = {}
+
     def _source_flow_flow_key(self, flow: dict) -> tuple:
         actual_origins = tuple(flow.get("actual_origin_tools", []) or [])
         sink = flow.get("sink", "")
@@ -613,6 +617,7 @@ class DRIFTLLM(PromptingLLM):
         return (actual_origins, sink, reason, bad_value)
 
     def _source_flow_enter_recovery(self, tool_name, decision):
+        """Returns a reject FlowValidationDecision for escalation, or None for normal entry."""
         for flow in decision.blocked_flows:
             key = self._source_flow_flow_key(flow)
             count = self._source_flow_repeated_bad_flow_counts.get(key, 0) + 1
@@ -639,7 +644,16 @@ class DRIFTLLM(PromptingLLM):
                         f"reason={flow.get('reason')} count={count}"
                     )
                 self._source_flow_exit_recovery("repeated_bad_flow")
-                return
+                return FlowValidationDecision(
+                    allow=False, reject=True, tool_name=tool_name,
+                    call_error_message=(
+                        "[CALL ERROR: SOURCE-FLOW REJECTED]\n\n"
+                        "The same invalid source-to-sink flow was repeated after repair guidance.\n"
+                        "The ACTION was not executed.\n\n"
+                        "Do not retry the same value from the same source.\n"
+                        "Return to the original user task and use an authorized source."
+                    ),
+                )
 
         self._source_flow_recovery_state.update({
             "active": True,
@@ -670,8 +684,20 @@ class DRIFTLLM(PromptingLLM):
         )
         max_attempts = 2
         if self._source_flow_recovery_state["attempts"] > max_attempts:
+            if self.logger:
+                self.logger.info(f"Repair budget exceeded for {tool_name}")
             self._source_flow_exit_recovery("budget_exceeded")
-            return
+            return FlowValidationDecision(
+                allow=False, reject=True, tool_name=tool_name,
+                call_error_message=(
+                    "[CALL ERROR: SOURCE-FLOW REPAIR BUDGET EXCEEDED]\n\n"
+                    f"The ACTION `{tool_name}` was not executed because the required "
+                    "source evidence could not be repaired within the allowed attempts.\n\n"
+                    "Do not keep retrying the same unsupported argument.\n"
+                    "Return to the original task path or ask the user for the missing information."
+                ),
+            )
+        return None
 
     def _source_flow_recovery_guard(self, output):
         if not self.source_flow_validation_enabled():
@@ -757,6 +783,8 @@ class DRIFTLLM(PromptingLLM):
             )
             if self.logger:
                 self.logger.info(error_msg)
+        if reason == "evidence_collected":
+            self._source_flow_clear_bad_flow_counts()
         self._source_flow_recovery_state = self._source_flow_reset_recovery()
 
     def _tool_message_to_user_message(self, tool_message) -> dict:
@@ -1643,9 +1671,18 @@ class DRIFTLLM(PromptingLLM):
                 self._source_flow_sanitize_rejected_output(
                     output, source_flow_decision.call_error_message
                 )
-                self._source_flow_enter_recovery(
+                escalation = self._source_flow_enter_recovery(
                     source_flow_decision.tool_name, source_flow_decision
                 )
+                if escalation is not None:
+                    self._source_flow_sanitize_rejected_output(
+                        output, escalation.call_error_message
+                    )
+                    error_message = {
+                        "role": "user",
+                        "content": f"</function_error>\n{escalation.call_error_message}\n</function_error>",
+                    }
+                    return query, runtime, env, [*messages, output, error_message], extra_args
                 error_message = {
                     "role": "user",
                     "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
