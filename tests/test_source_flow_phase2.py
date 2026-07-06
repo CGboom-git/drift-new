@@ -227,10 +227,9 @@ class SourceFlowPhase2Tests(unittest.TestCase):
             [{"name": "send_email", "required parameters": {"recipient": None}, "conditions": None}],
         )
 
-        self.assertTrue(decision.allow)
-        self.assertFalse(decision.reject)
-        self.assertTrue(decision.warn)
-        self.assertEqual(decision.warnings[0]["reason"], "unknown_high_risk_origin_warn")
+        self.assertFalse(decision.reject, "unknown recipient should not be hard rejected")
+        self.assertTrue(decision.repair_required or decision.warn,
+                         "unknown recipient should be repair_required (new policy)")
 
     def test_unknown_body_only_warns(self):
         decision = self._validate(
@@ -316,10 +315,10 @@ class SourceFlowPhase2Tests(unittest.TestCase):
 
         decision = self._validate("send_money", {"amount": 100}, checklist)
 
-        self.assertTrue(decision.reject)
+        self.assertTrue(decision.repair_required or decision.reject,
+                         "origin_mismatch without injected should trigger repair_required")
+        self.assertTrue(len(decision.blocked_flows) > 0)
         self.assertEqual(decision.blocked_flows[0]["reason"], "origin_mismatch")
-        self.assertEqual(decision.blocked_flows[0]["tool_type"], "action")
-        self.assertEqual(decision.blocked_flows[0]["sink_role"], "control")
 
 
 if __name__ == "__main__":

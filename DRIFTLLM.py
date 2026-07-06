@@ -32,6 +32,7 @@ class DRIFTLLM(PromptingLLM):
         self.source_flow_resolver = SinkEvidenceResolver()
         self.source_flow_validator = FlowAwareValidator()
         self._source_flow_run_active = False
+        self._source_flow_recovery_state = self._source_flow_reset_recovery()
 
     def source_flow_enabled(self):
         return bool(
@@ -55,6 +56,7 @@ class DRIFTLLM(PromptingLLM):
         self.source_label_store.reset()
         self.source_label_store.record_user_query(user_query)
         self._source_flow_run_active = True
+        self._source_flow_recovery_state = self._source_flow_reset_recovery()
 
     def _source_flow_tool_name(self, tool_message):
         tool_call = tool_message.get("tool_call")
@@ -279,6 +281,10 @@ class DRIFTLLM(PromptingLLM):
             if decision.reject:
                 if self.logger:
                     self.logger.info(f"Source-flow validation rejected {tool_name}: {decision.blocked_flows}")
+                return decision
+            if decision.repair_required:
+                if self.logger:
+                    self.logger.info(f"Source-flow validation repair_required for {tool_name}: {decision.repair_obligations}")
                 return decision
             if decision.warn and self.logger:
                 self.logger.info(f"Source-flow validation warning for {tool_name}: {decision.warnings}")
@@ -526,6 +532,46 @@ class DRIFTLLM(PromptingLLM):
         if self.logger:
             self.logger.info(f"Controlled Action Extension allowed {tool_name}")
         return {"allowed": True, "decision": decision}
+
+    def _source_flow_reset_recovery(self):
+        return {
+            "active": False,
+            "blocked_tool": None,
+            "valid_args": {},
+            "invalid_args": {},
+            "repair_obligations": [],
+            "attempts": 0,
+            "bad_flows": [],
+        }
+
+    def _source_flow_enter_recovery(self, tool_name, decision):
+        self._source_flow_recovery_state.update({
+            "active": True,
+            "blocked_tool": tool_name,
+            "valid_args": dict(decision.valid_args),
+            "invalid_args": dict(decision.invalid_args),
+            "repair_obligations": list(decision.repair_obligations),
+            "attempts": self._source_flow_recovery_state.get("attempts", 0) + 1,
+            "bad_flows": decision.blocked_flows,
+        })
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="source_flow_repair_required",
+                source_ids=[],
+                details={
+                    "tool_name": tool_name,
+                    "valid_args": decision.valid_args,
+                    "invalid_args": decision.invalid_args,
+                    "repair_obligations": decision.repair_obligations,
+                    "blocked_flows": decision.blocked_flows,
+                    "warnings": decision.warnings,
+                    "recovery_attempt": self._source_flow_recovery_state["attempts"],
+                },
+                decision="repair_required",
+                would_reject=True,
+            )
+        )
 
     def _tool_message_to_user_message(self, tool_message) -> dict:
         """It places the output of the tool call in the <function_call> tags.
@@ -1375,15 +1421,27 @@ class DRIFTLLM(PromptingLLM):
                 return query, runtime, env, [*messages, output, error_message], extra_args
 
         source_flow_decision = self._source_flow_validate_tool_calls(output)
-        if source_flow_decision is not None and source_flow_decision.reject:
-            self._source_flow_handle_rejection_after_dynamic_validation(source_flow_pre_dynamic_state)
-            self._source_flow_sanitize_rejected_output(
-                output, source_flow_decision.call_error_message
-            )
-            error_message = {
-                "role": "user",
-                "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
-            }
-            return query, runtime, env, [*messages, output, error_message], extra_args
+        if source_flow_decision is not None:
+            if source_flow_decision.reject:
+                self._source_flow_handle_rejection_after_dynamic_validation(source_flow_pre_dynamic_state)
+                self._source_flow_sanitize_rejected_output(
+                    output, source_flow_decision.call_error_message
+                )
+                error_message = {
+                    "role": "user",
+                    "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
+                }
+                return query, runtime, env, [*messages, output, error_message], extra_args
+            if source_flow_decision.repair_required:
+                tool_name = source_flow_decision.repair_obligations[0].get("tool_name", "") if source_flow_decision.repair_obligations else "unknown"
+                self._source_flow_sanitize_rejected_output(
+                    output, source_flow_decision.call_error_message
+                )
+                self._source_flow_enter_recovery(tool_name, source_flow_decision)
+                error_message = {
+                    "role": "user",
+                    "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
+                }
+                return query, runtime, env, [*messages, output, error_message], extra_args
 
         return query, runtime, env, [*messages, output], extra_args
