@@ -229,7 +229,7 @@ class DRIFTLLM(PromptingLLM):
             matched_sources = []
             for evidence in sink_evidence.values():
                 matched_sources.extend(evidence.matched_sources)
-            decision_text = "reject" if decision.reject else ("warn" if decision.warn else "allow")
+            decision_text = "reject" if decision.reject else ("repair_required" if decision.repair_required else ("warn" if decision.warn else "allow"))
             flows_by_sink = {
                 flow.get("sink"): flow
                 for flow in [*decision.blocked_flows, *decision.warnings]
@@ -240,11 +240,16 @@ class DRIFTLLM(PromptingLLM):
                 arg_name = sink.split(".", 1)[1] if "." in sink else sink
                 spec = sink_specs.get(sink)
                 flow = flows_by_sink.get(sink, {})
+                in_repair = any(ro.get("sink") == sink for ro in decision.repair_obligations)
+                if flow in decision.blocked_flows:
+                    arg_decision = "repair_required" if in_repair else "reject"
+                else:
+                    arg_decision = "warn" if flow else "allow"
                 arg_validations.append(
                     {
                         "tool_name": tool_name,
                         "tool_type": tool_type,
-                        "decision": "reject" if flow in decision.blocked_flows else ("warn" if flow else "allow"),
+                        "decision": arg_decision,
                         "reason": flow.get("reason"),
                         "sink": sink,
                         "arg_name": arg_name,
@@ -504,6 +509,37 @@ class DRIFTLLM(PromptingLLM):
             return {
                 "allowed": False,
                 "reason": "source_flow_violation",
+                "call_error_message": decision.call_error_message,
+                "decision": decision,
+            }
+
+        if decision.repair_required:
+            self._source_flow_restore_trajectory_snapshot(snapshot)
+            self._source_flow_enter_recovery(tool_name, decision)
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="controlled_action_extension_repair_required",
+                    source_ids=[],
+                    details={
+                        "tool_name": tool_name,
+                        "repair_obligations": decision.repair_obligations,
+                        "valid_args": decision.valid_args,
+                        "invalid_args": decision.invalid_args,
+                        "controlled_extension": True,
+                    },
+                    decision="repair_required",
+                    would_reject=True,
+                )
+            )
+            if self.logger:
+                self.logger.info(
+                    f"Controlled Action Extension repair_required for {tool_name}: "
+                    f"{decision.repair_obligations}"
+                )
+            return {
+                "allowed": False,
+                "reason": "source_flow_repair_required",
                 "call_error_message": decision.call_error_message,
                 "decision": decision,
             }
@@ -1252,6 +1288,13 @@ class DRIFTLLM(PromptingLLM):
         if not node_check_result:
             self.logger.info(f"{json_tool_calls} does not align well with checklist, sending request to user.")
 
+            if self.source_flow_validation_enabled():
+                self.logger.info(
+                    "Source-flow validation active; downgrading checklist mismatch to warning. "
+                    "Source-flow validator will make the final decision."
+                )
+                return None, output
+
             align_error_message = {"role": "user", "content": f"[CALL ERROR] The function calling of {json_tool_calls} has been refused due to some parameters are not aligned with checklist, Please try an alternative method to continue fulfilling the original user query. Remember, do not stop working on the original user task to do other things.\nThe specific error:\n{node_judge_reason}\nChecklist:\n{self.node_checklist}.\nNote: the value of None denotes this value is uncertain.\nUser Query:\n{query}"}
             
             checklist_user_answer = self.user_approval_request()
@@ -1409,6 +1452,21 @@ class DRIFTLLM(PromptingLLM):
         if self.args.dynamic_validation and self.source_flow_validation_enabled():
             source_flow_pre_dynamic_state = self._source_flow_trajectory_snapshot()
 
+        # Recovery guard: block new unrelated high-risk ACTIONs during repair
+        if self._source_flow_recovery_state.get("active") and to_call_function:
+            for func_name in to_call_function:
+                if self._is_action_tool(func_name) and func_name != self._source_flow_recovery_state.get("blocked_tool"):
+                    repair_msg = (
+                        f"</function_error>\n[CALL ERROR: RECOVERY MODE ACTIVE]\n\n"
+                        f"A previous ACTION `{self._source_flow_recovery_state.get('blocked_tool')}` "
+                        f"requires repair first. Do not introduce new ACTION `{func_name}`.\n\n"
+                        f"Allowed: READ/TRANSFORM tools or retrying the same blocked ACTION with repaired evidence.\n"
+                        f"</function_error>"
+                    )
+                    error_message = {"role": "user", "content": repair_msg}
+                    output["tool_calls"] = []
+                    return query, runtime, env, [*messages, output, error_message], extra_args
+
         if self.args.dynamic_validation:
             error_message, output = self.trajectory_constraint_validation(to_call_function, output, query, messages)
             if error_message:
@@ -1433,7 +1491,8 @@ class DRIFTLLM(PromptingLLM):
                 }
                 return query, runtime, env, [*messages, output, error_message], extra_args
             if source_flow_decision.repair_required:
-                tool_name = source_flow_decision.repair_obligations[0].get("tool_name", "") if source_flow_decision.repair_obligations else "unknown"
+                tool_name = (source_flow_decision.repair_obligations[0].get("tool_name")
+                             if source_flow_decision.repair_obligations else "unknown")
                 self._source_flow_sanitize_rejected_output(
                     output, source_flow_decision.call_error_message
                 )

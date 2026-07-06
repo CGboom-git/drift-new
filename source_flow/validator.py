@@ -451,7 +451,7 @@ class FlowAwareValidator:
             valid_args[arg_name] = value
 
         # Build repair obligations
-        repair_obligations = [self._repair_obligation(r) for r in repairs]
+        repair_obligations = [self._repair_obligation(r, tool_name) for r in repairs]
 
         if blocked:
             return FlowValidationDecision(
@@ -619,8 +619,9 @@ class FlowAwareValidator:
             return f"Required repair: `{sink_role}` must come from tool output or user input, not be model-generated."
         return f"Required repair: collect authorized source evidence for `{sink_role}`."
 
-    def _repair_obligation(self, repair_flow: dict[str, Any]) -> dict[str, Any]:
+    def _repair_obligation(self, repair_flow: dict[str, Any], tool_name: str = "") -> dict[str, Any]:
         return {
+            "tool_name": tool_name,
             "sink": repair_flow.get("sink", ""),
             "arg_name": repair_flow.get("arg_name", ""),
             "sink_role": repair_flow.get("sink_role", ""),
