@@ -3,6 +3,7 @@ from source_flow import (
     ContractHelper,
     FlowAwareValidator,
     FlowExpectationCompiler,
+    FlowValidationDecision,
     SinkEvidenceResolver,
     SourceLabelStore,
     ValidationTraceEntry,
@@ -365,6 +366,28 @@ class DRIFTLLM(PromptingLLM):
         contract_type = self.source_flow_contract_helper.get_tool_type(tool_name)
         return contract_type in {"read", "observe"}
 
+    def _source_flow_tool_kind(self, tool_name: str) -> str:
+        ct = self.source_flow_contract_helper.get_tool_type(tool_name)
+        if ct in {"read", "observe"}:
+            return "read"
+        if ct in {"transform", "parse"}:
+            return "transform"
+        if ct in {"action", "write", "execute"}:
+            return "action"
+        name = tool_name.lower()
+        if name.startswith(("read_", "get_", "search_", "find_", "list_", "fetch_", "lookup_")):
+            return "read"
+        if name.startswith(("parse_", "extract_", "summarize_", "normalize_", "classify_", "convert_")):
+            return "transform"
+        if name.startswith(("send_", "post_", "create_", "update_", "delete_", "remove_",
+                            "append_", "invite_", "book_", "purchase_", "transfer_", "pay_",
+                            "cancel_", "add_", "schedule_", "reserve_")):
+            return "action"
+        return "unknown"
+
+    def _source_flow_is_read_or_transform_tool(self, tool_name: str) -> bool:
+        return self._source_flow_tool_kind(tool_name) in {"read", "transform"}
+
     def _controlled_action_extension(self, tool_name, tool_args, query, messages,
                                       thought_content, extended_trajectory,
                                       extended_checklist):
@@ -571,6 +594,7 @@ class DRIFTLLM(PromptingLLM):
         return {"allowed": True, "decision": decision}
 
     def _source_flow_reset_recovery(self):
+        self._source_flow_repeated_bad_flow_counts = {}
         return {
             "active": False,
             "blocked_tool": None,
@@ -581,7 +605,42 @@ class DRIFTLLM(PromptingLLM):
             "bad_flows": [],
         }
 
+    def _source_flow_flow_key(self, flow: dict) -> tuple:
+        actual_origins = tuple(flow.get("actual_origin_tools", []) or [])
+        sink = flow.get("sink", "")
+        reason = flow.get("reason", "")
+        bad_value = str(flow.get("bad_value", flow.get("arg_name", "")))[:200]
+        return (actual_origins, sink, reason, bad_value)
+
     def _source_flow_enter_recovery(self, tool_name, decision):
+        for flow in decision.blocked_flows:
+            key = self._source_flow_flow_key(flow)
+            count = self._source_flow_repeated_bad_flow_counts.get(key, 0) + 1
+            self._source_flow_repeated_bad_flow_counts[key] = count
+            if count > 1:
+                self.source_label_store.validation_trace.append(
+                    ValidationTraceEntry(
+                        step=len(self.achieved_function_trajectory),
+                        event="source_flow_repeated_bad_flow_rejected",
+                        source_ids=[],
+                        details={
+                            "tool_name": tool_name,
+                            "sink": flow.get("sink"),
+                            "reason": flow.get("reason"),
+                            "repeat_count": count,
+                        },
+                        decision="reject",
+                        would_reject=True,
+                    )
+                )
+                if self.logger:
+                    self.logger.info(
+                        f"Repeated bad flow escalated to hard reject: {flow.get('sink')} "
+                        f"reason={flow.get('reason')} count={count}"
+                    )
+                self._source_flow_exit_recovery("repeated_bad_flow")
+                return
+
         self._source_flow_recovery_state.update({
             "active": True,
             "blocked_tool": tool_name,
@@ -609,11 +668,66 @@ class DRIFTLLM(PromptingLLM):
                 would_reject=True,
             )
         )
-        # Hard reject if over budget or repeated bad flow
         max_attempts = 2
         if self._source_flow_recovery_state["attempts"] > max_attempts:
             self._source_flow_exit_recovery("budget_exceeded")
             return
+
+    def _source_flow_recovery_guard(self, output):
+        if not self.source_flow_validation_enabled():
+            return None
+        if not self._source_flow_recovery_state.get("active"):
+            return None
+
+        blocked_tool = self._source_flow_recovery_state.get("blocked_tool")
+        for tc in output.get("tool_calls", []):
+            fn = tc.function if hasattr(tc, "function") else tc.get("function", "")
+            tc_name = fn if isinstance(fn, str) else getattr(fn, "name", "") if hasattr(fn, "name") else ""
+            if not tc_name:
+                continue
+            kind = self._source_flow_tool_kind(tc_name)
+            if tc_name == blocked_tool:
+                continue
+            if kind in {"read", "transform"}:
+                continue
+            if kind in {"action", "unknown"}:
+                self.source_label_store.validation_trace.append(
+                    ValidationTraceEntry(
+                        step=len(self.achieved_function_trajectory),
+                        event="source_flow_recovery_guard_block",
+                        source_ids=[],
+                        details={
+                            "blocked_tool": blocked_tool,
+                            "proposed_tool": tc_name,
+                            "tool_kind": kind,
+                            "recovery_state": dict(self._source_flow_recovery_state),
+                            "reason": "new_action_during_recovery",
+                        },
+                        decision="repair_required",
+                        would_reject=True,
+                    )
+                )
+                if self.logger:
+                    self.logger.info(
+                        f"Recovery guard blocked {tc_name}; "
+                        f"currently repairing {blocked_tool}"
+                    )
+                msg = (
+                    "[CALL ERROR: RECOVERY MODE ACTIVE]\n\n"
+                    f"The system is currently repairing a previous Source-Flow "
+                    f"validation failure for `{blocked_tool}`.\n"
+                    f"The proposed tool `{tc_name}` was not executed because it "
+                    "introduces a different ACTION during recovery.\n\n"
+                    "Allowed next step:\n"
+                    "- Call a READ or TRANSFORM tool to collect the missing evidence, or\n"
+                    f"- Retry the same blocked ACTION `{blocked_tool}` after repairing the invalid arguments.\n\n"
+                    "Do not introduce a new ACTION until the current repair is completed."
+                )
+                return FlowValidationDecision(
+                    allow=False, reject=False, repair_required=True,
+                    tool_name=tc_name, call_error_message=msg,
+                )
+        return None
 
     def _source_flow_exit_recovery(self, reason: str):
         if not self._source_flow_recovery_state.get("active"):
@@ -632,6 +746,17 @@ class DRIFTLLM(PromptingLLM):
                 would_reject=False,
             )
         )
+        if reason == "budget_exceeded":
+            bt = self._source_flow_recovery_state.get("blocked_tool", "unknown")
+            error_msg = (
+                f"[CALL ERROR: SOURCE-FLOW REPAIR BUDGET EXCEEDED]\n\n"
+                f"The ACTION `{bt}` was not executed because the required "
+                "source evidence could not be repaired within the allowed attempts.\n\n"
+                "Do not keep retrying the same unsupported argument.\n"
+                "Return to the original task path or ask the user for the missing information."
+            )
+            if self.logger:
+                self.logger.info(error_msg)
         self._source_flow_recovery_state = self._source_flow_reset_recovery()
 
     def _tool_message_to_user_message(self, tool_message) -> dict:
@@ -1479,20 +1604,17 @@ class DRIFTLLM(PromptingLLM):
         if self.args.dynamic_validation and self.source_flow_validation_enabled():
             source_flow_pre_dynamic_state = self._source_flow_trajectory_snapshot()
 
-        # Recovery guard: block new unrelated high-risk ACTIONs during repair
-        if self._source_flow_recovery_state.get("active") and to_call_function:
-            for func_name in to_call_function:
-                if self._is_action_tool(func_name) and func_name != self._source_flow_recovery_state.get("blocked_tool"):
-                    repair_msg = (
-                        f"</function_error>\n[CALL ERROR: RECOVERY MODE ACTIVE]\n\n"
-                        f"A previous ACTION `{self._source_flow_recovery_state.get('blocked_tool')}` "
-                        f"requires repair first. Do not introduce new ACTION `{func_name}`.\n\n"
-                        f"Allowed: READ/TRANSFORM tools or retrying the same blocked ACTION with repaired evidence.\n"
-                        f"</function_error>"
-                    )
-                    error_message = {"role": "user", "content": repair_msg}
-                    output["tool_calls"] = []
-                    return query, runtime, env, [*messages, output, error_message], extra_args
+        # Recovery guard: block new unrelated ACTIONs during repair
+        recovery_guard_decision = self._source_flow_recovery_guard(output)
+        if recovery_guard_decision is not None:
+            self._source_flow_sanitize_rejected_output(
+                output, recovery_guard_decision.call_error_message
+            )
+            error_message = {
+                "role": "user",
+                "content": f"</function_error>\n{recovery_guard_decision.call_error_message}\n</function_error>",
+            }
+            return query, runtime, env, [*messages, output, error_message], extra_args
 
         if self.args.dynamic_validation:
             error_message, output = self.trajectory_constraint_validation(to_call_function, output, query, messages)
@@ -1530,12 +1652,16 @@ class DRIFTLLM(PromptingLLM):
                 }
                 return query, runtime, env, [*messages, output, error_message], extra_args
 
-            # Exit recovery if blocked tool just passed validation
-            if self._source_flow_recovery_state.get("active"):
+            # Exit recovery only if blocked tool passed validation (no reject, no repair)
+            if (
+                self._source_flow_recovery_state.get("active")
+                and source_flow_decision is None
+            ):
                 for tc in output.get("tool_calls", []):
                     fn = tc.function if hasattr(tc, "function") else tc.get("function", "")
                     fn_name = fn if isinstance(fn, str) else getattr(fn, "name", "") if hasattr(fn, "name") else ""
                     if fn_name == self._source_flow_recovery_state.get("blocked_tool"):
                         self._source_flow_exit_recovery("evidence_collected")
+                        break
 
         return query, runtime, env, [*messages, output], extra_args
