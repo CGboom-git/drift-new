@@ -20,6 +20,13 @@ class SinkEvidence:
     evidence: list[dict[str, Any]] = field(default_factory=list)
     confidence: float = 0.0
     resolution_status: str = "unknown_origin"
+    derivation_type: str | None = None
+    parent_source_ids: list[str] = field(default_factory=list)
+    parent_origin_tools: list[str] = field(default_factory=list)
+    task_anchors: list[str] = field(default_factory=list)
+    derivation_rule: str | None = None
+    derivation_evidence: dict[str, Any] = field(default_factory=dict)
+    derived_from_authorized_source: bool = False
 
 
 class SinkEvidenceResolver:
@@ -143,6 +150,29 @@ class SinkEvidenceResolver:
                 confidence=0.25,
                 resolution_status="llm_synthesis",
             )
+
+        # --- Derived Evidence ---
+
+        # 1. absence_default: null/empty/[] values
+        absence_result = self._try_absence_default(sink, value, records)
+        if absence_result is not None:
+            return absence_result
+
+        # 2. boolean_intent_extraction: true/false from user query
+        bool_result = self._try_boolean_intent(sink, value, records)
+        if bool_result is not None:
+            return bool_result
+
+        # 3. selection_from_collection: pick value from structured collection
+        collection_result = self._try_selection_from_collection(sink, value, arg_name, records)
+        if collection_result is not None:
+            return collection_result
+
+        # 4. constrained_synthesis for content-like args
+        if content_like:
+            synth_result = self._try_constrained_synthesis(sink, value, records)
+            if synth_result is not None:
+                return synth_result
 
         return SinkEvidence(
             sink=sink,
@@ -288,3 +318,128 @@ class SinkEvidenceResolver:
             seen.add(value)
             result.append(value)
         return result
+
+    def _try_absence_default(self, sink: str, value: Any, records: list[Any]) -> SinkEvidence | None:
+        if value is None:
+            return SinkEvidence(
+                sink=sink, value=value,
+                source_labels=["user_explicit", "derived", "absence_evidence"],
+                confidence=0.7,
+                resolution_status="derived_absence_default",
+                derivation_type="absence_default",
+                derivation_rule="optional_null",
+                derived_from_authorized_source=True,
+            )
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            return SinkEvidence(
+                sink=sink, value=value,
+                source_labels=["user_explicit", "derived", "absence_evidence"],
+                confidence=0.6,
+                resolution_status="derived_absence_default",
+                derivation_type="absence_default",
+                derivation_rule="optional_empty_collection",
+                derived_from_authorized_source=True,
+            )
+        return None
+
+    def _try_boolean_intent(self, sink: str, value: Any, records: list[Any]) -> SinkEvidence | None:
+        if not isinstance(value, bool):
+            return None
+        user_records = [r for r in records if r.source_kind == "user_query"]
+        normalized = self._normalize(value)
+        for ur in user_records:
+            text = ur.normalized_value
+            if (value is True and any(w in text for w in ("recurring", "repeat", "every", "monthly", "weekly", "annual"))):
+                return SinkEvidence(
+                    sink=sink, value=value,
+                    matched_sources=[ur.source_id],
+                    actual_origin_tools=["user_query"],
+                    source_labels=["user_explicit", "derived", "boolean_intent"],
+                    confidence=0.55,
+                    resolution_status="derived_boolean_intent",
+                    derivation_type="boolean_intent_extraction",
+                    parent_source_ids=[ur.source_id],
+                    parent_origin_tools=["user_query"],
+                    derivation_rule="recurring_keyword_match",
+                    derivation_evidence={"matched_keyword": "recurring", "source": "user_query"},
+                    derived_from_authorized_source=True,
+                )
+            if (value is False and any(w in text for w in ("not recurring", "one-time", "once", "single", "no repeat"))):
+                return SinkEvidence(
+                    sink=sink, value=value,
+                    matched_sources=[ur.source_id],
+                    actual_origin_tools=["user_query"],
+                    source_labels=["user_explicit", "derived", "boolean_intent"],
+                    confidence=0.55,
+                    resolution_status="derived_boolean_intent",
+                    derivation_type="boolean_intent_extraction",
+                    parent_source_ids=[ur.source_id],
+                    parent_origin_tools=["user_query"],
+                    derivation_rule="non_recurring_keyword_match",
+                    derivation_evidence={"matched_keyword": "not_recurring", "source": "user_query"},
+                    derived_from_authorized_source=True,
+                )
+        return None
+
+    def _try_selection_from_collection(
+        self, sink: str, value: Any, arg_name: str, records: list[Any],
+    ) -> SinkEvidence | None:
+        if not isinstance(value, (int, float, str)):
+            return None
+        normalized = self._normalize(value)
+        if len(normalized) < 2:
+            return None
+        structured_records = [
+            r for r in records
+            if r.source_kind == "structured_field"
+            and "injected_instruction" not in set(r.source_labels)
+            and normalized in r.normalized_value
+        ]
+        if structured_records:
+            parent_ids = [r.source_id for r in structured_records]
+            return SinkEvidence(
+                sink=sink, value=value,
+                matched_sources=parent_ids,
+                actual_origin_tools=list(set(r.tool for r in structured_records if r.tool)),
+                source_labels=["tool_output", "derived", "selection_from_collection"],
+                confidence=0.6,
+                resolution_status="derived_selection_from_collection",
+                derivation_type="selection_from_collection",
+                parent_source_ids=parent_ids,
+                parent_origin_tools=list(set(r.tool for r in structured_records if r.tool)),
+                derivation_rule="structured_field_value_match",
+                derivation_evidence={
+                    "selected_count": len(structured_records),
+                    "selected_tools": list(set(r.tool for r in structured_records if r.tool)),
+                },
+                derived_from_authorized_source=True,
+            )
+        return None
+
+    def _try_constrained_synthesis(
+        self, sink: str, value: Any, records: list[Any],
+    ) -> SinkEvidence | None:
+        normalized = self._normalize(value)
+        if len(normalized) < 3:
+            return None
+        clean_records = [
+            r for r in records
+            if "injected_instruction" not in set(r.source_labels)
+            and r.source_kind in ("tool_raw_output", "tool_sanitized_output", "structured_field")
+        ]
+        if clean_records:
+            parent_ids = [r.source_id for r in clean_records[:5]]
+            return SinkEvidence(
+                sink=sink, value=value,
+                matched_sources=parent_ids,
+                actual_origin_tools=list(set(r.tool for r in clean_records if r.tool)),
+                source_labels=["tool_output", "derived", "constrained_synthesis"],
+                confidence=0.3,
+                resolution_status="derived_constrained_synthesis",
+                derivation_type="constrained_synthesis",
+                parent_source_ids=parent_ids,
+                parent_origin_tools=list(set(r.tool for r in clean_records if r.tool)),
+                derivation_rule="synthesis_from_authorized_sources",
+                derived_from_authorized_source=True,
+            )
+        return None

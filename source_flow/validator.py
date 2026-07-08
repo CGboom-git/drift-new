@@ -53,6 +53,30 @@ HIGH_RISK_ROLES = {
 }
 CONTENT_ROLES = {"content", "body", "message", "summary", "description", "subject"}
 
+ALLOWED_DERIVATIONS_BY_ROLE = {
+    "target": {
+        "direct_extraction", "structured_field_match", "user_explicit_normalization",
+    },
+    "financial_amount": {
+        "direct_numeric_extraction", "normalized_exact_match",
+        "selection_from_collection", "deterministic_arithmetic",
+    },
+    "control": {
+        "date_normalization", "deterministic_time_arithmetic",
+        "boolean_intent_extraction", "absence_default",
+    },
+    "selector": {
+        "selection_from_collection", "structured_field_match",
+        "normalized_exact_match",
+    },
+    "content": {
+        "constrained_synthesis", "direct_extraction", "substring_match",
+    },
+    "optional": {
+        "absence_default",
+    },
+}
+
 
 @dataclass
 class FlowValidationDecision:
@@ -448,6 +472,24 @@ class FlowAwareValidator:
                 valid_args[arg_name] = value
                 continue
 
+            # --- Derived evidence compatibility check ---
+            if evidence.derivation_type and high_risk:
+                if not self._is_derived_allowed_for_role(evidence.derivation_type, sink_role):
+                    issue = self._blocked(sink, "derivation_not_allowed_for_sink_role",
+                        spec, evidence, tool_name, arg_name, tool_type, sink_role, deny_marks)
+                    repairs.append(issue)
+                    invalid_args[arg_name] = self._invalid_arg(arg_name, value, sink_role,
+                        "derivation_not_allowed_for_sink_role", spec.expected_root_tools,
+                        evidence.parent_origin_tools, evidence.source_labels)
+                    continue
+                if "injected_instruction" in labels:
+                    blocked.append(self._blocked(sink, "injected_source",
+                        spec, evidence, tool_name, arg_name, tool_type, sink_role, deny_marks))
+                    invalid_args[arg_name] = self._invalid_arg(arg_name, value, sink_role,
+                        "injected_source", spec.expected_root_tools,
+                        evidence.actual_origin_tools, evidence.source_labels)
+                    continue
+
             # --- Default: arg is valid ---
             valid_args[arg_name] = value
 
@@ -638,6 +680,15 @@ class FlowAwareValidator:
     def _short_value(self, value: Any) -> str:
         s = str(value)
         return s[:60] + "..." if len(s) > 60 else s
+
+    def _is_derived_allowed_for_role(self, derivation_type: str, sink_role: str) -> bool:
+        if not derivation_type:
+            return True
+        normalized_role = re.sub(r"[^a-z0-9]+", "_", str(sink_role).strip().lower()).strip("_") if sink_role else "argument"
+        allowed = ALLOWED_DERIVATIONS_BY_ROLE.get(normalized_role, set())
+        if not allowed:
+            allowed = ALLOWED_DERIVATIONS_BY_ROLE.get("content", set())
+        return derivation_type in allowed
 
     def _normalize(self, value: Any) -> str:
         if value is None:

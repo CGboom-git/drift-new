@@ -263,6 +263,11 @@ class DRIFTLLM(PromptingLLM):
                         "expected_root_tools": spec.expected_root_tools if spec else [],
                         "resolution_status": evidence.resolution_status,
                         "matched_sources": evidence.matched_sources,
+                        "derivation_type": evidence.derivation_type,
+                        "parent_origin_tools": evidence.parent_origin_tools,
+                        "task_anchors": evidence.task_anchors,
+                        "derivation_rule": evidence.derivation_rule,
+                        "derived_from_authorized_source": evidence.derived_from_authorized_source,
                     }
                 )
             self.source_label_store.validation_trace.append(

@@ -241,6 +241,66 @@ class RecoveryValidationTests(unittest.TestCase):
         )
         self.assertEqual(decision.tool_name, "send_money")
 
+    def test_absence_default_null_participants(self):
+        decision = self._validate(
+            "create_calendar_event",
+            {"title": "Meeting", "start_time": "2024-01-01 09:00",
+             "end_time": "2024-01-01 10:00", "participants": None},
+            [{"name": "create_calendar_event", "required parameters": {"participants": None}, "conditions": None}],
+        )
+        self.assertTrue(decision.allow or decision.repair_required)
+        self.assertFalse(decision.reject)
+
+    def test_boolean_intent_recurring_true_from_query(self):
+        self.store.record_user_query("Make this a recurring scheduled transaction")
+        decision = self._validate(
+            "schedule_transaction",
+            {"recipient": "TEST", "amount": 100, "subject": "test", "date": "2024-01-01", "recurring": True},
+            [{"name": "schedule_transaction", "required parameters": {"recurring": None}, "conditions": None}],
+        )
+        self.assertTrue(decision.allow or decision.repair_required)
+        self.assertFalse(decision.reject)
+
+    def test_selection_from_collection_amount(self):
+        self.store.record_user_query("Pay Spotify amount")
+        raw_id = self.store.record_tool_raw_output(
+            "get_most_recent_transactions",
+            {"amount": 50, "subject": "Spotify Premium", "recipient": "SE35500"},
+            step=1,
+        )
+        self.store.record_structured_fields(
+            "get_most_recent_transactions", raw_id,
+            {"amount": 50, "subject": "Spotify Premium", "recipient": "SE35500"},
+            step=1,
+        )
+        decision = self._validate(
+            "send_money",
+            {"recipient": "SE35500", "amount": 50, "subject": "Spotify", "date": "2024-01-01"},
+            [{"name": "send_money", "required parameters": {"recipient": None, "amount": None}, "conditions": None}],
+        )
+        self.assertTrue(decision.allow or decision.repair_required)
+
+    def test_existing_direct_match_still_passes(self):
+        raw_id = self.store.record_tool_raw_output(
+            "read_file",
+            {"recipient": "John", "amount": 100, "subject": "Rent"},
+            step=1,
+        )
+        self.store.record_structured_fields(
+            "read_file", raw_id,
+            {"recipient": "John", "amount": 100, "subject": "Rent"},
+            step=1,
+        )
+        checklist = [
+            {
+                "name": "send_money",
+                "required parameters": {"amount": "amount extracted from read_file"},
+                "conditions": {"amount": "extracted from read_file"},
+            }
+        ]
+        decision = self._validate("send_money", {"amount": 100, "recipient": "John", "subject": "Rent", "date": "2024-01-01"}, checklist)
+        self.assertTrue(decision.allow or decision.repair_required)
+
 
 if __name__ == "__main__":
     unittest.main()
