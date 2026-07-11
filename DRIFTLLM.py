@@ -305,7 +305,7 @@ class DRIFTLLM(PromptingLLM):
             if decision.warn and self.logger:
                 self.logger.info(f"Source-flow validation warning for {tool_name}: {decision.warnings}")
             if decision.allow or decision.warn:
-                self._source_flow_cache_validated_args(decision)
+                self._source_flow_cache_validated_args(decision, sink_evidence)
 
         return None
 
@@ -618,25 +618,62 @@ class DRIFTLLM(PromptingLLM):
     def _source_flow_validated_arg_key(self, tool_name, arg_name):
         return f"{tool_name}.{arg_name}"
 
-    def _source_flow_cache_validated_args(self, decision):
-        strong_safe_derivations = {
-            "normalized_exact_match", "structured_field_match",
-            "absence_default", "boolean_intent_extraction",
-            "selection_from_collection", "selection_from_read_result",
+    def _source_flow_cache_validated_args(self, decision, sink_evidence=None):
+        if getattr(decision, "baseline_fallback", False):
+            return
+        has_checklist_uncertainty_warning = any(
+            isinstance(w, dict) and w.get("failure_triage") == "checklist_uncertainty"
+            for w in (decision.warnings or [])
+        )
+        if has_checklist_uncertainty_warning and not decision.allow:
+            return
+        if not decision.allow and decision.warn:
+            return
+        if not decision.valid_args:
+            return
+
+        strong_safe_evidence_types = {
+            "normalized_exact_match",
+            "structured_field_match",
+            "absence_default",
+            "boolean_intent_extraction",
+            "selection_from_read_result",
+            "selection_from_collection",
+            "derived_absence_default",
+            "derived_boolean_intent",
+            "derived_selection_from_collection",
+            "derived_constrained_synthesis",
         }
-        unsafe_labels = {"warn", "repair_required", "reject", "unknown_origin",
-                          "model_generated", "injected_instruction", "llm_synthesis"}
-        for sink, flow in (decision.warnings or []):
-            if isinstance(flow, dict) and flow.get("failure_triage") in ("checklist_uncertainty",):
-                continue
-        if decision.allow or decision.warn:
-            for arg_name, value in decision.valid_args.items():
-                key = self._source_flow_validated_arg_key(decision.tool_name, arg_name)
-                self._source_flow_validated_args_cache[key] = {
-                    "arg_name": arg_name,
-                    "value": value,
-                    "tool_name": decision.tool_name,
-                }
+        strong_safe_derivations = {
+            "normalized_exact_match",
+            "structured_field_match",
+            "absence_default",
+            "boolean_intent_extraction",
+            "selection_from_collection",
+            "selection_from_read_result",
+        }
+
+        for arg_name, value in decision.valid_args.items():
+            if sink_evidence:
+                sink = f"{decision.tool_name}.{arg_name}"
+                evidence = sink_evidence.get(sink)
+                if evidence is None:
+                    continue
+                ev_labels = set(getattr(evidence, "source_labels", []) or [])
+                if "injected_instruction" in ev_labels:
+                    continue
+                res_status = getattr(evidence, "resolution_status", "") or ""
+                derivation = getattr(evidence, "derivation_type", "") or ""
+                if res_status not in strong_safe_evidence_types and derivation not in strong_safe_derivations:
+                    if res_status not in ("", "unknown_origin") and derivation not in ("", "unknown_origin"):
+                        continue
+
+            key = self._source_flow_validated_arg_key(decision.tool_name, arg_name)
+            self._source_flow_validated_args_cache[key] = {
+                "arg_name": arg_name,
+                "value": value,
+                "tool_name": decision.tool_name,
+            }
 
     def _source_flow_get_locked_args(self, tool_name):
         locked = {}
