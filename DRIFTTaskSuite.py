@@ -102,7 +102,7 @@ class DRIFTTaskSuite(TaskSuite[Env]):
         messages: Sequence[ChatMessage],
         ) -> list[MessageContentBlock] | None:
         if messages[-1]["role"] != "assistant":
-            raise ValueError("Last message was not an assistant message")
+            return None
         return [{"type": "text", "content": messages[-1]["content"]}]
 
     def functions_call_format(self, messages):

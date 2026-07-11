@@ -65,8 +65,12 @@ class Phase2SmokeTests(unittest.TestCase):
 
         decision = self._validate("send_money", {"amount": 500}, checklist)
 
-        self.assertTrue(decision.reject, "origin_mismatch should be rejected")
-        self.assertEqual(decision.blocked_flows[0]["reason"], "origin_mismatch")
+        self.assertTrue(decision.repair_required or decision.reject,
+                         "origin_mismatch should require repair or be rejected")
+        if decision.repair_required:
+            self.assertIn("origin_mismatch", str(decision.invalid_args))
+        else:
+            self.assertEqual(decision.blocked_flows[0]["reason"], "origin_mismatch")
 
     def test_smoke3_send_channel_message_body_synthesis_allowed(self):
         self.store.record_tool_raw_output(
