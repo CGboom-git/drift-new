@@ -621,18 +621,14 @@ class DRIFTLLM(PromptingLLM):
     def _source_flow_cache_validated_args(self, decision, sink_evidence=None):
         if getattr(decision, "baseline_fallback", False):
             return
-        has_checklist_uncertainty_warning = any(
-            isinstance(w, dict) and w.get("failure_triage") == "checklist_uncertainty"
-            for w in (decision.warnings or [])
-        )
-        if has_checklist_uncertainty_warning and not decision.allow:
+        if not decision.allow:
             return
-        if not decision.allow and decision.warn:
+        if decision.warn:
             return
         if not decision.valid_args:
             return
 
-        strong_safe_evidence_types = {
+        strong_safe = {
             "normalized_exact_match",
             "structured_field_match",
             "absence_default",
@@ -642,15 +638,6 @@ class DRIFTLLM(PromptingLLM):
             "derived_absence_default",
             "derived_boolean_intent",
             "derived_selection_from_collection",
-            "derived_constrained_synthesis",
-        }
-        strong_safe_derivations = {
-            "normalized_exact_match",
-            "structured_field_match",
-            "absence_default",
-            "boolean_intent_extraction",
-            "selection_from_collection",
-            "selection_from_read_result",
         }
 
         for arg_name, value in decision.valid_args.items():
@@ -664,10 +651,8 @@ class DRIFTLLM(PromptingLLM):
                     continue
                 res_status = getattr(evidence, "resolution_status", "") or ""
                 derivation = getattr(evidence, "derivation_type", "") or ""
-                if res_status not in strong_safe_evidence_types and derivation not in strong_safe_derivations:
-                    if res_status not in ("", "unknown_origin") and derivation not in ("", "unknown_origin"):
-                        continue
-
+                if res_status not in strong_safe and derivation not in strong_safe:
+                    continue
             key = self._source_flow_validated_arg_key(decision.tool_name, arg_name)
             self._source_flow_validated_args_cache[key] = {
                 "arg_name": arg_name,

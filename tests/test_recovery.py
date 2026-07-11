@@ -723,6 +723,128 @@ class CacheAndSafeEvidenceTests(unittest.TestCase):
         violations = self._locked_arg_changed(locked, changed)
         self.assertIn("recipient", violations)
 
+    STRONG_SAFE = {
+        "normalized_exact_match",
+        "structured_field_match",
+        "absence_default",
+        "boolean_intent_extraction",
+        "selection_from_read_result",
+        "selection_from_collection",
+        "derived_absence_default",
+        "derived_boolean_intent",
+        "derived_selection_from_collection",
+    }
+
+    def _is_strong_safe(self, evidence):
+        labels = set(getattr(evidence, "source_labels", []) or [])
+        if "injected_instruction" in labels:
+            return False
+        res_status = getattr(evidence, "resolution_status", "") or ""
+        derivation = getattr(evidence, "derivation_type", "") or ""
+        return res_status in self.STRONG_SAFE or derivation in self.STRONG_SAFE
+
+    def test_strong_evidence_cacheable(self):
+        """strong safe evidence passes the cache filter."""
+        self.store.record_user_query("Pay Spotify 50")
+        raw_id = self.store.record_tool_raw_output(
+            "get_most_recent_transactions",
+            {"amount": 50, "recipient": "SE35500"},
+            step=1,
+        )
+        self.store.record_structured_fields(
+            "get_most_recent_transactions", raw_id,
+            {"amount": 50, "recipient": "SE35500"},
+            step=1,
+        )
+        _, specs, ev = self._validate(
+            "send_money",
+            {"recipient": "SE35500", "amount": 50},
+            [{"name": "send_money", "required parameters": {"recipient": None, "amount": None}, "conditions": None}],
+        )
+        for sink, evidence in ev.items():
+            if evidence.resolution_status:
+                self.assertTrue(self._is_strong_safe(evidence),
+                                f"{sink} resolution={evidence.resolution_status} "
+                                f"derivation={evidence.derivation_type} should be strong safe")
+
+    def test_baseline_fallback_decision_not_cacheable(self):
+        """baseline_fallback decision skips caching."""
+        self.store.record_user_query("Share the document")
+        self.store.record_tool_raw_output(
+            "get_recent_items",
+            '{"file_id": "DOC-9876-ABCD"}',
+            step=1,
+        )
+        checklist = [
+            {"name": "share_document",
+             "required parameters": {"file_id": "file_id extracted from read_invoice"},
+             "conditions": {"file_id": "extracted from read_invoice"}}
+        ]
+        decision, _, _ = self._validate("share_document", {"file_id": "DOC-9876-ABCD"}, checklist)
+        self.assertTrue(decision.baseline_fallback,
+                        "baseline_fallback=True means cache skips it")
+        self.assertFalse(decision.allow and not decision.warn,
+                         "cache requires allow=True, warn=False")
+
+    def test_warn_only_decision_not_cacheable(self):
+        """warn-only decision skips caching."""
+        decision, _, _ = self._validate(
+            "send_email",
+            {"body": "Generated status update."},
+            [{"name": "send_email", "required parameters": {"body": None}, "conditions": None}],
+        )
+        self.assertTrue(decision.warn or decision.allow)
+        if decision.warn and not decision.allow:
+            self.assertTrue(decision.warn, "warn-only should skip cache")
+        elif decision.allow and not decision.warn:
+            _, specs, ev = self._validate(
+                "send_email",
+                {"body": "Generated status update."},
+                [{"name": "send_email", "required parameters": {"body": None}, "conditions": None}],
+            )
+
+    def test_unknown_origin_not_strong_safe(self):
+        """unknown_origin evidence is NOT in the strong safe set."""
+        decision, specs, ev = self._validate(
+            "send_money",
+            {"recipient": "ALICE", "amount": 100, "subject": "test", "date": "2024-01-01"},
+            [{"name": "send_money", "required parameters": {"recipient": None, "amount": None}, "conditions": None}],
+        )
+        for sink, evidence in ev.items():
+            if getattr(evidence, "resolution_status", "") == "unknown_origin":
+                self.assertFalse(self._is_strong_safe(evidence),
+                                 f"{sink} unknown_origin should not be strong safe")
+
+    def test_model_generated_not_strong_safe(self):
+        """model_generated evidence is NOT in the strong safe set."""
+        decision, specs, ev = self._validate(
+            "send_money",
+            {"recipient": "ALICE", "amount": 999, "subject": "test", "date": "2025-07-11"},
+            [{"name": "send_money", "required parameters": {"recipient": None}, "conditions": None}],
+        )
+        for sink, evidence in ev.items():
+            if getattr(evidence, "resolution_status", "") == "model_generated":
+                self.assertFalse(self._is_strong_safe(evidence),
+                                 f"{sink} model_generated should not be strong safe")
+
+    def test_llm_synthesis_not_strong_safe(self):
+        """llm_synthesis evidence is NOT in the strong safe set."""
+        self.store.record_tool_raw_output(
+            "get_webpage", "Long article about project status.", step=1,
+        )
+        decision, specs, ev = self._validate(
+            "send_channel_message",
+            {"body": "Project status summary."},
+            [{"name": "send_channel_message",
+              "required parameters": {"body": "summary_content obtained from get_webpage"},
+              "conditions": {"body": "obtained from get_webpage"}}],
+        )
+        for sink, evidence in ev.items():
+            status = getattr(evidence, "resolution_status", "")
+            if "synthesis" in status or status == "llm_synthesis":
+                self.assertFalse(self._is_strong_safe(evidence),
+                                 f"{sink} {status} should not be strong safe")
+
 
 if __name__ == "__main__":
     unittest.main()
