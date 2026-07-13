@@ -32,6 +32,9 @@ class DRIFTLLM(PromptingLLM):
         self.source_flow_resolver = SinkEvidenceResolver()
         self.source_flow_validator = FlowAwareValidator()
         self._source_flow_run_active = False
+        self.cae_mode = getattr(args, "cae_mode", "on")
+        if self.logger:
+            self.logger.info(f"Resolved CAE mode: {self.cae_mode}")
 
     def source_flow_enabled(self):
         return bool(
@@ -43,8 +46,26 @@ class DRIFTLLM(PromptingLLM):
         return bool(getattr(self.args, "source_flow_validation", False))
 
     def controlled_action_extension_enabled(self):
-        return bool(getattr(self.args, "source_flow_validation", False)
-                     and getattr(self.args, "controlled_action_extension", False))
+        return self.cae_mode == "on" and bool(
+            getattr(self.args, "source_flow_validation", False))
+
+    def _source_flow_is_high_risk_action(self, tool_name, tool_type):
+        if tool_type not in ("action", "write", "execute"):
+            return False
+        high_risk_names = {
+            "send_money", "schedule_transaction", "update_scheduled_transaction",
+            "update_password", "update_user_info", "send_email", "delete_email",
+            "delete_file", "append_to_file", "share_file", "create_calendar_event",
+            "invite_user", "remove_user", "share_document", "transfer_money",
+            "purchase_item", "book_flight", "book_hotel", "cancel_booking",
+        }
+        name_lower = tool_name.lower()
+        for prefix in ("send_", "delete_", "share_", "transfer_", "invite_",
+                        "remove_", "purchase_", "book_", "cancel_", "update_",
+                        "create_"):
+            if name_lower.startswith(prefix):
+                return True
+        return name_lower in high_risk_names
 
     def delegated_task_source_enabled(self):
         return not getattr(self.args, "disable_delegated_task_source", False)
@@ -1085,7 +1106,79 @@ class DRIFTLLM(PromptingLLM):
                     latest_function_messages = "No Called Functions."
 
                 # Controlled Action Extension (Phase 3)
-                if self.controlled_action_extension_enabled() and self._is_action_tool(achieved_func):
+                is_action = self._is_action_tool(achieved_func)
+                is_trajectory_outside = True  # already determined by being in this else branch
+                cae_enabled = self.controlled_action_extension_enabled()
+
+                if is_action and self.cae_mode == "off":
+                    self.source_label_store.validation_trace.append(
+                        ValidationTraceEntry(
+                            step=len(self.achieved_function_trajectory),
+                            event="cae_disabled_trajectory_outside_action",
+                            source_ids=[],
+                            details={"tool_name": achieved_func, "cae_mode": "off"},
+                            decision="log_only",
+                            would_reject=False,
+                        )
+                    )
+                    if self.logger:
+                        self.logger.info(f"CAE off: trajectory-outside ACTION {achieved_func} "
+                                         f"rejected without CAE")
+
+                    self._source_flow_sanitize_rejected_output(
+                        output,
+                        f"[CALL ERROR] CAE is disabled. Trajectory-outside ACTION "
+                        f"{achieved_func} is not allowed with cae_mode=off."
+                    )
+                    error_msg = {
+                        "role": "user",
+                        "content": (
+                            f"[CALL ERROR] CAE is disabled. The ACTION {achieved_func} "
+                            f"is outside the planned trajectory and CAE mode is off. "
+                            "Stick to the original trajectory plan."
+                        ),
+                    }
+                    return error_msg, output
+
+                if is_action and self.cae_mode == "strict":
+                    tool_type = self.source_flow_contract_helper.get_tool_type(achieved_func)
+                    if self._source_flow_is_high_risk_action(achieved_func, tool_type):
+                        self.source_label_store.validation_trace.append(
+                            ValidationTraceEntry(
+                                step=len(self.achieved_function_trajectory),
+                                event="cae_strict_blocked_high_risk_action",
+                                source_ids=[],
+                                details={
+                                    "tool_name": achieved_func,
+                                    "tool_type": tool_type,
+                                    "cae_mode": "strict",
+                                },
+                                decision="reject",
+                                would_reject=True,
+                            )
+                        )
+                        if self.logger:
+                            self.logger.info(
+                                f"CAE strict: blocked high-risk ACTION {achieved_func}"
+                            )
+
+                        self._source_flow_sanitize_rejected_output(
+                            output,
+                            f"[CALL ERROR] CAE strict mode blocked high-risk ACTION "
+                            f"{achieved_func}. Stick to the original trajectory plan."
+                        )
+                        error_msg = {
+                            "role": "user",
+                            "content": (
+                                f"[CALL ERROR] CAE strict mode blocked the high-risk "
+                                f"ACTION {achieved_func}. This ACTION is outside the "
+                                "planned trajectory and cannot use CAE in strict mode. "
+                                "Stick to the original trajectory plan."
+                            ),
+                        }
+                        return error_msg, output
+
+                if cae_enabled and is_action:
                     self.logger.info(
                         f"Trajectory-outside ACTION {achieved_func} entering Controlled Action Extension"
                     )
