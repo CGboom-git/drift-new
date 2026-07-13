@@ -29,8 +29,7 @@ def get_args(description='DRIFT'):
     parser.add_argument("--suites", type=str, default="banking,slack,travel,workspace", help="which suites to use, separated by comma.")
     parser.add_argument('--force_rerun', action='store_true', help='Whether to force rerun.')
     parser.add_argument('--do_attack', action='store_true', help='Whether the setting is under attack.')
-    parser.add_argument('--attack_type', type=str, default="important_instructions", help='The attack type, you can select from "direct, ignore_previous, system_message, injecagent, dos, swearwords_dos, captcha_dos, offensive_email_dos, felony_dos, important_instructions, important_instructions_no_user_name, important_instructions_no_model_name, important_instructions_no_names, important_instructions_wrong_model_name, important_instructions_wrong_user_name, tool_knowledge"')
-
+    parser.add_argument('--attack_type', type=str, default="important_instructions", help='The attack type')
     parser.add_argument('--target_user_tasks', type=str, default=None, help='User task number you want to evaluate, sperated by comma, such as "1,4,7".')
     parser.add_argument('--target_injection_tasks', type=str, default=None, help='Injection task number you want to specific evaluate, sperated by comma, such as "1,2,3".')
 
@@ -57,6 +56,14 @@ def get_args(description='DRIFT'):
         help="Enable Controlled Action Extension for trajectory-outside ACTION tools (Phase 3).",
     )
     parser.add_argument(
+        "--cae_mode",
+        type=str,
+        choices=["on", "off", "strict"],
+        default=None,
+        help="CAE mode: on (current behavior), off (fully disabled), strict (block high-risk ACTION). "
+             "If not set, uses --controlled_action_extension flag for backward compatibility.",
+    )
+    parser.add_argument(
         "--disable_delegated_task_source",
         action="store_true",
         help="Disable delegated task source detection (ablation).",
@@ -65,7 +72,14 @@ def get_args(description='DRIFT'):
     # Environment
     parser.add_argument('--seed', type=int, default=98, help='Random Seed.')
 
-
     args = parser.parse_args()
+
+    # Resolve cae_mode with backward compatibility
+    if args.cae_mode is not None:
+        pass  # explicitly set, use as-is
+    elif getattr(args, 'controlled_action_extension', False):
+        args.cae_mode = 'on'
+    else:
+        args.cae_mode = 'off'
 
     return args
