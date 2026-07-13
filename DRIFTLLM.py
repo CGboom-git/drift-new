@@ -50,7 +50,7 @@ class DRIFTLLM(PromptingLLM):
             getattr(self.args, "source_flow_validation", False))
 
     def _source_flow_is_high_risk_action(self, tool_name, tool_type):
-        if tool_type not in ("action", "write", "execute"):
+        if tool_type in ("read", "observe", "transform", "parse"):
             return False
         high_risk_names = {
             "send_money", "schedule_transaction", "update_scheduled_transaction",
