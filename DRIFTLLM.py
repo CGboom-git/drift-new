@@ -1114,7 +1114,7 @@ class DRIFTLLM(PromptingLLM):
                     self.source_label_store.validation_trace.append(
                         ValidationTraceEntry(
                             step=len(self.achieved_function_trajectory),
-                            event="cae_disabled_trajectory_outside_action",
+                            event="cae_disabled_preserve_drift_native",
                             source_ids=[],
                             details={"tool_name": achieved_func, "cae_mode": "off"},
                             decision="log_only",
@@ -1122,19 +1122,34 @@ class DRIFTLLM(PromptingLLM):
                         )
                     )
                     if self.logger:
-                        self.logger.info(f"CAE off: trajectory-outside ACTION {achieved_func} "
+                        self.logger.info(f"CAE off: preserving DRIFT native path for {achieved_func}")
+                    # Fall through to original DRIFT Open Dynamic Updating below
+
+                if is_action and self.cae_mode == "block":
+                    self.source_label_store.validation_trace.append(
+                        ValidationTraceEntry(
+                            step=len(self.achieved_function_trajectory),
+                            event="cae_disabled_trajectory_outside_action",
+                            source_ids=[],
+                            details={"tool_name": achieved_func, "cae_mode": "block"},
+                            decision="log_only",
+                            would_reject=False,
+                        )
+                    )
+                    if self.logger:
+                        self.logger.info(f"CAE block: trajectory-outside ACTION {achieved_func} "
                                          f"rejected without CAE")
 
                     self._source_flow_sanitize_rejected_output(
                         output,
-                        f"[CALL ERROR] CAE is disabled. Trajectory-outside ACTION "
-                        f"{achieved_func} is not allowed with cae_mode=off."
+                        f"[CALL ERROR] CAE block mode. Trajectory-outside ACTION "
+                        f"{achieved_func} is not allowed."
                     )
                     error_msg = {
                         "role": "user",
                         "content": (
-                            f"[CALL ERROR] CAE is disabled. The ACTION {achieved_func} "
-                            f"is outside the planned trajectory and CAE mode is off. "
+                            f"[CALL ERROR] CAE is in block mode. The ACTION {achieved_func} "
+                            f"is outside the planned trajectory. "
                             "Stick to the original trajectory plan."
                         ),
                     }
