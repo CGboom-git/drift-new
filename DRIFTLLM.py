@@ -235,6 +235,131 @@ class DRIFTLLM(PromptingLLM):
                 "call_error_message": None, "patch": patch,
                 "judge_result": judge_result}
 
+
+    def _get_tool_semantic_metadata(self, tool_name, tool_args):
+        helper = getattr(self, "source_flow_contract_helper", None)
+        tool_args = tool_args or {}
+
+        if helper is None:
+            return {
+                "tool_name": tool_name,
+                "tool_type": "unknown",
+                "arg_roles": {},
+                "high_risk_args": [],
+                "content_args": [],
+            }
+
+        metadata = {
+            "tool_name": tool_name,
+            "tool_type": helper.get_tool_type(tool_name),
+            "arg_roles": {},
+            "high_risk_args": [],
+            "content_args": [],
+        }
+
+        for arg in tool_args:
+            try:
+                metadata["arg_roles"][arg] = helper.get_arg_role(tool_name, arg)
+            except Exception:
+                metadata["arg_roles"][arg] = "unknown"
+            try:
+                if helper.is_high_risk_arg(tool_name, arg):
+                    metadata["high_risk_args"].append(arg)
+            except Exception:
+                pass
+            try:
+                if helper.is_content_arg(tool_name, arg):
+                    metadata["content_args"].append(arg)
+            except Exception:
+                pass
+
+        return metadata
+
+
+    def _safe_parse_json_object(self, text):
+        if isinstance(text, dict):
+            return text
+        if not isinstance(text, str):
+            return None
+
+        try:
+            return json.loads(text)
+        except Exception:
+            pass
+
+        cleaned = text.strip()
+        cleaned = __import__("re").sub(r"^```(?:json)?", "", cleaned).strip()
+        cleaned = __import__("re").sub(r"```$", "", cleaned).strip()
+
+        try:
+            return json.loads(cleaned)
+        except Exception:
+            pass
+
+        match = __import__("re").search(r"\{.*\}", text, flags=__import__("re").DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except Exception:
+                return None
+
+        return None
+
+    def _normalize_cae_judge_result(self, result):
+        if not isinstance(result, dict):
+            return {"classification": "UNCERTAIN", "reason": "invalid_judge_result"}
+
+        normalized = dict(result)
+
+        classification = str(normalized.get("classification", "UNCERTAIN")).strip().upper()
+        if classification not in {"PLAN_OMISSION", "DEVIATION", "UNCERTAIN"}:
+            classification = "UNCERTAIN"
+        normalized["classification"] = classification
+
+        idx = normalized.get("parent_step_index")
+        if isinstance(idx, str):
+            try:
+                idx = int(idx)
+            except Exception:
+                idx = None
+        if not isinstance(idx, int):
+            idx = None
+        normalized["parent_step_index"] = idx
+
+        parent_tool = normalized.get("parent_tool_name")
+        if parent_tool is not None:
+            parent_tool = str(parent_tool).strip()
+            if parent_tool.lower() in {"none", "null", ""}:
+                parent_tool = None
+        normalized["parent_tool_name"] = parent_tool
+
+        for key in ["necessary", "final_authorized_effect", "new_goal_introduced", "new_principal_introduced"]:
+            value = normalized.get(key)
+            if isinstance(value, str):
+                normalized[key] = value.strip().lower() == "true"
+            else:
+                normalized[key] = bool(value)
+
+        return normalized
+
+    def _log_cae_repair_judge_parse_error(self, tool_name, raw_response):
+        try:
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(getattr(self, "achieved_function_trajectory", []) or []),
+                    event="cae_repair_judge_parse_error",
+                    source_ids=[],
+                    details={
+                        "tool_name": tool_name,
+                        "raw_response": str(raw_response)[:1000],
+                    },
+                    decision="reject",
+                    would_reject=True,
+                )
+            )
+        except Exception:
+            pass
+
     def _judge_plan_extension(
         self, query, tool_name, tool_args, messages, thought_content,
         snapshot, extended_trajectory, extended_checklist,
@@ -251,20 +376,29 @@ class DRIFTLLM(PromptingLLM):
             for k, v in (tool_args or {}).items():
                 arg_source_summary += f"  {k}: {str(v)[:100]}\n"
 
+            tool_metadata = self._get_tool_semantic_metadata(tool_name, tool_args)
+
+            initial_traj = getattr(self, "initial_function_trajectory", None) or []
+            current_traj = snapshot.get("function_trajectory", [])
+            achieved_traj = snapshot.get("achieved_function_trajectory", [])
+
             judge_data = f"""User Query:
 {query}
 
-Initial Trajectory:
-{snapshot.get('function_trajectory', [])}
+Initial Trajectory (original plan):
+{initial_traj}
 
 Current Trajectory:
-{self.function_trajectory}
+{current_traj}
 
 Achieved Trajectory:
-{self.achieved_function_trajectory}
+{achieved_traj}
 
 Candidate Out-of-Plan ACTION:
 {tool_name}
+
+Tool Semantic Metadata:
+{tool_metadata}
 
 Arguments:
 {arg_source_summary}
@@ -278,8 +412,16 @@ Thought Content:
 
             system_msg = CAE_PLAN_EXTENSION_PROMPT
             response = self.client.llm_run(system_msg, judge_data)
-            result = json.loads(response) if isinstance(response, str) else response
-            return result if isinstance(result, dict) else {"classification": "UNCERTAIN"}
+            parsed = self._safe_parse_json_object(response)
+
+            if not isinstance(parsed, dict):
+                self._log_cae_repair_judge_parse_error(
+                    tool_name=tool_name,
+                    raw_response=response if isinstance(response, str) else str(response),
+                )
+                return {"classification": "UNCERTAIN", "reason": "judge_parse_error"}
+
+            return self._normalize_cae_judge_result(parsed)
         except Exception:
             if self.logger:
                 self.logger.info(f"CAE repair judge failed for {tool_name}")
@@ -287,26 +429,35 @@ Thought Content:
 
     def _task_extension_vf(self, judge_result):
         if judge_result.get("classification") != "PLAN_OMISSION":
-            return False, "classification_not_plan_omission"
-        if not judge_result.get("parent_step"):
-            return False, "missing_parent_step"
+            return False, "not_plan_omission"
+
+        parent_index = judge_result.get("parent_step_index")
+        parent_tool = judge_result.get("parent_tool_name")
+        has_parent = (
+            isinstance(parent_index, int)
+            or (isinstance(parent_tool, str) and bool(parent_tool.strip()))
+        )
+        if not has_parent:
+            return False, "missing_parent_reference"
+
         if judge_result.get("necessary") is not True:
             return False, "not_necessary"
+
         if judge_result.get("new_goal_introduced") is True:
             return False, "new_goal_introduced"
 
         output_consumed = bool(judge_result.get("output_consumed_by"))
         final_effect = judge_result.get("final_authorized_effect") is True
         if not (output_consumed or final_effect):
-            return False, "neither_output_consumed_nor_final_authorized_effect"
+            return False, "no_consumed_output_or_final_effect"
 
         return True, "pass"
 
     def _build_add_substep_patch(self, tool_name, tool_args, judge_result):
         return {
             "operation": "ADD_SUBSTEP",
-            "parent_step": judge_result.get("parent_step"),
-            "insert_position": f"before:{judge_result.get('parent_step', '')}",
+            "parent_step_index": judge_result.get("parent_step_index"),
+            "parent_tool_name": judge_result.get("parent_tool_name"),
             "tool_name": tool_name,
             "tool_args": tool_args,
             "repair_role": judge_result.get("repair_role"),
@@ -316,17 +467,42 @@ Thought Content:
             "reason": judge_result.get("reason"),
         }
 
+    def _resolve_patch_insert_index(self, trajectory, patch):
+        parent_index = patch.get("parent_step_index")
+        parent_tool = patch.get("parent_tool_name")
+
+        if isinstance(parent_index, int) and 0 <= parent_index < len(trajectory):
+            return parent_index, "parent_step_index"
+
+        if isinstance(parent_tool, str) and parent_tool in trajectory:
+            return trajectory.index(parent_tool), "parent_tool_name"
+
+        return len(trajectory), "fallback_append"
+
     def _apply_patch_to_copy(self, snapshot, patch):
         if patch.get("operation") != "ADD_SUBSTEP":
             return None
         candidate = copy.deepcopy(snapshot)
         trajectory = list(candidate.get("function_trajectory", []))
-        parent = patch.get("parent_step")
         tool_name = patch.get("tool_name")
 
-        insert_idx = len(trajectory)
-        if parent and parent in trajectory:
-            insert_idx = trajectory.index(parent)
+        insert_idx, resolution = self._resolve_patch_insert_index(trajectory, patch)
+        if resolution == "fallback_append":
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="cae_repair_parent_fallback",
+                    source_ids=[],
+                    details={
+                        "parent_step_index": patch.get("parent_step_index"),
+                        "parent_tool_name": patch.get("parent_tool_name"),
+                        "trajectory": trajectory,
+                        "insert_index": insert_idx,
+                    },
+                    decision="log_only",
+                    would_reject=False,
+                )
+            )
 
         trajectory.insert(insert_idx, tool_name)
         candidate["function_trajectory"] = trajectory
