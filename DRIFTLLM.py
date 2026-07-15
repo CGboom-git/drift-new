@@ -142,6 +142,22 @@ class DRIFTLLM(PromptingLLM):
         # Step 2: Task Extension VF
         task_vf_ok, task_vf_reason = self._task_extension_vf(judge_result)
         if not task_vf_ok:
+            if task_vf_reason == "missing_parent_reference":
+                self.source_label_store.validation_trace.append(
+                    ValidationTraceEntry(
+                        step=len(self.achieved_function_trajectory),
+                        event="cae_repair_missing_parent_for_plan_omission",
+                        source_ids=[],
+                        details={
+                            "tool_name": tool_name,
+                            "judge_result": judge_result,
+                            "current_trajectory": extended_trajectory,
+                            "achieved_trajectory": self.achieved_function_trajectory,
+                            "reason": task_vf_reason,
+                        },
+                        decision="reject", would_reject=True,
+                    )
+                )
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
                     step=len(self.achieved_function_trajectory),
@@ -360,6 +376,49 @@ class DRIFTLLM(PromptingLLM):
         except Exception:
             pass
 
+
+    def _normalize_cae_parent_reference(self, result, current_trajectory, achieved_trajectory):
+        if not isinstance(result, dict):
+            return result
+        if result.get("classification") != "PLAN_OMISSION":
+            return result
+
+        parent_index = result.get("parent_step_index")
+        parent_tool = result.get("parent_tool_name")
+
+        # Case 1: valid index
+        if isinstance(parent_index, int) and 0 <= parent_index < len(current_trajectory):
+            expected_tool = current_trajectory[parent_index]
+            if not parent_tool:
+                result["parent_tool_name"] = expected_tool
+            return result
+
+        # Case 2: valid tool name
+        if isinstance(parent_tool, str) and parent_tool in current_trajectory:
+            result["parent_step_index"] = current_trajectory.index(parent_tool)
+            return result
+
+        # Case 3: output_consumed_by matches a tool in trajectory
+        output_consumed_by = result.get("output_consumed_by")
+        if isinstance(output_consumed_by, str) and output_consumed_by in current_trajectory:
+            result["parent_tool_name"] = output_consumed_by
+            result["parent_step_index"] = current_trajectory.index(output_consumed_by)
+            result["parent_inferred"] = True
+            result["parent_inference_reason"] = "output_consumed_by_matches_current_trajectory"
+            return result
+
+        # Case 4: final authorized effect, use next expected step
+        if result.get("final_authorized_effect") is True:
+            next_idx = len(achieved_trajectory or [])
+            if 0 <= next_idx < len(current_trajectory):
+                result["parent_step_index"] = next_idx
+                result["parent_tool_name"] = current_trajectory[next_idx]
+                result["parent_inferred"] = True
+                result["parent_inference_reason"] = "final_authorized_effect_next_expected_step"
+                return result
+
+        return result
+
     def _judge_plan_extension(
         self, query, tool_name, tool_args, messages, thought_content,
         snapshot, extended_trajectory, extended_checklist,
@@ -421,7 +480,11 @@ Thought Content:
                 )
                 return {"classification": "UNCERTAIN", "reason": "judge_parse_error"}
 
-            return self._normalize_cae_judge_result(parsed)
+            result = self._normalize_cae_judge_result(parsed)
+            current_traj = snapshot.get("function_trajectory", [])
+            achieved_traj = snapshot.get("achieved_function_trajectory", [])
+            result = self._normalize_cae_parent_reference(result, current_traj, achieved_traj)
+            return result
         except Exception:
             if self.logger:
                 self.logger.info(f"CAE repair judge failed for {tool_name}")
