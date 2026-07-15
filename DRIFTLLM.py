@@ -1,4 +1,5 @@
 from import_lib import *
+from prompts import CAE_PLAN_EXTENSION_PROMPT
 from source_flow import (
     ContractHelper,
     FlowAwareValidator,
@@ -48,6 +49,387 @@ class DRIFTLLM(PromptingLLM):
     def controlled_action_extension_enabled(self):
         return self.cae_mode == "on" and bool(
             getattr(self.args, "source_flow_validation", False))
+
+
+    # --- CAE REPAIR MODE ---
+
+    def _controlled_action_repair(
+        self, tool_name, tool_args, query, messages, output,
+        thought_content, func_ids, extended_trajectory, extended_checklist,
+    ):
+        snapshot = self._source_flow_trajectory_snapshot()
+
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="cae_repair_candidate",
+                source_ids=[],
+                details={
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "extended_trajectory": extended_trajectory,
+                    "cae_mode": "repair",
+                },
+                decision="log_only",
+                would_reject=False,
+            )
+        )
+
+        # Step 1: Judge plan extension
+        judge_result = self._judge_plan_extension(
+            query=query, tool_name=tool_name, tool_args=tool_args,
+            messages=messages, thought_content=thought_content,
+            snapshot=snapshot, extended_trajectory=extended_trajectory,
+            extended_checklist=extended_checklist,
+        )
+
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="cae_repair_judge_result",
+                source_ids=[],
+                details={
+                    "tool_name": tool_name,
+                    "judge_result": judge_result,
+                },
+                decision="log_only",
+                would_reject=False,
+            )
+        )
+
+        classification = judge_result.get("classification", "UNCERTAIN")
+
+        if classification != "PLAN_OMISSION":
+            attack_evidence = self._collect_attack_evidence(
+                tool_name, tool_args, judge_result, snapshot,
+            )
+            event = "cae_repair_attack_deviation" if attack_evidence.get("is_attack") else "cae_repair_reject_deviation"
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event=event,
+                    source_ids=[],
+                    details={
+                        "tool_name": tool_name,
+                        "classification": classification,
+                        "attack_evidence": attack_evidence,
+                    },
+                    decision="reject",
+                    would_reject=True,
+                )
+            )
+            msg = (
+                "[CALL ERROR] CAE repair rejected the proposed action because "
+                "it is not a verified necessary extension of the authorized plan. "
+                "Continue from the original plan."
+            )
+            if classification == "UNCERTAIN":
+                self.source_label_store.validation_trace[-1] = ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="cae_repair_reject_uncertain",
+                    source_ids=[],
+                    details={"tool_name": tool_name, "classification": classification},
+                    decision="reject", would_reject=True,
+                )
+                msg = (
+                    "[CALL ERROR] CAE repair rejected the proposed action because "
+                    "the plan extension could not be verified safely. "
+                    "Continue from the original authorized plan."
+                )
+            return {"allowed": False, "category": classification,
+                    "call_error_message": msg, "judge_result": judge_result}
+
+        # Step 2: Task Extension VF
+        task_vf_ok, task_vf_reason = self._task_extension_vf(judge_result)
+        if not task_vf_ok:
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="cae_repair_task_vf_fail",
+                    source_ids=[],
+                    details={"tool_name": tool_name, "reason": task_vf_reason},
+                    decision="reject", would_reject=True,
+                )
+            )
+            return {"allowed": False, "category": "PLAN_OMISSION",
+                    "call_error_message": (
+                        "[CALL ERROR] CAE repair rejected: task extension "
+                        "verification failed."
+                    ), "judge_result": judge_result}
+
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="cae_repair_task_vf_pass",
+                source_ids=[],
+                details={"tool_name": tool_name, "reason": task_vf_reason},
+                decision="log_only", would_reject=False,
+            )
+        )
+
+        # Step 3: Build patch
+        patch = self._build_add_substep_patch(tool_name, tool_args, judge_result)
+
+        # Step 4: Apply patch to copy
+        candidate_state = self._apply_patch_to_copy(snapshot, patch)
+        if candidate_state is None:
+            return {"allowed": False, "category": "PLAN_OMISSION",
+                    "call_error_message": (
+                        "[CALL ERROR] CAE repair rejected: failed to apply patch."
+                    ), "judge_result": judge_result}
+
+        # Step 5: Security VF
+        security_result = self._validate_candidate_patch(
+            tool_name, tool_args, candidate_state,
+        )
+        if not security_result.get("pass"):
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="cae_repair_security_vf_fail",
+                    source_ids=[],
+                    details={"tool_name": tool_name, "reason": security_result.get("reason")},
+                    decision="reject", would_reject=True,
+                )
+            )
+            return {"allowed": False, "category": "PLAN_OMISSION",
+                    "call_error_message": security_result.get("call_error_message",
+                        "[CALL ERROR] CAE repair rejected the proposed plan patch "
+                        "because SourceFlow/security verification failed. "
+                        "Continue from the original authorized plan."
+                    ),
+                    "security_decision": security_result.get("decision"),
+                    "judge_result": judge_result}
+
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="cae_repair_security_vf_pass",
+                source_ids=[],
+                details={"tool_name": tool_name},
+                decision="log_only", would_reject=False,
+            )
+        )
+
+        # Step 6: Commit
+        self._commit_candidate_state(candidate_state)
+
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="cae_repair_patch_committed",
+                source_ids=[],
+                details={
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "patch": patch,
+                },
+                decision="allow", would_reject=False,
+            )
+        )
+
+        if self.logger:
+            self.logger.info(f"CAE repair allowed {tool_name}: patch committed")
+
+        return {"allowed": True, "category": "PLAN_OMISSION",
+                "call_error_message": None, "patch": patch,
+                "judge_result": judge_result}
+
+    def _judge_plan_extension(
+        self, query, tool_name, tool_args, messages, thought_content,
+        snapshot, extended_trajectory, extended_checklist,
+    ):
+        try:
+            recent_obs = ""
+            if messages and len(messages) > 0:
+                for m in reversed(messages):
+                    if isinstance(m, dict) and m.get("role") == "tool":
+                        recent_obs = str(m.get("content", ""))[:2000]
+                        break
+
+            arg_source_summary = ""
+            for k, v in (tool_args or {}).items():
+                arg_source_summary += f"  {k}: {str(v)[:100]}\n"
+
+            judge_data = f"""User Query:
+{query}
+
+Initial Trajectory:
+{snapshot.get('function_trajectory', [])}
+
+Current Trajectory:
+{self.function_trajectory}
+
+Achieved Trajectory:
+{self.achieved_function_trajectory}
+
+Candidate Out-of-Plan ACTION:
+{tool_name}
+
+Arguments:
+{arg_source_summary}
+
+Sanitized Recent Observation:
+{recent_obs[:1500]}
+
+Thought Content:
+{(thought_content or '')[:500]}
+"""
+
+            system_msg = CAE_PLAN_EXTENSION_PROMPT
+            response = self.client.llm_run(system_msg, judge_data)
+            result = json.loads(response) if isinstance(response, str) else response
+            return result if isinstance(result, dict) else {"classification": "UNCERTAIN"}
+        except Exception:
+            if self.logger:
+                self.logger.info(f"CAE repair judge failed for {tool_name}")
+            return {"classification": "UNCERTAIN", "reason": "judge_error"}
+
+    def _task_extension_vf(self, judge_result):
+        if judge_result.get("classification") != "PLAN_OMISSION":
+            return False, "classification_not_plan_omission"
+        if not judge_result.get("parent_step"):
+            return False, "missing_parent_step"
+        if judge_result.get("necessary") is not True:
+            return False, "not_necessary"
+        if judge_result.get("new_goal_introduced") is True:
+            return False, "new_goal_introduced"
+
+        output_consumed = bool(judge_result.get("output_consumed_by"))
+        final_effect = judge_result.get("final_authorized_effect") is True
+        if not (output_consumed or final_effect):
+            return False, "neither_output_consumed_nor_final_authorized_effect"
+
+        return True, "pass"
+
+    def _build_add_substep_patch(self, tool_name, tool_args, judge_result):
+        return {
+            "operation": "ADD_SUBSTEP",
+            "parent_step": judge_result.get("parent_step"),
+            "insert_position": f"before:{judge_result.get('parent_step', '')}",
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "repair_role": judge_result.get("repair_role"),
+            "expected_output": judge_result.get("expected_output"),
+            "output_consumed_by": judge_result.get("output_consumed_by"),
+            "final_authorized_effect": judge_result.get("final_authorized_effect") is True,
+            "reason": judge_result.get("reason"),
+        }
+
+    def _apply_patch_to_copy(self, snapshot, patch):
+        if patch.get("operation") != "ADD_SUBSTEP":
+            return None
+        candidate = copy.deepcopy(snapshot)
+        trajectory = list(candidate.get("function_trajectory", []))
+        parent = patch.get("parent_step")
+        tool_name = patch.get("tool_name")
+
+        insert_idx = len(trajectory)
+        if parent and parent in trajectory:
+            insert_idx = trajectory.index(parent)
+
+        trajectory.insert(insert_idx, tool_name)
+        candidate["function_trajectory"] = trajectory
+
+        checklist = candidate.get("node_checklist")
+        try:
+            checklist_obj = json.loads(checklist) if isinstance(checklist, str) else copy.deepcopy(checklist)
+            if isinstance(checklist_obj, list):
+                checklist_obj.insert(insert_idx, {
+                    "name": tool_name,
+                    "required parameters": patch.get("tool_args"),
+                    "conditions": {
+                        "cae_patch": True,
+                        "parent_step": parent,
+                        "repair_role": patch.get("repair_role"),
+                        "reason": patch.get("reason"),
+                    },
+                })
+                candidate["node_checklist"] = json.dumps(checklist_obj)
+        except Exception:
+            pass
+
+        return candidate
+
+    def _validate_candidate_patch(self, tool_name, tool_args, candidate_state):
+        tool_type = self.source_flow_validator._tool_type(
+            tool_name, self.source_flow_contract_helper, candidate_state,
+        )
+
+        sink_specs = self.source_flow_compiler.spec_map(
+            candidate_state.get("node_checklist"), tool_name, tool_args,
+        )
+
+        sink_evidence = self.source_flow_resolver.resolve_args(
+            tool_name, tool_args, sink_specs,
+            self.source_label_store, self.source_flow_contract_helper,
+        )
+
+        decision = self.source_flow_validator.validate(
+            tool_name=tool_name,
+            tool_args=tool_args,
+            compiled_sink_specs=sink_specs,
+            sink_evidence=sink_evidence,
+            source_store=self.source_label_store,
+            contract_helper=self.source_flow_contract_helper,
+            trajectory_state={
+                **candidate_state,
+                "controlled_extension": True,
+                "cae_mode": "repair",
+                "trajectory_outside_action": True,
+            },
+        )
+
+        if decision.reject:
+            return {
+                "pass": False, "reason": "source_flow_reject",
+                "decision": decision,
+                "call_error_message": decision.call_error_message,
+                "has_attack_evidence": True,
+            }
+
+        if decision.warn and self._source_flow_is_high_risk_action(tool_name, tool_type):
+            return {
+                "pass": False, "reason": "high_risk_warn_escalated_to_reject",
+                "decision": decision,
+                "call_error_message": (
+                    f"[CALL ERROR] CAE repair rejected {tool_name}: "
+                    "high-risk trajectory-outside action has insufficient parameter provenance."
+                ),
+                "has_attack_evidence": False,
+            }
+
+        return {
+            "pass": True, "reason": "pass",
+            "decision": decision,
+            "call_error_message": None,
+            "has_attack_evidence": False,
+        }
+
+    def _commit_candidate_state(self, candidate_state):
+        self.function_trajectory = copy.deepcopy(candidate_state.get("function_trajectory", []))
+        candidate_checklist = candidate_state.get("node_checklist")
+        if candidate_checklist is not None:
+            self.node_checklist = copy.deepcopy(candidate_checklist)
+
+    def _collect_attack_evidence(self, tool_name, tool_args, judge_result, snapshot):
+        evidence = {"is_attack": False, "reason": "", "source_ids": [], "suspicious_spans": [],
+                     "evidence": []}
+
+        for k, v in (tool_args or {}).items():
+            v_str = str(v)
+            for source_id in getattr(self.source_label_store, "records", []):
+                src_labels = getattr(source_id, "source_labels", []) or []
+                if "injected_instruction" in src_labels:
+                    norm_src = str(getattr(source_id, "value", ""))
+                    if norm_src and v_str in norm_src:
+                        evidence["is_attack"] = True
+                        evidence["reason"] = f"argument {k} sourced from injected_instruction"
+                        evidence["source_ids"].append(getattr(source_id, "source_id", ""))
+                        evidence["suspicious_spans"].append(v_str)
+                        evidence["evidence"].append(f"injected_source:{k}")
+
+        return evidence
 
     def _source_flow_is_high_risk_action(self, tool_name, tool_type):
         if tool_type in ("read", "observe", "transform", "parse"):
@@ -1192,6 +1574,35 @@ class DRIFTLLM(PromptingLLM):
                             ),
                         }
                         return error_msg, output
+
+                if is_action and self.cae_mode == "repair":
+                    tool_args_by_name = {}
+                    for call in (output.get("tool_calls", []) or []):
+                        fn = call.function if hasattr(call, "function") else call.get("function", "")
+                        if isinstance(fn, str):
+                            tool_args_by_name[fn] = call.args if hasattr(call, "args") else (call.get("args") or {})
+                    tool_args = tool_args_by_name.get(achieved_func, {})
+
+                    repair_result = self._controlled_action_repair(
+                        tool_name=achieved_func, tool_args=tool_args,
+                        query=query, messages=messages, output=output,
+                        thought_content=thought_content, func_ids=func_ids,
+                        extended_trajectory=extended_function_trajectory,
+                        extended_checklist=extended_checklist,
+                    )
+
+                    if not repair_result.get("allowed"):
+                        self._source_flow_sanitize_rejected_output(
+                            output, repair_result.get("call_error_message", "CAE repair rejected"),
+                        )
+                        error_msg = {
+                            "role": "user",
+                            "content": f"</function_error>\n{repair_result.get('call_error_message', '')}\n</function_error>",
+                        }
+                        return error_msg, output
+
+                    temp_achieved_trajectory.append(achieved_func)
+                    continue
 
                 if cae_enabled and is_action:
                     self.logger.info(
