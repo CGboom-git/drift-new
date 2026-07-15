@@ -122,6 +122,10 @@ Important rules:
 Return this exact JSON format:
 {
   "classification": "PLAN_OMISSION | DEVIATION | UNCERTAIN",
+  "parent_step_index": "integer or null",
+  "parent_tool_name": "string or null",
+  "parent_step_index": "integer or null",
+  "parent_tool_name": "string or null",
   "parent_step": "string or null",
   "necessary": true or false,
   "repair_role": "INTERMEDIATE_SUBSTEP | FINAL_AUTHORIZED_EFFECT | null",
