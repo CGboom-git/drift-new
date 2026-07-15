@@ -516,7 +516,8 @@ Thought Content:
                     "required parameters": patch.get("tool_args"),
                     "conditions": {
                         "cae_patch": True,
-                        "parent_step": parent,
+                        "parent_step_index": patch.get("parent_step_index"),
+                        "parent_tool_name": patch.get("parent_tool_name"),
                         "repair_role": patch.get("repair_role"),
                         "reason": patch.get("reason"),
                     },
