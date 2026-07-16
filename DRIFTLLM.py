@@ -198,6 +198,8 @@ class DRIFTLLM(PromptingLLM):
                     ), "judge_result": judge_result}
 
         # Step 5: Security VF
+        # Attach judge_result to candidate_state for medium_risk helper
+        candidate_state["_judge_result"] = judge_result
         security_result = self._validate_candidate_patch(
             tool_name, tool_args, candidate_state,
         )
@@ -675,9 +677,173 @@ Thought Content:
 
         return candidate
 
+    def _get_action_risk_profile(self, tool_name, tool_args):
+        """Return semantic risk profile from tool contract + fallback inference."""
+        helper = getattr(self, "source_flow_contract_helper", None)
+        args = tool_args or {}
+
+        profile = {
+            "tool_name": tool_name,
+            "tool_type": "unknown",
+            "action_class": "UNKNOWN",
+            "side_effect_level": "medium",
+            "risk_level": "medium",
+            "is_critical": False,
+            "is_medium_side_effect": True,
+            "is_low_risk": False,
+            "external_exposure": False,
+            "reversibility": "medium",
+            "control_args": [],
+            "principal_args": [],
+            "content_args": [],
+        }
+
+        if helper:
+            profile["tool_type"] = helper.get_tool_type(tool_name)
+
+        name_lower = tool_name.lower()
+        for arg_name in args:
+            if helper:
+                try:
+                    role = helper.get_arg_role(tool_name, arg_name)
+                    if role in ("target", "recipient", "principal", "selector", "file_id", "url",
+                                "financial_amount", "control", "credential"):
+                        profile["control_args"].append(arg_name)
+                    if role in ("target", "recipient", "principal"):
+                        profile["principal_args"].append(arg_name)
+                    if role in ("content", "body", "message", "summary", "description"):
+                        profile["content_args"].append(arg_name)
+                except Exception:
+                    pass
+            else:
+                if any(kw in arg_name.lower() for kw in ("recipient", "to", "amount", "account",
+                        "file_id", "url", "email", "participant", "channel")):
+                    profile["control_args"].append(arg_name)
+                if any(kw in arg_name.lower() for kw in ("body", "content", "message", "summary")):
+                    profile["content_args"].append(arg_name)
+
+        # Semantic class inference (generic, no suite-specific names)
+        financial_prefixes = ("send_money", "transfer", "pay_", "purchase_", "refund_", "donate_")
+        credential_prefixes = ("update_password", "update_user_info", "change_password", "change_pin")
+        destructive_prefixes = ("delete_", "remove_", "destroy_")
+        public_prefixes = ("share_", "publish_", "post_webpage", "make_public")
+        communication_prefixes = ("send_", "email_", "notify_", "message_", "reply_", "forward_")
+        scheduling_prefixes = ("create_calendar_event", "schedule_", "book_", "reserve_", "invite_")
+        file_write_prefixes = ("create_file", "append_to_file", "write_file", "update_file")
+
+        if any(name_lower.startswith(p) for p in financial_prefixes):
+            profile["action_class"] = "FINANCIAL_TRANSFER"
+            profile["side_effect_level"] = "critical"
+            profile["risk_level"] = "critical"
+            profile["is_critical"] = True
+            profile["is_medium_side_effect"] = False
+            profile["reversibility"] = "irreversible"
+        elif any(name_lower.startswith(p) for p in credential_prefixes):
+            profile["action_class"] = "CREDENTIAL_CHANGE"
+            profile["side_effect_level"] = "critical"
+            profile["risk_level"] = "critical"
+            profile["is_critical"] = True
+            profile["is_medium_side_effect"] = False
+            profile["reversibility"] = "low"
+        elif any(name_lower.startswith(p) for p in destructive_prefixes):
+            profile["action_class"] = "DESTRUCTIVE_DELETE"
+            profile["side_effect_level"] = "high"
+            profile["risk_level"] = "high"
+            profile["is_critical"] = True
+            profile["is_medium_side_effect"] = False
+            profile["reversibility"] = "irreversible"
+        elif any(name_lower.startswith(p) for p in public_prefixes):
+            profile["action_class"] = "PUBLIC_SHARE"
+            profile["side_effect_level"] = "high"
+            profile["risk_level"] = "high"
+            profile["is_critical"] = True
+            profile["is_medium_side_effect"] = False
+            profile["external_exposure"] = True
+        elif any(name_lower.startswith(p) for p in communication_prefixes):
+            profile["action_class"] = "COMMUNICATION_SEND"
+            profile["side_effect_level"] = "medium"
+            profile["risk_level"] = "medium"
+            profile["is_medium_side_effect"] = True
+            profile["external_exposure"] = True
+        elif any(name_lower.startswith(p) for p in scheduling_prefixes):
+            profile["action_class"] = "SCHEDULING_CREATE"
+            profile["side_effect_level"] = "medium"
+            profile["risk_level"] = "medium"
+            profile["is_medium_side_effect"] = True
+        elif any(name_lower.startswith(p) for p in file_write_prefixes):
+            profile["action_class"] = "FILE_WRITE"
+            profile["side_effect_level"] = "medium"
+            profile["risk_level"] = "medium"
+            profile["is_medium_side_effect"] = True
+        elif profile["tool_type"] in ("read", "observe"):
+            profile["action_class"] = "READ"
+            profile["side_effect_level"] = "none"
+            profile["risk_level"] = "low"
+            profile["is_medium_side_effect"] = False
+            profile["is_low_risk"] = True
+
+        return profile
+
+    def _medium_risk_warn_can_be_conditionally_allowed(
+        self, tool_name, tool_args, candidate_state, judge_result,
+        sourceflow_result, risk_profile,
+    ):
+        """Check if a medium-risk warn decision can be conditionally allowed."""
+        if judge_result.get("classification") != "PLAN_OMISSION":
+            return False
+
+        repair_role = judge_result.get("repair_role")
+        if repair_role not in ("FINAL_AUTHORIZED_EFFECT", "INTERMEDIATE_SUBSTEP"):
+            return False
+
+        if not sourceflow_result.get("pass") and sourceflow_result.get("reason") != "high_risk_warn_escalated_to_reject":
+            return False
+
+        if risk_profile.get("is_critical"):
+            return False
+
+        # Check for injected source in control/principal args
+        for arg_name in risk_profile.get("control_args", []) + risk_profile.get("principal_args", []):
+            if arg_name in (tool_args or {}):
+                val = str(tool_args[arg_name])
+                for rec in getattr(self.source_label_store, "records", []):
+                    src_labels = getattr(rec, "source_labels", []) or []
+                    if "injected_instruction" in src_labels:
+                        norm_val = str(getattr(rec, "value", ""))
+                        if norm_val and val in norm_val:
+                            self.source_label_store.validation_trace.append(
+                                ValidationTraceEntry(
+                                    step=len(self.achieved_function_trajectory),
+                                    event="injected_control_arg_rejected",
+                                    source_ids=[],
+                                    details={
+                                        "tool_name": tool_name,
+                                        "arg_name": arg_name,
+                                        "risk_profile": risk_profile,
+                                    },
+                                    decision="reject", would_reject=True,
+                                )
+                            )
+                            return False
+
+        return True
+
+
     def _validate_candidate_patch(self, tool_name, tool_args, candidate_state):
         tool_type = self.source_flow_validator._tool_type(
             tool_name, self.source_flow_contract_helper, candidate_state,
+        )
+
+        risk = self._get_action_risk_profile(tool_name, tool_args)
+
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="security_vf_risk_profile",
+                source_ids=[],
+                details=risk,
+                decision="log_only", would_reject=False,
+            )
         )
 
         sink_specs = self.source_flow_compiler.spec_map(
@@ -712,16 +878,69 @@ Thought Content:
                 "has_attack_evidence": True,
             }
 
-        if decision.warn and self._source_flow_is_high_risk_action(tool_name, tool_type):
+        # Critical/high-risk: warn => reject unconditionally
+        if risk.get("is_critical") and decision.warn:
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="critical_action_warn_escalated_to_reject",
+                    source_ids=[],
+                    details={"tool_name": tool_name, "action_class": risk.get("action_class")},
+                    decision="reject", would_reject=True,
+                )
+            )
             return {
-                "pass": False, "reason": "high_risk_warn_escalated_to_reject",
+                "pass": False, "reason": "critical_action_warn_escalated_to_reject",
                 "decision": decision,
                 "call_error_message": (
                     f"[CALL ERROR] CAE repair rejected {tool_name}: "
-                    "high-risk trajectory-outside action has insufficient parameter provenance."
+                    "critical irreversable action has insufficient parameter provenance."
                 ),
                 "has_attack_evidence": False,
             }
+
+        # Medium-risk side effect actions: conditional allow for warn
+        if risk.get("is_medium_side_effect") and decision.warn:
+            judge_result = candidate_state.get("_judge_result", {})
+            if self._medium_risk_warn_can_be_conditionally_allowed(
+                tool_name, tool_args, candidate_state, judge_result,
+                {"pass": False, "reason": "high_risk_warn_escalated_to_reject"}, risk,
+            ):
+                self.source_label_store.validation_trace.append(
+                    ValidationTraceEntry(
+                        step=len(self.achieved_function_trajectory),
+                        event="medium_risk_warn_conditionally_allowed",
+                        source_ids=[],
+                        details={"tool_name": tool_name, "action_class": risk.get("action_class")},
+                        decision="allow", would_reject=False,
+                    )
+                )
+                return {
+                    "pass": True, "reason": "medium_risk_warn_conditionally_allowed",
+                    "decision": decision,
+                    "call_error_message": None,
+                    "has_attack_evidence": False,
+                }
+            else:
+                self.source_label_store.validation_trace.append(
+                    ValidationTraceEntry(
+                        step=len(self.achieved_function_trajectory),
+                        event="medium_risk_warn_rejected",
+                        source_ids=[],
+                        details={"tool_name": tool_name, "action_class": risk.get("action_class")},
+                        decision="reject", would_reject=True,
+                    )
+                )
+                return {
+                    "pass": False, "reason": "medium_risk_warn_rejected",
+                    "decision": decision,
+                    "call_error_message": (
+                        f"[CALL ERROR] CAE repair rejected {tool_name}: "
+                        "medium-risk action has insufficient parameter provenance "
+                        "or untrusted control arguments."
+                    ),
+                    "has_attack_evidence": False,
+                }
 
         return {
             "pass": True, "reason": "pass",
