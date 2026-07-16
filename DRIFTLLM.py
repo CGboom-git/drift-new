@@ -474,8 +474,21 @@ class DRIFTLLM(PromptingLLM):
             tool_metadata = self._get_tool_semantic_metadata(tool_name, tool_args)
 
             initial_traj = getattr(self, "initial_function_trajectory", None) or []
-            current_traj = snapshot.get("function_trajectory", [])
-            achieved_traj = snapshot.get("achieved_function_trajectory", [])
+            current_traj = snapshot.get("function_trajectory", []) or []
+            achieved_traj = snapshot.get("achieved_function_trajectory", []) or []
+            extended_traj = list(extended_trajectory or current_traj)
+
+            current_traj_indexed = self._indexed_trajectory(current_traj)
+            extended_traj_indexed = self._indexed_trajectory(extended_traj)
+
+            next_expected_idx = len(achieved_traj)
+            next_expected_tool = current_traj[next_expected_idx] if 0 <= next_expected_idx < len(current_traj) else "end"
+
+            candidate_position = None
+            try:
+                candidate_position = len(extended_traj) - 1 - list(reversed(extended_traj)).index(tool_name)
+            except ValueError:
+                candidate_position = None
 
             judge_data = f"""User Query:
 {query}
@@ -483,14 +496,20 @@ class DRIFTLLM(PromptingLLM):
 Initial Trajectory (original plan):
 {initial_traj}
 
-Current Trajectory:
-{current_traj}
+Current Trajectory Indexed (use for parent_step_index, zero-based):
+{current_traj_indexed}
+
+Extended Trajectory Indexed (includes candidate, for reference):
+{extended_traj_indexed}
 
 Achieved Trajectory:
 {achieved_traj}
 
-Candidate Out-of-Plan ACTION:
-{tool_name}
+Next Expected Index: {next_expected_idx}
+Next Expected Tool: {next_expected_tool}
+
+Candidate Out-of-Plan ACTION: {tool_name}
+Candidate Position In Extended Trajectory: {candidate_position}
 
 Tool Semantic Metadata:
 {tool_metadata}
