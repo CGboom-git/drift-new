@@ -678,9 +678,10 @@ Thought Content:
         return candidate
 
     def _get_action_risk_profile(self, tool_name, tool_args):
-        """Return semantic risk profile from tool contract + fallback inference."""
+        """Return semantic risk profile. Contract metadata first, prefix fallback second."""
         helper = getattr(self, "source_flow_contract_helper", None)
         args = tool_args or {}
+        name_lower = tool_name.lower()
 
         profile = {
             "tool_name": tool_name,
@@ -696,12 +697,40 @@ Thought Content:
             "control_args": [],
             "principal_args": [],
             "content_args": [],
+            "risk_source": "fallback_prefix",
         }
 
         if helper:
             profile["tool_type"] = helper.get_tool_type(tool_name)
 
-        name_lower = tool_name.lower()
+        # --- Step 1: Contract metadata (priority) ---
+        contract_data = {}
+        if helper:
+            try:
+                tool_node = helper._find_tool_node(tool_name)
+                if isinstance(tool_node, dict):
+                    for key in ("action_class", "side_effect_level", "risk_level",
+                                 "reversibility", "external_exposure"):
+                        val = tool_node.get(key)
+                        if val is not None:
+                            contract_data[key] = val
+            except Exception:
+                pass
+
+        if contract_data:
+            profile["risk_source"] = "contract_metadata"
+            if "action_class" in contract_data:
+                profile["action_class"] = str(contract_data["action_class"]).upper()
+            if "side_effect_level" in contract_data:
+                profile["side_effect_level"] = str(contract_data["side_effect_level"]).lower()
+            if "risk_level" in contract_data:
+                profile["risk_level"] = str(contract_data["risk_level"]).lower()
+            if "reversibility" in contract_data:
+                profile["reversibility"] = str(contract_data["reversibility"]).lower()
+            if "external_exposure" in contract_data:
+                profile["external_exposure"] = bool(contract_data.get("external_exposure"))
+
+        # --- Step 2: Argument roles ---
         for arg_name in args:
             if helper:
                 try:
@@ -722,14 +751,35 @@ Thought Content:
                 if any(kw in arg_name.lower() for kw in ("body", "content", "message", "summary")):
                     profile["content_args"].append(arg_name)
 
-        # Semantic class inference (generic, no suite-specific names)
-        financial_prefixes = ("send_money", "transfer", "pay_", "purchase_", "refund_", "donate_")
-        credential_prefixes = ("update_password", "update_user_info", "change_password", "change_pin")
+        # --- Step 3: Classify from contract (if available) or fallback to prefixes ---
+        if not contract_data:
+            profile["risk_source"] = "fallback_prefix"
+
+        # If contract didn't set action_class, use prefix fallback
+        if profile["action_class"] == "UNKNOWN":
+            profile["risk_source"] = "fallback_prefix"
+
+        # Financial scheduling: schedule_transaction, update_scheduled_transaction
+        financial_scheduling = any(kw in name_lower for kw in
+            ("schedule_transaction", "scheduled_transaction", "recurring_transaction"))
+        if financial_scheduling:
+            profile["action_class"] = "SCHEDULED_FINANCIAL_TRANSFER"
+            profile["side_effect_level"] = "critical"
+            profile["risk_level"] = "critical"
+            profile["is_critical"] = True
+            profile["is_medium_side_effect"] = False
+            profile["reversibility"] = "low"
+            profile["risk_source"] = "financial_scheduling_prefix"
+            return profile
+
+        # Standard financial
+        financial_prefixes = ("send_money", "transfer_", "pay_", "purchase_", "refund_")
+        credential_prefixes = ("update_password", "update_user_info", "change_password")
         destructive_prefixes = ("delete_", "remove_", "destroy_")
         public_prefixes = ("share_", "publish_", "post_webpage", "make_public")
         communication_prefixes = ("send_", "email_", "notify_", "message_", "reply_", "forward_")
-        scheduling_prefixes = ("create_calendar_event", "schedule_", "book_", "reserve_", "invite_")
-        file_write_prefixes = ("create_file", "append_to_file", "write_file", "update_file")
+        scheduling_prefixes = ("create_calendar_event", "book_", "reserve_", "invite_")
+        file_write_prefixes = ("create_file", "append_to_file", "write_file")
 
         if any(name_lower.startswith(p) for p in financial_prefixes):
             profile["action_class"] = "FINANCIAL_TRANSFER"
@@ -788,7 +838,8 @@ Thought Content:
         self, tool_name, tool_args, candidate_state, judge_result,
         sourceflow_result, risk_profile,
     ):
-        """Check if a medium-risk warn decision can be conditionally allowed."""
+        """Check if a medium-risk warn decision can be conditionally allowed.
+        Requires positive provenance for control/principal args, not just absence of injection."""
         if judge_result.get("classification") != "PLAN_OMISSION":
             return False
 
@@ -796,35 +847,60 @@ Thought Content:
         if repair_role not in ("FINAL_AUTHORIZED_EFFECT", "INTERMEDIATE_SUBSTEP"):
             return False
 
-        if not sourceflow_result.get("pass") and sourceflow_result.get("reason") != "high_risk_warn_escalated_to_reject":
-            return False
-
         if risk_profile.get("is_critical"):
             return False
 
-        # Check for injected source in control/principal args
-        for arg_name in risk_profile.get("control_args", []) + risk_profile.get("principal_args", []):
-            if arg_name in (tool_args or {}):
-                val = str(tool_args[arg_name])
-                for rec in getattr(self.source_label_store, "records", []):
-                    src_labels = getattr(rec, "source_labels", []) or []
-                    if "injected_instruction" in src_labels:
-                        norm_val = str(getattr(rec, "value", ""))
-                        if norm_val and val in norm_val:
-                            self.source_label_store.validation_trace.append(
-                                ValidationTraceEntry(
-                                    step=len(self.achieved_function_trajectory),
-                                    event="injected_control_arg_rejected",
-                                    source_ids=[],
-                                    details={
-                                        "tool_name": tool_name,
-                                        "arg_name": arg_name,
-                                        "risk_profile": risk_profile,
-                                    },
-                                    decision="reject", would_reject=True,
-                                )
-                            )
-                            return False
+        # Each control/principal arg must have positive provenance
+        all_args = risk_profile.get("control_args", []) + risk_profile.get("principal_args", [])
+        for arg_name in all_args:
+            if arg_name not in (tool_args or {}):
+                continue
+            val = str(tool_args[arg_name] or "").strip()
+            if not val:
+                continue
+
+            has_positive_source = False
+            for rec in getattr(self.source_label_store, "records", []):
+                src_labels = set(getattr(rec, "source_labels", []) or [])
+                rec_val = str(getattr(rec, "value", "")).strip()
+
+                # Skip injected
+                if "injected_instruction" in src_labels:
+                    continue
+
+                # Check positive provenance: user query, trusted tool output, sanitized observation
+                trusted_labels = {
+                    "user_explicit", "user_specified_source", "task_anchor",
+                    "tool_output", "sanitized_observation", "structured_field",
+                    "regex_extract",
+                }
+                if src_labels & trusted_labels and val and rec_val and val in rec_val:
+                    has_positive_source = True
+                    break
+
+            if not has_positive_source:
+                # Check if value appears directly in user query
+                user_query = getattr(self.source_label_store, "user_query", "")
+                if isinstance(user_query, str) and val in user_query:
+                    has_positive_source = True
+
+            if not has_positive_source:
+                self.source_label_store.validation_trace.append(
+                    ValidationTraceEntry(
+                        step=len(self.achieved_function_trajectory),
+                        event="injected_control_arg_rejected",
+                        source_ids=[],
+                        details={
+                            "tool_name": tool_name,
+                            "arg_name": arg_name,
+                            "arg_value": val[:100],
+                            "risk_profile": risk_profile,
+                            "reason": "no_positive_provenance_for_control_arg",
+                        },
+                        decision="reject", would_reject=True,
+                    )
+                )
+                return False
 
         return True
 
