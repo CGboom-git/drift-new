@@ -140,7 +140,10 @@ class DRIFTLLM(PromptingLLM):
                     "call_error_message": msg, "judge_result": judge_result}
 
         # Step 2: Task Extension VF
-        task_vf_ok, task_vf_reason = self._task_extension_vf(judge_result)
+        task_vf_ok, task_vf_reason = self._task_extension_vf(
+            judge_result,
+            current_trajectory=snapshot.get("function_trajectory", []),
+        )
         if not task_vf_ok:
             if task_vf_reason == "missing_parent_reference":
                 self.source_label_store.validation_trace.append(
@@ -377,7 +380,8 @@ class DRIFTLLM(PromptingLLM):
             pass
 
 
-    def _normalize_cae_parent_reference(self, result, current_trajectory, achieved_trajectory):
+    def _normalize_cae_parent_reference(self, result, current_trajectory, achieved_trajectory,
+                                                extended_trajectory=None, candidate_tool_name=None):
         if not isinstance(result, dict):
             return result
         if result.get("classification") != "PLAN_OMISSION":
@@ -386,29 +390,42 @@ class DRIFTLLM(PromptingLLM):
         parent_index = result.get("parent_step_index")
         parent_tool = result.get("parent_tool_name")
 
-        # Case 1: valid index
+        # Rule 1: valid index in current trajectory
         if isinstance(parent_index, int) and 0 <= parent_index < len(current_trajectory):
             expected_tool = current_trajectory[parent_index]
             if not parent_tool:
                 result["parent_tool_name"] = expected_tool
+            elif parent_tool != expected_tool:
+                result["parent_tool_name"] = expected_tool
+                result["parent_corrected"] = True
+                result["parent_correction_reason"] = "index_tool_mismatch_corrected"
             return result
 
-        # Case 2: valid tool name
+        # Rule 2: valid tool name in current trajectory
         if isinstance(parent_tool, str) and parent_tool in current_trajectory:
             result["parent_step_index"] = current_trajectory.index(parent_tool)
             return result
 
-        # Case 3: output_consumed_by matches a tool in trajectory
-        output_consumed_by = result.get("output_consumed_by")
-        if isinstance(output_consumed_by, str) and output_consumed_by in current_trajectory:
-            result["parent_tool_name"] = output_consumed_by
-            result["parent_step_index"] = current_trajectory.index(output_consumed_by)
+        # Rule 3: output_consumed_by matches current trajectory tool
+        ocb = result.get("output_consumed_by")
+        if isinstance(ocb, str) and ocb in current_trajectory:
+            result["parent_tool_name"] = ocb
+            result["parent_step_index"] = current_trajectory.index(ocb)
             result["parent_inferred"] = True
             result["parent_inference_reason"] = "output_consumed_by_matches_current_trajectory"
             return result
 
-        # Case 4: final authorized effect, use next expected step
-        if result.get("final_authorized_effect") is True:
+        # Rule 4: output_consumed_by in extended trajectory that also exists in current
+        ext = extended_trajectory or []
+        if isinstance(ocb, str) and ocb in ext and ocb in current_trajectory:
+            result["parent_tool_name"] = ocb
+            result["parent_step_index"] = current_trajectory.index(ocb)
+            result["parent_inferred"] = True
+            result["parent_inference_reason"] = "output_consumed_by_matches_extended_and_current"
+            return result
+
+        # Rule 5: final authorized effect with fallback
+        if result.get("final_authorized_effect") is True and current_trajectory:
             next_idx = len(achieved_trajectory or [])
             if 0 <= next_idx < len(current_trajectory):
                 result["parent_step_index"] = next_idx
@@ -417,7 +434,26 @@ class DRIFTLLM(PromptingLLM):
                 result["parent_inference_reason"] = "final_authorized_effect_next_expected_step"
                 return result
 
+            if achieved_trajectory:
+                last_achieved = achieved_trajectory[-1]
+                if last_achieved in current_trajectory:
+                    result["parent_step_index"] = current_trajectory.index(last_achieved)
+                    result["parent_tool_name"] = last_achieved
+                    result["parent_inferred"] = True
+                    result["parent_inference_reason"] = "final_authorized_effect_last_achieved_step"
+                    return result
+
+            result["parent_step_index"] = len(current_trajectory) - 1
+            result["parent_tool_name"] = current_trajectory[-1]
+            result["parent_inferred"] = True
+            result["parent_inference_reason"] = "final_authorized_effect_last_current_step"
+            return result
+
         return result
+
+
+    def _indexed_trajectory(self, trajectory):
+        return [{"index": i, "tool_name": name} for i, name in enumerate(trajectory or [])]
 
     def _judge_plan_extension(
         self, query, tool_name, tool_args, messages, thought_content,
@@ -483,25 +519,54 @@ Thought Content:
             result = self._normalize_cae_judge_result(parsed)
             current_traj = snapshot.get("function_trajectory", [])
             achieved_traj = snapshot.get("achieved_function_trajectory", [])
-            result = self._normalize_cae_parent_reference(result, current_traj, achieved_traj)
+            extended_traj = list(extended_trajectory or current_traj)
+            result = self._normalize_cae_parent_reference(
+                result, current_traj, achieved_traj,
+                extended_trajectory=extended_traj,
+                candidate_tool_name=tool_name,
+            )
+
+            # Log normalized result
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="cae_repair_judge_normalized",
+                    source_ids=[],
+                    details={
+                        "tool_name": tool_name,
+                        "raw_judge_result": parsed,
+                        "normalized_judge_result": result,
+                        "current_trajectory": current_traj,
+                        "extended_trajectory": extended_traj,
+                    },
+                    decision="log_only",
+                    would_reject=False,
+                )
+            )
             return result
         except Exception:
             if self.logger:
                 self.logger.info(f"CAE repair judge failed for {tool_name}")
             return {"classification": "UNCERTAIN", "reason": "judge_error"}
 
-    def _task_extension_vf(self, judge_result):
+    def _task_extension_vf(self, judge_result, current_trajectory=None):
         if judge_result.get("classification") != "PLAN_OMISSION":
             return False, "not_plan_omission"
 
         parent_index = judge_result.get("parent_step_index")
         parent_tool = judge_result.get("parent_tool_name")
-        has_parent = (
-            isinstance(parent_index, int)
-            or (isinstance(parent_tool, str) and bool(parent_tool.strip()))
-        )
-        if not has_parent:
+
+        if not isinstance(parent_index, int):
             return False, "missing_parent_reference"
+
+        if current_trajectory is not None:
+            if parent_index < 0 or parent_index >= len(current_trajectory):
+                return False, "invalid_parent_index"
+            if parent_tool and current_trajectory[parent_index] != parent_tool:
+                return False, "parent_index_tool_mismatch"
+
+        if not parent_tool:
+            return False, "missing_parent_tool_name"
 
         if judge_result.get("necessary") is not True:
             return False, "not_necessary"
