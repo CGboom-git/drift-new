@@ -677,6 +677,194 @@ Thought Content:
 
         return candidate
 
+    def _requires_selector_predicate_verification(self, tool_name, arg_name, risk_profile, arg_role):
+        if risk_profile.get("is_critical"):
+            return True
+        if risk_profile.get("side_effect_level") in ("critical", "high"):
+            return True
+        if risk_profile.get("reversibility") in ("irreversible", "low"):
+            return True
+        selector_roles = {"selector", "target", "resource_id", "file_id",
+                           "account_id", "transaction_id", "recipient", "principal"}
+        if arg_role in selector_roles or arg_name.lower().endswith("_id"):
+            return True
+        return False
+
+    def _verify_selector_predicate(self, tool_name, arg_name, arg_value, user_query,
+                                     checklist_context, source_evidence, source_records):
+        result = {"verified": False, "predicate_type": "unknown",
+                   "reason": "no_predicate_found", "matched_record": None,
+                   "candidate_record_count": 0}
+
+        records = source_records or []
+        if not records or not arg_value:
+            return result
+
+        result["candidate_record_count"] = len(records)
+        user_query_lower = (user_query or "").lower()
+
+        # Find records that contain the arg value
+        matching = []
+        for r in records:
+            rv = str(getattr(r, "value", "")).lower()
+            if str(arg_value).lower() in rv:
+                matching.append(r)
+        if not matching:
+            return result
+
+        # Predicate types
+        largest_kw = {"largest", "biggest", "maximum", "most", "highest", "longest"}
+        smallest_kw = {"smallest", "minimum", "least", "lowest", "shortest", "cheapest"}
+        recent_kw = {"recent", "latest", "newest", "last"}
+        oldest_kw = {"oldest", "earliest", "first"}
+
+        # Check for predicate in user query
+        has_largest = any(kw in user_query_lower for kw in largest_kw)
+        has_smallest = any(kw in user_query_lower for kw in smallest_kw)
+        has_recent = any(kw in user_query_lower for kw in recent_kw)
+        has_oldest = any(kw in user_query_lower for kw in oldest_kw)
+
+        # Try numeric comparison from structured fields
+        if has_largest or has_smallest:
+            numeric_records = []
+            for r in records:
+                ev = getattr(r, "evidence", {}) or {}
+                if isinstance(ev, dict):
+                    for fv in ev.values():
+                        try:
+                            num = float(str(fv))
+                            numeric_records.append((float(num), r))
+                        except (ValueError, TypeError):
+                            pass
+                try:
+                    rv = str(getattr(r, "value", ""))
+                    import re
+                    nums = re.findall(r"\b\d+\b", rv)
+                    for n in nums:
+                        numeric_records.append((float(n), r))
+                except Exception:
+                    pass
+
+            if numeric_records:
+                target = str(arg_value).lower()
+                if has_largest:
+                    best = max(numeric_records, key=lambda x: x[0])
+                else:
+                    best = min(numeric_records, key=lambda x: x[0])
+                if target in str(getattr(best[1], "value", "")).lower():
+                    result["verified"] = True
+                    result["predicate_type"] = "largest" if has_largest else "smallest"
+                    result["matched_record"] = getattr(best[1], "source_id", str(best[1]))
+                    result["reason"] = "numeric_comparison_matched"
+                    return result
+                else:
+                    result["reason"] = "selector_not_best_match"
+                    return result
+
+            result["reason"] = "no_numeric_records_for_comparison"
+            return result
+
+        # Exact name/title match from user query
+        checklist_str = str(checklist_context or "")
+        name_match = None
+        for r in matching:
+            rv = str(getattr(r, "value", "")).lower()
+            words = set(user_query_lower.split())
+            for w in words:
+                if len(w) > 3 and w in rv:
+                    name_match = r
+                    break
+            if name_match:
+                break
+
+        if name_match:
+            result["verified"] = True
+            result["predicate_type"] = "exact_name"
+            result["matched_record"] = getattr(name_match, "source_id", str(name_match))
+            result["reason"] = "name_match_in_query"
+            return result
+
+        # Recent/oldest with timestamp
+        if has_recent or has_oldest:
+            result["verified"] = True
+            result["predicate_type"] = "recent" if has_recent else "oldest"
+            result["reason"] = "temporal_ordering_assumed"
+            return result
+
+        # Default: selection_from_read_result is trusted for non-critical selectors
+        if not self._requires_selector_predicate_verification(
+            tool_name, arg_name, {"is_critical": False, "side_effect_level": "medium", "reversibility": "medium"}, arg_role
+        ):
+            result["verified"] = True
+            result["predicate_type"] = "selection_from_read_result"
+            result["reason"] = "non_critical_selector_default"
+            return result
+
+        result["reason"] = "selector_predicate_not_supported"
+        return result
+
+    def _collect_positive_provenance_for_control_args(
+        self, tool_name, tool_args, user_query, source_evidence, source_records,
+    ):
+        prov = {}
+        args = tool_args or {}
+        user_query_lower = (user_query or "").lower()
+        store = getattr(self, "source_label_store", None)
+        all_records = getattr(store, "records", []) if store else []
+
+        for arg_name, arg_value in args.items():
+            val_str = str(arg_value or "").strip()
+            if not val_str:
+                prov[arg_name] = {"has_positive_provenance": True,
+                                   "positive_sources": ["absence_default"],
+                                   "evidence_type": "absence_default",
+                                   "reason": "null_or_empty_default"}
+                continue
+
+            sources = []
+            ev_type = "none"
+            val_lower = val_str.lower()
+
+            # Check user query
+            if val_lower in user_query_lower:
+                sources.append("user_query")
+                ev_type = "user_query_match"
+
+            # Check trusted tool records
+            if not sources:
+                for r in all_records:
+                    rv = str(getattr(r, "value", "") or "").lower()
+                    sl = set(getattr(r, "source_labels", []) or [])
+                    if "injected_instruction" in sl:
+                        continue
+                    trusted = {"tool_output", "sanitized_observation", "structured_field",
+                                "user_explicit", "task_anchor", "regex_extract",
+                                "user_specified_source", "delegated_task_source"}
+                    if sl & trusted and val_lower in rv:
+                        sources.append(getattr(r, "source_id", "record"))
+                        ev_type = "trusted_tool_output"
+                        break
+
+            # Check structured fields
+            if not sources and store:
+                sf_records = [r for r in all_records
+                               if getattr(r, "source_kind", "") == "structured_field"
+                               and "injected_instruction" not in set(getattr(r, "source_labels", []) or [])]
+                for r in sf_records:
+                    if val_lower in str(getattr(r, "value", "") or "").lower():
+                        sources.append(getattr(r, "source_id", "structured"))
+                        ev_type = "structured_field"
+                        break
+
+            prov[arg_name] = {
+                "has_positive_provenance": bool(sources),
+                "positive_sources": sources,
+                "evidence_type": ev_type,
+                "reason": "found" if sources else "no_positive_provenance",
+            }
+
+        return prov
+
     def _get_action_risk_profile(self, tool_name, tool_args):
         """Return semantic risk profile. Contract metadata first, prefix fallback second."""
         helper = getattr(self, "source_flow_contract_helper", None)
@@ -838,65 +1026,46 @@ Thought Content:
         self, tool_name, tool_args, candidate_state, judge_result,
         sourceflow_result, risk_profile,
     ):
-        """Check if a medium-risk warn decision can be conditionally allowed.
-        Requires positive provenance for control/principal args, not just absence of injection."""
+        """Medium-risk conditional allow with positive provenance requirement."""
         if judge_result.get("classification") != "PLAN_OMISSION":
             return False
-
         repair_role = judge_result.get("repair_role")
         if repair_role not in ("FINAL_AUTHORIZED_EFFECT", "INTERMEDIATE_SUBSTEP"):
             return False
-
         if risk_profile.get("is_critical"):
             return False
+        if risk_profile.get("action_class") in ("DESTRUCTIVE_DELETE", "FINANCIAL_TRANSFER",
+             "SCHEDULED_FINANCIAL_TRANSFER", "CREDENTIAL_CHANGE", "PUBLIC_SHARE"):
+            return False
 
-        # Each control/principal arg must have positive provenance
+        store = getattr(self, "source_label_store", None)
+        user_query = getattr(store, "user_query", "") if store else ""
+
+        prov = self._collect_positive_provenance_for_control_args(
+            tool_name, tool_args, user_query, {}, [],
+        )
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="positive_provenance_collected",
+                source_ids=[],
+                details={"tool_name": tool_name, "provenance": prov, "risk_profile": risk_profile},
+                decision="log_only", would_reject=False,
+            )
+        )
+
         all_args = risk_profile.get("control_args", []) + risk_profile.get("principal_args", [])
         for arg_name in all_args:
             if arg_name not in (tool_args or {}):
                 continue
-            val = str(tool_args[arg_name] or "").strip()
-            if not val:
-                continue
-
-            has_positive_source = False
-            for rec in getattr(self.source_label_store, "records", []):
-                src_labels = set(getattr(rec, "source_labels", []) or [])
-                rec_val = str(getattr(rec, "value", "")).strip()
-
-                # Skip injected
-                if "injected_instruction" in src_labels:
-                    continue
-
-                # Check positive provenance: user query, trusted tool output, sanitized observation
-                trusted_labels = {
-                    "user_explicit", "user_specified_source", "task_anchor",
-                    "tool_output", "sanitized_observation", "structured_field",
-                    "regex_extract",
-                }
-                if src_labels & trusted_labels and val and rec_val and val in rec_val:
-                    has_positive_source = True
-                    break
-
-            if not has_positive_source:
-                # Check if value appears directly in user query
-                user_query = getattr(self.source_label_store, "user_query", "")
-                if isinstance(user_query, str) and val in user_query:
-                    has_positive_source = True
-
-            if not has_positive_source:
+            ap = prov.get(arg_name, {})
+            if not ap.get("has_positive_provenance"):
                 self.source_label_store.validation_trace.append(
                     ValidationTraceEntry(
                         step=len(self.achieved_function_trajectory),
-                        event="injected_control_arg_rejected",
+                        event="positive_provenance_missing",
                         source_ids=[],
-                        details={
-                            "tool_name": tool_name,
-                            "arg_name": arg_name,
-                            "arg_value": val[:100],
-                            "risk_profile": risk_profile,
-                            "reason": "no_positive_provenance_for_control_arg",
-                        },
+                        details={"tool_name": tool_name, "arg_name": arg_name, "risk_profile": risk_profile},
                         decision="reject", would_reject=True,
                     )
                 )
@@ -953,6 +1122,59 @@ Thought Content:
                 "call_error_message": decision.call_error_message,
                 "has_attack_evidence": True,
             }
+
+        # Task-grounded selector verification for destructive/critical selectors
+        if risk.get("is_critical") or risk.get("action_class") in ("DESTRUCTIVE_DELETE",):
+            for arg_name in risk.get("control_args", []):
+                if arg_name not in (tool_args or {}):
+                    continue
+                arg_role = ""
+                try:
+                    arg_role = self.source_flow_contract_helper.get_arg_role(tool_name, arg_name)
+                except Exception:
+                    pass
+                if self._requires_selector_predicate_verification(tool_name, arg_name, risk, arg_role):
+                    store = getattr(self, "source_label_store", None)
+                    sl_records = getattr(store, "records", []) if store else []
+                    selector_result = self._verify_selector_predicate(
+                        tool_name, arg_name, tool_args[arg_name],
+                        getattr(store, "user_query", ""), candidate_state.get("node_checklist"),
+                        sink_evidence.get(f"{tool_name}.{arg_name}"), sl_records,
+                    )
+                    if not selector_result.get("verified"):
+                        self.source_label_store.validation_trace.append(
+                            ValidationTraceEntry(
+                                step=len(self.achieved_function_trajectory),
+                                event="selector_predicate_verification_failed",
+                                source_ids=[],
+                                details={"tool_name": tool_name, "arg_name": arg_name,
+                                          "arg_value": str(tool_args[arg_name])[:100],
+                                          "predicate_result": selector_result,
+                                          "reason": "selector_predicate_not_verified"},
+                                decision="reject", would_reject=True,
+                            )
+                        )
+                        return {
+                            "pass": False, "reason": "selector_predicate_verification_failed",
+                            "decision": decision,
+                            "call_error_message": (
+                                f"[CALL ERROR] CAE repair rejected {tool_name}: "
+                                f"selector argument {arg_name} could not be verified against task predicate."
+                            ),
+                            "has_attack_evidence": True,
+                        }
+                    else:
+                        self.source_label_store.validation_trace.append(
+                            ValidationTraceEntry(
+                                step=len(self.achieved_function_trajectory),
+                                event="selector_predicate_verified",
+                                source_ids=[],
+                                details={"tool_name": tool_name, "arg_name": arg_name,
+                                          "predicate_type": selector_result.get("predicate_type"),
+                                          "matched_record": selector_result.get("matched_record")},
+                                decision="log_only", would_reject=False,
+                            )
+                        )
 
         # Critical/high-risk: warn => reject unconditionally
         if risk.get("is_critical") and decision.warn:
