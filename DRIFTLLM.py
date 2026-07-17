@@ -791,14 +791,10 @@ Thought Content:
             result["reason"] = "temporal_ordering_assumed"
             return result
 
-        # Default: selection_from_read_result is trusted for non-critical selectors
-        if not self._requires_selector_predicate_verification(
-            tool_name, arg_name, {"is_critical": False, "side_effect_level": "medium", "reversibility": "medium"}, arg_role
-        ):
-            result["verified"] = True
-            result["predicate_type"] = "selection_from_read_result"
-            result["reason"] = "non_critical_selector_default"
-            return result
+        # Default: for non-critical, selection_from_read_result alone is enough.
+        # For critical, predicate must be explicitly verified.
+        # Callers must pass the real risk_profile to control this.
+        result["reason"] = "selector_predicate_not_supported"
 
         result["reason"] = "selector_predicate_not_supported"
         return result
@@ -1123,8 +1119,36 @@ Thought Content:
                 "has_attack_evidence": True,
             }
 
-        # Task-grounded selector verification for destructive/critical selectors
-        if risk.get("is_critical") or risk.get("action_class") in ("DESTRUCTIVE_DELETE",):
+        # Mandatory task-grounded selector predicate gate
+        # Runs for all destructive/critical/high-risk selector actions,
+        # even when SourceFlow returned allow
+        CRITICAL_CLASSES = {
+            "DESTRUCTIVE_DELETE", "FINANCIAL_TRANSFER", "SCHEDULED_FINANCIAL_TRANSFER",
+            "CREDENTIAL_CHANGE", "PERMISSION_CHANGE", "PUBLIC_SHARE",
+            "EXTERNAL_EXFILTRATION", "PURCHASE_WITH_PAYMENT", "ACCOUNT_UPDATE",
+        }
+        is_critical_action = (
+            risk.get("is_critical") or
+            risk.get("action_class") in CRITICAL_CLASSES or
+            risk.get("side_effect_level") in ("critical", "high") or
+            risk.get("reversibility") in ("irreversible", "low")
+        )
+        if is_critical_action:
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="selector_predicate_gate_checked",
+                    source_ids=[],
+                    details={
+                        "tool_name": tool_name, "action_class": risk.get("action_class"),
+                        "risk_level": risk.get("risk_level"),
+                        "sourceflow_decision": "allow" if decision.allow else ("warn" if decision.warn else "reject"),
+                        "checked_args": [],
+                        "reason": "destructive_or_critical_selector_action",
+                    },
+                    decision="log_only", would_reject=False,
+                )
+            )
             for arg_name in risk.get("control_args", []):
                 if arg_name not in (tool_args or {}):
                     continue
@@ -1149,8 +1173,12 @@ Thought Content:
                                 source_ids=[],
                                 details={"tool_name": tool_name, "arg_name": arg_name,
                                           "arg_value": str(tool_args[arg_name])[:100],
+                                          "source_labels": getattr(
+                                              sink_evidence.get(f"{tool_name}.{arg_name}"),
+                                              "source_labels", []),
+                                          "sourceflow_decision": "allow" if decision.allow else "warn",
                                           "predicate_result": selector_result,
-                                          "reason": "selector_predicate_not_verified"},
+                                          "reason": "selection_from_read_result_without_task_predicate_verification"},
                                 decision="reject", would_reject=True,
                             )
                         )
@@ -1171,7 +1199,8 @@ Thought Content:
                                 source_ids=[],
                                 details={"tool_name": tool_name, "arg_name": arg_name,
                                           "predicate_type": selector_result.get("predicate_type"),
-                                          "matched_record": selector_result.get("matched_record")},
+                                          "matched_record": selector_result.get("matched_record"),
+                                          "candidate_record_count": selector_result.get("candidate_record_count", 0)},
                                 decision="log_only", would_reject=False,
                             )
                         )
