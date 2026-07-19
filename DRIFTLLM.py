@@ -690,6 +690,53 @@ Thought Content:
             return True
         return False
 
+    def _classify_candidate_record_granularity(self, record):
+        if not record:
+            return "unknown"
+        ev = getattr(record, "evidence", {}) or {}
+        sk = getattr(record, "source_kind", "") or ""
+        if sk == "structured_field":
+            return "structured_field"
+        rv = str(getattr(record, "value", "") or "").strip()
+        if not rv:
+            return "unknown"
+        # Try parsing as JSON list of objects (row-level records)
+        try:
+            import json
+            parsed = json.loads(rv)
+            if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+                return "structured_rows_json_array"
+            if isinstance(parsed, dict):
+                id_keys = {"id", "file_id", "document_id", "record_id", "transaction_id",
+                            "account_id", "message_id", "event_id", "user_id", "email",
+                            "name", "filename", "path"}
+                attr_keys = {"size", "file_size", "amount", "value", "price", "balance",
+                              "timestamp", "date", "time", "owner", "sender", "recipient",
+                              "title", "subject", "filename", "name", "path"}
+                if isinstance(ev, dict):
+                    all_keys = set(parsed.keys()) | set(ev.keys())
+                else:
+                    all_keys = set(parsed.keys())
+                has_id = bool(all_keys & id_keys)
+                has_attr = bool(all_keys & attr_keys)
+                if has_id and has_attr:
+                    return "structured_row"
+                if has_id:
+                    return "structured_row_single"
+                return "unstructured_dict"
+        except Exception:
+            pass
+        # Check source_labels for raw output
+        labels = set(getattr(record, "source_labels", []) or [])
+        if labels & {"raw_observation", "raw_external_content"}:
+            return "raw_tool_output"
+        if sk in ("tool_raw_output", "raw") or "raw" in sk:
+            return "raw_tool_output"
+        if len(rv) > 500:
+            return "raw_tool_output"
+        return "raw_tool_output"
+
+
     def _extract_selector_predicate_from_task_context(self, user_query, checklist_context):
         q = (user_query or "").lower()
         c = str(checklist_context or "").lower()
@@ -714,16 +761,49 @@ Thought Content:
         return {"predicate_type": "unknown", "field_hints": []}
 
     def _collect_trusted_candidate_records_for_selector(self, tool_name, arg_name, source_records):
-        trusted = []
+        structured = []; raw = []
         for r in (source_records or []):
             labels = set(getattr(r, "source_labels", []) or [])
             if "injected_instruction" in labels:
                 continue
             ok_labels = {"tool_output", "trusted_tool_output", "structured_field",
                           "sanitized_observation", "task_anchor", "user_explicit"}
-            if labels & ok_labels:
-                trusted.append(r)
-        return trusted
+            if not (labels & ok_labels):
+                continue
+            g = self._classify_candidate_record_granularity(r)
+            if g in ("structured_row", "structured_row_single", "structured_field",
+                      "structured_rows_json_array"):
+                structured.append(r)
+            else:
+                raw.append(r)
+        # Try parsing structured_rows_json_array into individual row records
+        expanded = []
+        for r in structured:
+            if self._classify_candidate_record_granularity(r) == "structured_rows_json_array":
+                try:
+                    import json
+                    rows = json.loads(str(getattr(r, "value", "") or ""))
+                    for row in rows:
+                        if isinstance(row, dict):
+                            from source_flow.records import SourceRecord
+                            sr = SourceRecord(
+                                source_id=f"{getattr(r,'source_id','')}_row_{len(expanded)}",
+                                step=getattr(r, "step", 0),
+                                owner=getattr(r, "owner", ""),
+                                value=json.dumps(row) if isinstance(row, dict) else str(row),
+                                tool=getattr(r, "tool", ""),
+                                source_kind="structured_row",
+                                parent_sources=[getattr(r, "source_id", "")],
+                                source_labels=list(getattr(r, "source_labels", []) or []),
+                                evidence=row if isinstance(row, dict) else {},
+                                confidence=getattr(r, "confidence", 0.5),
+                            )
+                            expanded.append(sr)
+                except Exception:
+                    pass
+            else:
+                expanded.append(r)
+        return {"structured_records": expanded, "raw_records": raw}
 
     def _find_selected_record(self, arg_value, candidate_records):
         if not candidate_records or not arg_value:
@@ -732,17 +812,28 @@ Thought Content:
         id_fields = ["id", "file_id", "document_id", "record_id", "transaction_id",
                       "account_id", "message_id", "event_id", "user_id", "email",
                       "name", "filename", "path"]
+        # First pass: exact id-field match
         for r in candidate_records:
-            rv = str(getattr(r, "value", "") or "").strip().lower()
-            if val_lower and (val_lower in rv or rv in val_lower):
-                return {"matched": True, "record": r, "matched_field": "value_contains",
-                        "reason": "value_match"}
             ev = getattr(r, "evidence", {}) or {}
             if isinstance(ev, dict):
                 for fname, fval in ev.items():
-                    if val_lower == str(fval).strip().lower():
+                    if str(fval).strip().lower() == val_lower:
                         return {"matched": True, "record": r, "matched_field": fname,
-                                "reason": "exact_field_match"}
+                                "reason": "exact_id_field_match"}
+        # Second pass: exact field match (case-insensitive)
+        for r in candidate_records:
+            ev = getattr(r, "evidence", {}) or {}
+            if isinstance(ev, dict):
+                for fname, fval in ev.items():
+                    if fname in id_fields and val_lower == str(fval).strip().lower():
+                        return {"matched": True, "record": r, "matched_field": fname,
+                                "reason": "id_field_match_ci"}
+        # Last resort: value_contains (only for short values, not raw blobs)
+        for r in candidate_records:
+            rv = str(getattr(r, "value", "") or "").strip().lower()
+            if len(rv) < 500 and val_lower and (val_lower in rv):
+                return {"matched": True, "record": r, "matched_field": "value_contains",
+                        "reason": "value_substring_match_short"}
         return {"matched": False, "record": None, "matched_field": "", "reason": "not_found"}
 
     def _verify_selector_predicate(self, tool_name, arg_name, arg_value, user_query,
@@ -756,13 +847,29 @@ Thought Content:
             result["reason"] = "no_trusted_candidate_records" if not records else "empty_arg_value"
             return result
 
-        trusted = self._collect_trusted_candidate_records_for_selector(tool_name, arg_name, records)
-        if not trusted:
+        trusted_result = self._collect_trusted_candidate_records_for_selector(tool_name, arg_name, records)
+        structured = trusted_result.get("structured_records", [])
+        raw_records = trusted_result.get("raw_records", [])
+
+        is_critical = risk_profile.get("is_critical") if isinstance(risk_profile, dict) else False
+
+        if is_critical and not structured:
+            result["reason"] = "no_structured_candidate_records_for_critical_selector"
+            result["record_granularity_counts"] = {"structured_row": 0, "raw_tool_output": len(raw_records)}
+            return result
+
+        if is_critical:
+            candidate_set = structured
+        else:
+            candidate_set = structured + raw_records
+
+        if not candidate_set:
             result["reason"] = "no_trusted_candidate_records"
             return result
 
-        result["candidate_record_count"] = len(trusted)
-        selected = self._find_selected_record(arg_value, trusted)
+        result["candidate_record_count"] = len(candidate_set)
+        result["record_granularity_counts"] = {"structured_row": len(structured), "raw_tool_output": len(raw_records)}
+        selected = self._find_selected_record(arg_value, candidate_set)
         if not selected["matched"]:
             result["reason"] = "selected_record_not_found"
             return result
@@ -793,14 +900,20 @@ Thought Content:
                         pass
             if numeric_candidates:
                 best = max(numeric_candidates, key=lambda x: x[0]) if ptype == "largest" else min(numeric_candidates, key=lambda x: x[0])
-                if sel_rec in [x[1] for x in numeric_candidates if x[0] == best[0]]:
+                best_val = best[0]
+                # Check if selected record is among the best (handles ties)
+                sel_matches_best = any(x[1] == sel_rec and x[0] == best_val for x in numeric_candidates)
+                if sel_matches_best:
                     result["verified"] = True
                     result["predicate_type"] = ptype
-                    result["matched_record"] = getattr(best[1], "source_id", str(best[1]))
+                    result["matched_record"] = getattr(sel_rec, "source_id", str(sel_rec))
+                    result["comparison_field"] = "numeric"
                     result["reason"] = "selected_record_has_max_numeric_value" if ptype == "largest" else "selected_record_has_min_numeric_value"
                     return result
                 else:
                     result["reason"] = "selected_record_not_max" if ptype == "largest" else "selected_record_not_min"
+                    result["selected_record_value"] = str(sel_value)
+                    result["best_value"] = best_val
                     return result
             result["reason"] = "no_numeric_candidates"
             return result
@@ -1183,7 +1296,8 @@ Thought Content:
                         "tool_name": tool_name, "action_class": risk.get("action_class"),
                         "risk_level": risk.get("risk_level"),
                         "sourceflow_decision": "allow" if decision.allow else ("warn" if decision.warn else "reject"),
-                        "checked_args": [],
+                        "checked_args": list(risk.get("control_args", [])),
+                        "record_granularity_counts": {"structured_row": 0, "raw_tool_output": 0},
                         "reason": "destructive_or_critical_selector_action",
                     },
                     decision="log_only", would_reject=False,
