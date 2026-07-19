@@ -690,111 +690,147 @@ Thought Content:
             return True
         return False
 
+    def _extract_selector_predicate_from_task_context(self, user_query, checklist_context):
+        q = (user_query or "").lower()
+        c = str(checklist_context or "").lower()
+
+        largest = {"largest", "biggest", "maximum", "max", "highest", "greatest", "most"}
+        smallest = {"smallest", "minimum", "min", "lowest", "least", "cheapest", "shortest"}
+        latest = {"latest", "newest", "most recent", "last"}
+        oldest = {"oldest", "earliest", "first", "least recent"}
+
+        if any(kw in q or kw in c for kw in largest):
+            return {"predicate_type": "largest", "field_hints": ["size", "file_size", "amount",
+                     "value", "price", "balance", "count", "duration", "total"]}
+        if any(kw in q or kw in c for kw in smallest):
+            return {"predicate_type": "smallest", "field_hints": ["size", "file_size", "amount",
+                     "value", "price", "balance", "count", "duration", "total"]}
+        if any(kw in q or kw in c for kw in latest):
+            return {"predicate_type": "latest", "field_hints": ["date", "time", "timestamp",
+                     "created_at", "updated_at", "modified_at", "sent_at", "received_at"]}
+        if any(kw in q or kw in c for kw in oldest):
+            return {"predicate_type": "oldest", "field_hints": ["date", "time", "timestamp",
+                     "created_at", "updated_at", "modified_at", "sent_at", "received_at"]}
+        return {"predicate_type": "unknown", "field_hints": []}
+
+    def _collect_trusted_candidate_records_for_selector(self, tool_name, arg_name, source_records):
+        trusted = []
+        for r in (source_records or []):
+            labels = set(getattr(r, "source_labels", []) or [])
+            if "injected_instruction" in labels:
+                continue
+            ok_labels = {"tool_output", "trusted_tool_output", "structured_field",
+                          "sanitized_observation", "task_anchor", "user_explicit"}
+            if labels & ok_labels:
+                trusted.append(r)
+        return trusted
+
+    def _find_selected_record(self, arg_value, candidate_records):
+        if not candidate_records or not arg_value:
+            return {"matched": False, "record": None, "matched_field": "", "reason": "no_candidates"}
+        val_lower = str(arg_value).strip().lower()
+        id_fields = ["id", "file_id", "document_id", "record_id", "transaction_id",
+                      "account_id", "message_id", "event_id", "user_id", "email",
+                      "name", "filename", "path"]
+        for r in candidate_records:
+            rv = str(getattr(r, "value", "") or "").strip().lower()
+            if val_lower and (val_lower in rv or rv in val_lower):
+                return {"matched": True, "record": r, "matched_field": "value_contains",
+                        "reason": "value_match"}
+            ev = getattr(r, "evidence", {}) or {}
+            if isinstance(ev, dict):
+                for fname, fval in ev.items():
+                    if val_lower == str(fval).strip().lower():
+                        return {"matched": True, "record": r, "matched_field": fname,
+                                "reason": "exact_field_match"}
+        return {"matched": False, "record": None, "matched_field": "", "reason": "not_found"}
+
     def _verify_selector_predicate(self, tool_name, arg_name, arg_value, user_query,
-                                     checklist_context, source_evidence, source_records):
+                                     checklist_context, source_evidence, source_records, risk_profile):
         result = {"verified": False, "predicate_type": "unknown",
                    "reason": "no_predicate_found", "matched_record": None,
                    "candidate_record_count": 0}
 
         records = source_records or []
         if not records or not arg_value:
+            result["reason"] = "no_trusted_candidate_records" if not records else "empty_arg_value"
             return result
 
-        result["candidate_record_count"] = len(records)
-        user_query_lower = (user_query or "").lower()
-
-        # Find records that contain the arg value
-        matching = []
-        for r in records:
-            rv = str(getattr(r, "value", "")).lower()
-            if str(arg_value).lower() in rv:
-                matching.append(r)
-        if not matching:
+        trusted = self._collect_trusted_candidate_records_for_selector(tool_name, arg_name, records)
+        if not trusted:
+            result["reason"] = "no_trusted_candidate_records"
             return result
 
-        # Predicate types
-        largest_kw = {"largest", "biggest", "maximum", "most", "highest", "longest"}
-        smallest_kw = {"smallest", "minimum", "least", "lowest", "shortest", "cheapest"}
-        recent_kw = {"recent", "latest", "newest", "last"}
-        oldest_kw = {"oldest", "earliest", "first"}
+        result["candidate_record_count"] = len(trusted)
+        selected = self._find_selected_record(arg_value, trusted)
+        if not selected["matched"]:
+            result["reason"] = "selected_record_not_found"
+            return result
 
-        # Check for predicate in user query
-        has_largest = any(kw in user_query_lower for kw in largest_kw)
-        has_smallest = any(kw in user_query_lower for kw in smallest_kw)
-        has_recent = any(kw in user_query_lower for kw in recent_kw)
-        has_oldest = any(kw in user_query_lower for kw in oldest_kw)
+        ctx = self._extract_selector_predicate_from_task_context(user_query, checklist_context)
+        ptype = ctx["predicate_type"]; hints = ctx.get("field_hints", [])
+        sel_rec = selected["record"]
+        sel_value = str(getattr(sel_rec, "value", "") or "")
 
-        # Try numeric comparison from structured fields
-        if has_largest or has_smallest:
-            numeric_records = []
-            for r in records:
+        if ptype in ("largest", "smallest"):
+            numeric_candidates = []
+            import re
+            for r in trusted:
                 ev = getattr(r, "evidence", {}) or {}
                 if isinstance(ev, dict):
                     for fv in ev.values():
                         try:
-                            num = float(str(fv))
-                            numeric_records.append((float(num), r))
+                            numeric_candidates.append((float(fv), r, "evidence"))
                         except (ValueError, TypeError):
                             pass
-                try:
-                    rv = str(getattr(r, "value", ""))
-                    import re
-                    nums = re.findall(r"\b\d+\b", rv)
-                    for n in nums:
-                        numeric_records.append((float(n), r))
-                except Exception:
-                    pass
-
-            if numeric_records:
-                target = str(arg_value).lower()
-                if has_largest:
-                    best = max(numeric_records, key=lambda x: x[0])
-                else:
-                    best = min(numeric_records, key=lambda x: x[0])
-                if target in str(getattr(best[1], "value", "")).lower():
+                # Fallback: extract numbers from value string
+                rv = str(getattr(r, "value", "") or "")
+                nums = re.findall(r"\b\d+\.?\d*\b", rv)
+                for n in nums:
+                    try:
+                        numeric_candidates.append((float(n), r, "value_extracted"))
+                    except:
+                        pass
+            if numeric_candidates:
+                best = max(numeric_candidates, key=lambda x: x[0]) if ptype == "largest" else min(numeric_candidates, key=lambda x: x[0])
+                if sel_rec in [x[1] for x in numeric_candidates if x[0] == best[0]]:
                     result["verified"] = True
-                    result["predicate_type"] = "largest" if has_largest else "smallest"
+                    result["predicate_type"] = ptype
                     result["matched_record"] = getattr(best[1], "source_id", str(best[1]))
-                    result["reason"] = "numeric_comparison_matched"
+                    result["reason"] = "selected_record_has_max_numeric_value" if ptype == "largest" else "selected_record_has_min_numeric_value"
                     return result
                 else:
-                    result["reason"] = "selector_not_best_match"
+                    result["reason"] = "selected_record_not_max" if ptype == "largest" else "selected_record_not_min"
                     return result
-
-            result["reason"] = "no_numeric_records_for_comparison"
+            result["reason"] = "no_numeric_candidates"
             return result
 
-        # Exact name/title match from user query
-        checklist_str = str(checklist_context or "")
-        name_match = None
-        for r in matching:
-            rv = str(getattr(r, "value", "")).lower()
-            words = set(user_query_lower.split())
-            for w in words:
-                if len(w) > 3 and w in rv:
-                    name_match = r
-                    break
-            if name_match:
-                break
-
-        if name_match:
+        if ptype in ("latest", "oldest"):
             result["verified"] = True
-            result["predicate_type"] = "exact_name"
-            result["matched_record"] = getattr(name_match, "source_id", str(name_match))
-            result["reason"] = "name_match_in_query"
+            result["predicate_type"] = ptype
+            result["matched_record"] = getattr(sel_rec, "source_id", str(sel_rec))
+            result["reason"] = "temporal_ordering_trusted"
             return result
 
-        # Recent/oldest with timestamp
-        if has_recent or has_oldest:
+        # exact name - check if any candidate record field matches a query word
+        if ptype == "unknown":
+            q_words = set((user_query or "").lower().split())
+            for r in trusted:
+                rv = str(getattr(r, "value", "") or "").lower()
+                for w in q_words:
+                    if len(w) > 3 and w in rv:
+                        result["verified"] = True
+                        result["predicate_type"] = "exact_name"
+                        result["matched_record"] = getattr(r, "source_id", str(r))
+                        result["reason"] = "name_match"
+                        return result
+
+        # If non-critical, allow with selection_from_read_result
+        if not risk_profile.get("is_critical"):
             result["verified"] = True
-            result["predicate_type"] = "recent" if has_recent else "oldest"
-            result["reason"] = "temporal_ordering_assumed"
+            result["predicate_type"] = "selection_from_read_result"
+            result["reason"] = "non_critical_allow"
             return result
-
-        # Default: for non-critical, selection_from_read_result alone is enough.
-        # For critical, predicate must be explicitly verified.
-        # Callers must pass the real risk_profile to control this.
-        result["reason"] = "selector_predicate_not_supported"
 
         result["reason"] = "selector_predicate_not_supported"
         return result
@@ -807,6 +843,9 @@ Thought Content:
         user_query_lower = (user_query or "").lower()
         store = getattr(self, "source_label_store", None)
         all_records = getattr(store, "records", []) if store else []
+        trusted_labels = {"tool_output", "sanitized_observation", "structured_field",
+                           "user_explicit", "task_anchor", "regex_extract",
+                           "user_specified_source", "delegated_task_source"}
 
         for arg_name, arg_value in args.items():
             val_str = str(arg_value or "").strip()
@@ -817,40 +856,41 @@ Thought Content:
                                    "reason": "null_or_empty_default"}
                 continue
 
-            sources = []
-            ev_type = "none"
+            sources = []; ev_type = "none"
             val_lower = val_str.lower()
+            # Also try normalized comparison
+            import re
+            val_words = set(re.findall(r"[a-z0-9_@.]+", val_lower))
 
-            # Check user query
+            # Check user query (full and word-level)
             if val_lower in user_query_lower:
-                sources.append("user_query")
-                ev_type = "user_query_match"
+                sources.append("user_query"); ev_type = "user_query_match"
+            elif val_words:
+                for w in val_words:
+                    if len(w) > 3 and w in user_query_lower:
+                        sources.append("user_query_word"); ev_type = "user_query_word_match"
+                        if not sources: pass  # keep first
+                        break
 
             # Check trusted tool records
-            if not sources:
-                for r in all_records:
-                    rv = str(getattr(r, "value", "") or "").lower()
-                    sl = set(getattr(r, "source_labels", []) or [])
-                    if "injected_instruction" in sl:
-                        continue
-                    trusted = {"tool_output", "sanitized_observation", "structured_field",
-                                "user_explicit", "task_anchor", "regex_extract",
-                                "user_specified_source", "delegated_task_source"}
-                    if sl & trusted and val_lower in rv:
-                        sources.append(getattr(r, "source_id", "record"))
-                        ev_type = "trusted_tool_output"
-                        break
+            for r in all_records:
+                if sources: break
+                rv = str(getattr(r, "value", "") or "").lower()
+                sl = set(getattr(r, "source_labels", []) or [])
+                if "injected_instruction" in sl: continue
+                if sl & trusted_labels and (val_lower in rv or rv in val_lower):
+                    sources.append(getattr(r, "source_id", "record"))
+                    ev_type = "trusted_tool_output"
+                    break
 
             # Check structured fields
             if not sources and store:
-                sf_records = [r for r in all_records
-                               if getattr(r, "source_kind", "") == "structured_field"
-                               and "injected_instruction" not in set(getattr(r, "source_labels", []) or [])]
-                for r in sf_records:
-                    if val_lower in str(getattr(r, "value", "") or "").lower():
-                        sources.append(getattr(r, "source_id", "structured"))
-                        ev_type = "structured_field"
-                        break
+                for r in all_records:
+                    if getattr(r, "source_kind", "") == "structured_field" and "injected_instruction" not in set(getattr(r, "source_labels", []) or []):
+                        if val_lower in str(getattr(r, "value", "") or "").lower():
+                            sources.append(getattr(r, "source_id", "structured"))
+                            ev_type = "structured_field"
+                            break
 
             prov[arg_name] = {
                 "has_positive_provenance": bool(sources),
@@ -1163,7 +1203,7 @@ Thought Content:
                     selector_result = self._verify_selector_predicate(
                         tool_name, arg_name, tool_args[arg_name],
                         getattr(store, "user_query", ""), candidate_state.get("node_checklist"),
-                        sink_evidence.get(f"{tool_name}.{arg_name}"), sl_records,
+                        sink_evidence.get(f"{tool_name}.{arg_name}"), sl_records, risk,
                     )
                     if not selector_result.get("verified"):
                         self.source_label_store.validation_trace.append(
