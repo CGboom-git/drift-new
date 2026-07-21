@@ -1608,7 +1608,7 @@ Thought: {(thought_content or '')[:500]}
                 f"[EBA RECOVERY REQUIRED] {tool_name}: {parsed.get('reason', 'insufficient evidence')}. "
                 f"Recovery: {parsed.get('recovery_action', 'collect more evidence')}."
             )
-            return {"role": "user", "content": f"[EBA RECOVERY] {tool_name}."}, output
+            return {"content": f"[EBA RECOVERY] {tool_name}."}, output
 
         # ALLOW_UPDATE / ALLOW_PATCH
         self.source_label_store.validation_trace.append(
@@ -2790,7 +2790,7 @@ Thought: {(thought_content or '')[:500]}
 
                     if eba_result is not None:
                         # BLOCK or RECOVER returned an error message
-                        error_msg = {"role": "user", "content": eba_result["content"]}
+                        error_msg = {"role": "user", "content": eba_result.get("content", str(eba_result))}
                         return error_msg, output
 
                     # ALLOW_UPDATE / ALLOW_PATCH
