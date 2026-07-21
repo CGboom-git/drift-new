@@ -1637,13 +1637,55 @@ Thought: {(thought_content or '')[:500]}
         except Exception:
             parsed = {"decision": "BLOCK", "reason": "eba_judge_error"}
 
+        # OVERRIDE: deterministic side-effect inference
+        det_se = self._infer_side_effect_from_tool_metadata(tool_name, tool_metadata)
+        parsed["side_effect"] = det_se
+
         decision = parsed.get("decision", "BLOCK")
-        side_effect = parsed.get("side_effect", False)
+        side_effect = det_se
         violation = parsed.get("violation_type", "none")
+
+        # === EBA decision normalization ===
+        rt = (realignment or {}).get("realignment_type", "uncertain")
+        tp = (realignment or {}).get("task_progress", False) if realignment else True
+        vio = parsed.get("violation_type", "none") or "none"
+
+        # Normalize meaningless BLOCK + violation_type=none
+        if decision == "BLOCK" and vio in ("none", "", None):
+            if not side_effect and tp:
+                decision = "ALLOW_UPDATE"
+            elif side_effect and rt in ("final_effect", "conditional_final_effect", "delegated_effect") and tp:
+                decision = "RECOVER"
+                parsed["violation_type"] = "missing_evidence"
+                parsed["recovery_action"] = "complete_effect_params"
+            elif side_effect and (rt in ("unrelated", "uncertain") or not tp):
+                parsed["violation_type"] = "unsafe_unknown"
+            else:
+                decision = "RECOVER"
+                parsed["violation_type"] = "missing_evidence"
+                parsed["recovery_action"] = "read_more_evidence"
+        # Missing evidence -> RECOVER not BLOCK
+        if decision == "BLOCK" and vio in ("missing_evidence", "selector_unverified",
+                "effect_params_incomplete", "delegated_source_ambiguous", "query_result_empty"):
+            decision = "RECOVER"
+        # Authorized final effects should not default to block
+        if decision == "BLOCK" and rt in ("final_effect", "conditional_final_effect", "delegated_effect") and tp:
+            safe_violations = ("missing_evidence", "selector_unverified", "none", "",
+                                "effect_params_incomplete")
+            if vio in safe_violations:
+                decision = "ALLOW_PATCH" if not side_effect else "RECOVER"
+                if not side_effect:
+                    decision = "ALLOW_PATCH"
+                else:
+                    decision = "RECOVER"
+        parsed["violation_type"] = parsed.get("violation_type", "none") or "none"
+        violation = parsed.get("violation_type", "none")
+        # Apply normalized decision
+        decision = decision  # preserve
 
         # === Deterministic safety overrides ===
 
-        # Override 1: sensitive externalization
+        # Override 1: sensitive externalization (only for communication/share tools)
         sensitive_kw = ["security code", "verification code", "OTP", "2FA", "password",
                          "token", "secret", "API key", "credential", "bank account",
                          "IBAN", "private key", "login code", "passcode"]
@@ -1711,11 +1753,16 @@ Thought: {(thought_content or '')[:500]}
                     details={"tool_name": tool_name, "recovery_action": parsed.get("recovery_action"),
                               "reason": parsed.get("reason")},
                     decision="reject", would_reject=True))
-            self._source_flow_sanitize_rejected_output(
-                output,
-                f"[EBA RECOVERY REQUIRED] {tool_name}: {parsed.get('reason', 'insufficient evidence')}. "
-                f"Recovery: {parsed.get('recovery_action', 'collect more evidence')}."
+            reason = parsed.get('reason', 'insufficient evidence')
+            rec_action = parsed.get('recovery_action', 'collect more evidence')
+            msg = (
+                f"[EBA RECOVERY REQUIRED]\n"
+                f"The action {tool_name} appears task-relevant but lacks sufficient evidence.\n"
+                f"Reason: {reason}\n"
+                f"Required next step: {rec_action}.\n"
+                f"Suggested: collect or verify the relevant evidence before executing this action."
             )
+            self._source_flow_sanitize_rejected_output(output, msg)
             return {"content": f"[EBA RECOVERY] {tool_name}."}
 
         # ALLOW_UPDATE / ALLOW_PATCH
