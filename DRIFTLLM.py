@@ -1457,6 +1457,114 @@ Thought Content:
 
     # --- EBA MODE ---
 
+    # --- SRA: Semantic Realignment Adapter ---
+
+    def _semantic_realign_action(
+        self, tool_name, tool_args, query, function_trajectory,
+        achieved_trajectory, current_index, recent_obs, tool_metadata,
+    ):
+        result = {"realignment_type": "uncertain", "anchor_type": "none",
+                   "task_progress": True, "requires_eba": True,
+                   "matched_goal": "", "matched_tool_from_trajectory": "",
+                   "confidence": "low", "reason": "sra_default"}
+
+        name = tool_name.lower()
+        traj = function_trajectory or []
+        achieved = achieved_trajectory or []
+        q = (query or "").lower()
+        is_se = self._infer_side_effect_from_tool_metadata(tool_name, tool_metadata)
+
+        # --- Deterministic heuristics ---
+
+        # 1. Read/search/list/get as evidence steps
+        read_prefixes = ("get_", "read_", "search_", "list_", "find_", "query_",
+                          "lookup_", "retrieve_", "inspect_")
+        if any(name.startswith(p) for p in read_prefixes) and not is_se:
+            result["realignment_type"] = "evidence_step"
+            result["anchor_type"] = "semantic_goal"
+            result["task_progress"] = True
+            result["requires_eba"] = False
+            result["confidence"] = "high"
+            result["reason"] = "read_tool_evidence_step"
+            return result
+
+        # 2. Future-step match
+        if current_index is not None and current_index < len(traj):
+            remaining = traj[current_index:]
+            if tool_name in remaining:
+                result["realignment_type"] = "future_step"
+                result["anchor_type"] = "future_index"
+                result["matched_tool_from_trajectory"] = tool_name
+                result["task_progress"] = True
+                result["requires_eba"] = is_se
+                result["confidence"] = "high"
+                result["reason"] = "future_step_match"
+                return result
+
+        # 3. Evidence insertion before final effect
+        if not is_se and achieved:
+            for t in traj:
+                if t in achieved:
+                    continue
+                if t and any(pre for pre in ("send_", "create_", "delete_", "schedule_")
+                              if t.lower().startswith(pre)):
+                    result["realignment_type"] = "evidence_step"
+                    result["anchor_type"] = "data_dependency"
+                    result["matched_tool_from_trajectory"] = t
+                    result["task_progress"] = True
+                    result["requires_eba"] = False
+                    result["confidence"] = "medium"
+                    result["reason"] = f"evidence_before_{t}"
+                    return result
+
+        # 4. Try LLM SRA judge for complex cases
+        if is_se:
+            try:
+                sra_input = f"""User: {q}
+Tool: {tool_name}
+Args: {tool_args}
+Meta: {tool_metadata}
+Trajectory: {traj}"""
+                resp = self.client.llm_run(SRA_REALIGNMENT_PROMPT, sra_input)
+                parsed = self._safe_parse_json_object(resp)
+                if isinstance(parsed, dict):
+                    result.update(parsed)
+                    result["confidence"] = parsed.get("confidence", "medium")
+                    return result
+            except Exception:
+                pass
+
+        result["requires_eba"] = True
+        return result
+
+    def _eba_fast_allow_by_realignment(self, realignment, tool_metadata, tool_name):
+        if not realignment:
+            return False
+        rt = realignment.get("realignment_type", "")
+        se = self._infer_side_effect_from_tool_metadata(tool_name, tool_metadata)
+        if rt in ("expected_step", "future_step", "evidence_step", "recovery_step") and not se:
+            if realignment.get("task_progress", True):
+                return True
+        return False
+
+
+    def _infer_side_effect_from_tool_metadata(self, tool_name, tool_semantic_metadata=None):
+        if tool_semantic_metadata:
+            tt = tool_semantic_metadata.get("tool_type", "")
+            if tt in ("action", "write", "execute"):
+                return True
+            if tt in ("read", "observe", "transform", "parse"):
+                return False
+        name = tool_name.lower()
+        se_prefixes = ("send_", "create_", "delete_", "schedule_", "update_", "remove_",
+                        "invite_", "add_", "share_", "post_", "book_", "reserve_",
+                        "purchase_", "transfer_", "append_", "pay_", "refund_")
+        for p in se_prefixes:
+            if name.startswith(p):
+                return True
+        return False
+
+
     def _evidence_boundary_alignment(
         self, tool_name, tool_args, query, messages, output,
         thought_content, func_ids, extended_trajectory, extended_checklist,
