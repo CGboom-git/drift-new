@@ -58,7 +58,7 @@ def get_args(description='DRIFT'):
     parser.add_argument(
         "--cae_mode",
         type=str,
-        choices=["on", "off", "strict", "block", "repair"],
+        choices=["on", "off", "strict", "block", "repair", "eba"],
         default=None,
         help="CAE mode: on (current behavior), off (fully disabled), strict (block high-risk ACTION). "
              "If not set, uses --controlled_action_extension flag for backward compatibility.",

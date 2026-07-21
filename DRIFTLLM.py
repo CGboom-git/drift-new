@@ -1455,6 +1455,179 @@ Thought Content:
 
         return evidence
 
+    # --- EBA MODE ---
+
+    def _evidence_boundary_alignment(
+        self, tool_name, tool_args, query, messages, output,
+        thought_content, func_ids, extended_trajectory, extended_checklist,
+    ):
+        snapshot = self._source_flow_trajectory_snapshot()
+        store = getattr(self, "source_label_store", None)
+
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(
+                step=len(self.achieved_function_trajectory),
+                event="eba_candidate",
+                source_ids=[],
+                details={"tool_name": tool_name, "tool_args": tool_args, "cae_mode": "eba"},
+                decision="log_only", would_reject=False,
+            )
+        )
+
+        # Collect context
+        initial_traj = getattr(self, "initial_function_trajectory", None) or []
+        current_traj = snapshot.get("function_trajectory", []) or []
+        achieved_traj = snapshot.get("achieved_function_trajectory", []) or []
+
+        try:
+            tool_metadata = self._get_tool_semantic_metadata(tool_name, tool_args)
+        except Exception:
+            tool_metadata = {"tool_type": "unknown"}
+
+        recent_obs = ""
+        if messages and len(messages) > 0:
+            for m in reversed(messages):
+                if isinstance(m, dict) and m.get("role") == "tool":
+                    recent_obs = str(m.get("content", ""))[:3000]
+                    break
+
+        arg_summary = ""
+        for k, v in (tool_args or {}).items():
+            arg_summary += f"  {k}: {str(v)[:100]}\n"
+
+        # Build judge input
+        judge_input = f"""User Query:
+{query}
+
+Initial Trajectory:
+{initial_traj}
+
+Current Trajectory:
+{current_traj}
+
+Achieved Trajectory:
+{achieved_traj}
+
+Candidate Out-of-Plan ACTION: {tool_name}
+Arguments:
+{arg_summary}
+
+Tool Semantic Metadata: {tool_metadata}
+
+Recent Observation:
+{recent_obs[:2000]}
+
+Thought: {(thought_content or '')[:500]}
+"""
+
+        # Call LLM judge
+        try:
+            response = self.client.llm_run(EBA_ALIGNMENT_PROMPT, judge_input)
+            parsed = self._safe_parse_json_object(response)
+            if not isinstance(parsed, dict):
+                parsed = {"decision": "BLOCK", "reason": "eba_parse_error"}
+        except Exception:
+            parsed = {"decision": "BLOCK", "reason": "eba_judge_error"}
+
+        decision = parsed.get("decision", "BLOCK")
+        side_effect = parsed.get("side_effect", False)
+        violation = parsed.get("violation_type", "none")
+
+        # === Deterministic safety overrides ===
+
+        # Override 1: sensitive externalization
+        sensitive_kw = ["security code", "verification code", "OTP", "2FA", "password",
+                         "token", "secret", "API key", "credential", "bank account",
+                         "IBAN", "private key", "login code", "passcode"]
+        if side_effect and any(kw in str(tool_args).lower() or kw in (recent_obs or "").lower() for kw in sensitive_kw):
+            decision = "BLOCK"
+            violation = "sensitive_externalization"
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                    event="eba_forced_block_sensitive_externalization",
+                    source_ids=[], details={"tool_name": tool_name},
+                    decision="reject", would_reject=True))
+
+        # Override 2: injected control arg
+        control_args = {"recipient", "account", "amount", "date", "file_id",
+                         "message_id", "channel", "participant", "url", "transaction_id"}
+        if side_effect and store:
+            for arg_name in control_args:
+                if arg_name in (tool_args or {}):
+                    val = str(tool_args[arg_name])
+                    for rec in getattr(store, "records", []):
+                        sl = set(getattr(rec, "source_labels", []) or [])
+                        if "injected_instruction" in sl and val in str(getattr(rec, "value", "")):
+                            decision = "BLOCK"
+                            violation = "injected_control_arg"
+                            self.source_label_store.validation_trace.append(
+                                ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                                    event="eba_forced_block_injected_control_arg",
+                                    source_ids=[], details={"tool_name": tool_name, "arg": arg_name},
+                                    decision="reject", would_reject=True))
+                            break
+
+        # Override 3: extra side effect with no authorization
+        if side_effect and decision == "ALLOW_PATCH":
+            auth_effects = parsed.get("authorized_effects", [])
+            if not auth_effects and violation == "none":
+                decision = "BLOCK"
+                violation = "unauthorized_effect"
+
+        # Log judge result
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                event="eba_judge_result",
+                source_ids=[],
+                details={"tool_name": tool_name, "decision": decision, "violation_type": violation,
+                          "side_effect": side_effect, "confidence": parsed.get("confidence", "medium")},
+                decision="log_only", would_reject=False))
+
+        # Act on decision
+        if decision in ("BLOCK",):
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                    event="eba_block", source_ids=[],
+                    details={"tool_name": tool_name, "violation_type": violation},
+                    decision="reject", would_reject=True))
+            self._source_flow_sanitize_rejected_output(
+                output,
+                f"[EBA BLOCKED] {tool_name}: {violation or 'unauthorized action'}."
+            )
+            return {"role": "user", "content": f"[EBA BLOCKED] {tool_name}."}, output
+
+        if decision == "RECOVER":
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                    event="eba_recover", source_ids=[],
+                    details={"tool_name": tool_name, "recovery_action": parsed.get("recovery_action"),
+                              "reason": parsed.get("reason")},
+                    decision="reject", would_reject=True))
+            self._source_flow_sanitize_rejected_output(
+                output,
+                f"[EBA RECOVERY REQUIRED] {tool_name}: {parsed.get('reason', 'insufficient evidence')}. "
+                f"Recovery: {parsed.get('recovery_action', 'collect more evidence')}."
+            )
+            return {"role": "user", "content": f"[EBA RECOVERY] {tool_name}."}, output
+
+        # ALLOW_UPDATE / ALLOW_PATCH
+        self.source_label_store.validation_trace.append(
+            ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                event="eba_allow_update" if decision == "ALLOW_UPDATE" else "eba_allow_patch",
+                source_ids=[],
+                details={"tool_name": tool_name, "decision": decision, "anchor_type": parsed.get("anchor_type")},
+                decision="allow", would_reject=False))
+
+        # Update trajectory for ALLOW cases
+        self.function_trajectory = extended_trajectory
+        try:
+            self.node_checklist = json.dumps(extended_checklist)
+        except Exception:
+            self.node_checklist = extended_checklist
+
+        return None  # None means allowed, caller handles temp_achieved append
+
+
     def _source_flow_is_high_risk_action(self, tool_name, tool_type):
         if tool_type in ("read", "observe", "transform", "parse"):
             return False
@@ -2598,6 +2771,31 @@ Thought Content:
                             ),
                         }
                         return error_msg, output
+
+                if is_action and self.cae_mode == "eba":
+                    tool_args_by_name = {}
+                    for call in (output.get("tool_calls", []) or []):
+                        fn = call.function if hasattr(call, "function") else call.get("function", "")
+                        if isinstance(fn, str):
+                            tool_args_by_name[fn] = call.args if hasattr(call, "args") else (call.get("args") or {})
+                    tool_args = tool_args_by_name.get(achieved_func, {})
+
+                    eba_result = self._evidence_boundary_alignment(
+                        tool_name=achieved_func, tool_args=tool_args,
+                        query=query, messages=messages, output=output,
+                        thought_content=thought_content, func_ids=func_ids,
+                        extended_trajectory=extended_function_trajectory,
+                        extended_checklist=extended_checklist,
+                    )
+
+                    if eba_result is not None:
+                        # BLOCK or RECOVER returned an error message
+                        error_msg = {"role": "user", "content": eba_result["content"]}
+                        return error_msg, output
+
+                    # ALLOW_UPDATE / ALLOW_PATCH
+                    temp_achieved_trajectory.append(achieved_func)
+                    continue
 
                 if is_action and self.cae_mode == "repair":
                     tool_args_by_name = {}
