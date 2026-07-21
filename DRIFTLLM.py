@@ -1568,6 +1568,7 @@ Trajectory: {traj}"""
     def _evidence_boundary_alignment(
         self, tool_name, tool_args, query, messages, output,
         thought_content, func_ids, extended_trajectory, extended_checklist,
+        realignment=None,
     ):
         snapshot = self._source_flow_trajectory_snapshot()
         store = getattr(self, "source_label_store", None)
@@ -2935,12 +2936,44 @@ Thought: {(thought_content or '')[:500]}
                             tool_args_by_name[fn] = call.args if hasattr(call, "args") else (call.get("args") or {})
                     tool_args = tool_args_by_name.get(achieved_func, {})
 
+                    tool_meta = {}
+                    try:
+                        tool_meta = self._get_tool_semantic_metadata(achieved_func, tool_args)
+                    except Exception:
+                        pass
+                    sra = self._semantic_realign_action(
+                        tool_name=achieved_func, tool_args=tool_args, query=query,
+                        function_trajectory=self.function_trajectory,
+                        achieved_trajectory=temp_achieved_trajectory,
+                        current_index=func_ids, recent_obs="",
+                        tool_metadata=tool_meta,
+                    )
+                    self.source_label_store.validation_trace.append(
+                        ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                            event="sra_candidate", source_ids=[],
+                            details={"tool": achieved_func, "sra": sra},
+                            decision="log_only", would_reject=False))
+                    if self._eba_fast_allow_by_realignment(sra, tool_meta, achieved_func):
+                        self.source_label_store.validation_trace.append(
+                            ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                                event="sra_fast_allow_update", source_ids=[],
+                                details={"tool": achieved_func},
+                                decision="allow", would_reject=False))
+                        temp_achieved_trajectory.append(achieved_func)
+                        continue
+                    self.source_label_store.validation_trace.append(
+                        ValidationTraceEntry(step=len(self.achieved_function_trajectory),
+                            event="sra_forward_to_eba", source_ids=[],
+                            details={"tool": achieved_func},
+                            decision="log_only", would_reject=False))
+
                     eba_result = self._evidence_boundary_alignment(
                         tool_name=achieved_func, tool_args=tool_args,
                         query=query, messages=messages, output=output,
                         thought_content=thought_content, func_ids=func_ids,
                         extended_trajectory=extended_function_trajectory,
                         extended_checklist=extended_checklist,
+                        realignment=sra,
                     )
 
                     if eba_result is not None:
