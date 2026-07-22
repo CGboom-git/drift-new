@@ -147,7 +147,7 @@ class TestTaerRouting(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.total_tokens = 0
-        mock_client.llm_run = MagicMock(return_value='{"relation": "NEW_GOAL", "consumer_step_id": null, "missing_condition": null, "provides": "", "expected_effect": null, "control_sources": [], "argument_sources": {}, "scope_delta": "NONE", "risk": "READ_ONLY", "confidence": "LOW", "reason": "test"}')
+        mock_client.llm_run = MagicMock(return_value='{"relation": "NEW_GOAL", "consumer_step_id": null, "missing_condition": null, "provides": "", "expected_effect": null, "control_sources": [], "argument_sources": {}, "scope_delta": "NONE", "risk": "READ_ONLY", "confidence": "HIGH", "reason": "test"}')
 
         mock_store = MagicMock()
         mock_store.records = []
@@ -578,33 +578,34 @@ class TestTaerRouting(unittest.TestCase):
         self.assertEqual(llm.taer_state.backbone_steps, backbone_before,
                           "Backbone must not be modified by TAER REPAIR")
 
-    def test_repair_commit_does_not_mark_consumer_done(self):
+    def test_repair_success_commits_and_resumes_consumer(self):
         from taer.controller import create_repair_step, commit_repair
         from taer.models import BackboneStep, TAERState
 
         state = TAERState()
         consumer = BackboneStep(
             step_id="s000", original_index=0, tool_name="send_money",
-            obligation="send_money", authorized_effect={},
+            obligation="send_money", authorized_effect={"amount": 100},
             required_parameters={}, conditions={"account_id": False},
             condition_states={"account_id": False}, status="ready",
         )
         state.backbone_order = ["s000"]
         state.backbone_steps = {"s000": consumer}
 
-        repair = create_repair_step(state, "get_account", {},
+        repair = create_repair_step(state, "get_account_details", {},
                                      {"relation": "REPAIR", "consumer_step_id": "s000",
                                       "missing_condition": "account_id"})
+        repair.tool_call_id = "call_r001"
+        state.active_consumer_step_id = repair.consumer_step_id
 
         commit_repair(state, repair.repair_id)
 
         self.assertEqual(repair.status, "done")
-        self.assertEqual(consumer.status, "ready",
-                          "commit_repair must not mark consumer done")
-        self.assertTrue(consumer.condition_states["account_id"],
-                         "condition should be satisfied")
+        self.assertTrue(consumer.condition_states["account_id"])
+        self.assertEqual(state.active_consumer_step_id, "s000",
+                          "focus must still be on consumer after successful repair")
 
-    def test_repair_rollback(self):
+    def test_repair_failure_rolls_back_and_resumes_consumer(self):
         from taer.controller import create_repair_step, rollback_repair
         from taer.models import BackboneStep, TAERState
 
@@ -617,12 +618,236 @@ class TestTaerRouting(unittest.TestCase):
         state.backbone_order = ["s000"]
         state.backbone_steps = {"s000": consumer}
 
-        repair = create_repair_step(state, "get_account", {},
+        repair = create_repair_step(state, "get_account_details", {},
                                      {"relation": "REPAIR", "consumer_step_id": "s000"})
+        repair.tool_call_id = "call_r002"
+        state.active_consumer_step_id = repair.consumer_step_id
+
         rollback_repair(state, repair.repair_id)
 
         self.assertEqual(repair.status, "rolled_back")
-        self.assertEqual(state.repair_rollback_count, 1)
+        self.assertEqual(state.active_consumer_step_id, repair.consumer_step_id,
+                          "focus must still be on consumer after failed repair")
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_repair_skips_unrelated_params(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        step = BackboneStep(
+            step_id="s001", original_index=0, tool_name="send_money",
+            obligation="send_money", authorized_effect={"amount": 100, "recipient": "John"},
+            required_parameters={"amount": 100, "recipient": "John"},
+            conditions={"account_id": False}, status="ready",
+        )
+        llm.taer_state.backbone_steps["s001"] = step
+        llm.taer_state.backbone_order.append("s001")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "REPAIR",
+            "consumer_step_id": "s001",
+            "missing_condition": "account_id",
+            "provides": "account number",
+            "expected_effect": "get account",
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "READ_ONLY",
+            "confidence": "HIGH",
+            "reason": "repair without unrelated params",
+        })
+        mock_boundary.return_value = TAERBoundaryResult(
+            passed=True, explicit_violation=False, violation_type=None,
+            checked_authority_args={}, evidence_source_ids=[], reason="boundary_pass",
+        )
+
+        repairs_before = len(llm.taer_state.repair_steps)
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["get_account_details"],
+            self._make_output("get_account_details", {"query_name": "Alice"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
+        )
+
+        mock_matcher.assert_called_once()
+        mock_boundary.assert_called_once()
+
+        self.assertEqual(len(llm.taer_state.repair_steps), repairs_before + 1,
+                          "REPAIR with unrelated params must be allowed")
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_repair_conflicting_param_blocked(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        step = BackboneStep(
+            step_id="s002", original_index=0, tool_name="send_money",
+            obligation="send_money", authorized_effect={"amount": 100, "recipient": "John"},
+            required_parameters={"amount": 100, "recipient": "John"},
+            conditions={"account_id": False}, status="ready",
+        )
+        llm.taer_state.backbone_steps["s002"] = step
+        llm.taer_state.backbone_order.append("s002")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "REPAIR",
+            "consumer_step_id": "s002",
+            "missing_condition": "account_id",
+            "provides": "account number",
+            "expected_effect": "get account",
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "READ_ONLY",
+            "confidence": "HIGH",
+            "reason": "repair with conflicting param",
+        })
+        mock_boundary.return_value = TAERBoundaryResult(
+            passed=True, explicit_violation=False, violation_type=None,
+            checked_authority_args={}, evidence_source_ids=[], reason="boundary_pass",
+        )
+
+        result = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["get_account_details"],
+            self._make_output("get_account_details", {"amount": 9999, "recipient": "Mallory"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
+        )
+
+        mock_matcher.assert_called_once()
+        mock_boundary.assert_not_called()
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(result[0])
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_medium_confidence_new_goal_falls_back(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "NEW_GOAL",
+            "consumer_step_id": None,
+            "missing_condition": None,
+            "provides": "",
+            "expected_effect": None,
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "IRREVERSIBLE",
+            "confidence": "MEDIUM",
+            "reason": "medium new goal",
+        })
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 100, "recipient": "John"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
+        )
+
+        mock_matcher.assert_called_once()
+        mock_boundary.assert_not_called()
+        llm._run_original_drift_deviation_validation.assert_called_once()
+
+    def test_repair_binds_tool_call_id(self):
+        from DRIFTLLM import DRIFTLLM
+        from taer.controller import create_repair_step
+        from taer.models import BackboneStep, TAERState
+
+        state = TAERState()
+        consumer = BackboneStep(
+            step_id="s005", original_index=0, tool_name="send_money",
+            obligation="send_money", authorized_effect={},
+            required_parameters={}, conditions={"account_id": False},
+            condition_states={}, status="ready",
+        )
+        state.backbone_order = ["s005"]
+        state.backbone_steps = {"s005": consumer}
+
+        repair = create_repair_step(state, "get_account_details", {},
+                                     {"relation": "REPAIR", "consumer_step_id": "s005",
+                                      "missing_condition": "account_id"})
+        repair.tool_call_id = "call_tc_12345"
+
+        self.assertEqual(repair.tool_call_id, "call_tc_12345",
+                          "repair must be bound to its tool_call_id for lifecycle tracking")
+
+    def test_taer_finalize_lifecycle_success(self):
+        from taer.controller import create_repair_step, commit_repair
+        from taer.models import BackboneStep, TAERState
+        from DRIFTLLM import DRIFTLLM
+
+        state = TAERState()
+        consumer = BackboneStep(
+            step_id="s000", original_index=0, tool_name="send_money",
+            obligation="send_money", authorized_effect={},
+            required_parameters={}, conditions={"account_id": False},
+            condition_states={"account_id": False}, status="ready",
+        )
+        state.backbone_order = ["s000"]
+        state.backbone_steps = {"s000": consumer}
+
+        repair1 = create_repair_step(state, "get_account", {},
+                                      {"relation": "REPAIR", "consumer_step_id": "s000",
+                                       "missing_condition": "account_id"})
+        repair1.tool_call_id = "call_ok"
+
+        llm = MagicMock()
+        llm.taer_state = state
+        llm.logger = MagicMock()
+        llm._finalize_taer_repair = DRIFTLLM._finalize_taer_repair
+
+        messages = [{"role": "tool", "tool_call_id": "call_ok", "content": "Account: 12345", "error": None}]
+        llm._finalize_taer_repair(llm, messages)
+
+        self.assertEqual(repair1.status, "done")
+        self.assertTrue(consumer.condition_states.get("account_id"))
+
+    def test_taer_finalize_lifecycle_failure(self):
+        from taer.controller import create_repair_step
+        from taer.models import BackboneStep, TAERState
+        from DRIFTLLM import DRIFTLLM
+
+        state = TAERState()
+        consumer = BackboneStep(
+            step_id="s000", original_index=0, tool_name="send_money",
+            obligation="send_money", authorized_effect={},
+            required_parameters={}, conditions={"account_id": False},
+            condition_states={"account_id": False}, status="ready",
+        )
+        state.backbone_order = ["s000"]
+        state.backbone_steps = {"s000": consumer}
+
+        repair2 = create_repair_step(state, "get_account", {},
+                                      {"relation": "REPAIR", "consumer_step_id": "s000",
+                                       "missing_condition": "account_id"})
+        repair2.tool_call_id = "call_fail"
+
+        llm = MagicMock()
+        llm.taer_state = state
+        llm.logger = MagicMock()
+        llm._finalize_taer_repair = DRIFTLLM._finalize_taer_repair
+
+        messages = [{"role": "tool", "tool_call_id": "call_fail", "content": "", "error": "Not Found"}]
+        llm._finalize_taer_repair(llm, messages)
+
+        self.assertEqual(repair2.status, "rolled_back")
+        self.assertEqual(state.active_consumer_step_id, "s000",
+                          "after failed repair, focus must return to consumer")
 
     @patch("DRIFTLLM.match_candidate_to_backbone")
     @patch("DRIFTLLM.check_taer_boundary")

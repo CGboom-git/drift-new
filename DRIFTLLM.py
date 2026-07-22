@@ -1305,6 +1305,35 @@ class DRIFTLLM(PromptingLLM):
             self.logger.info(align_error_message)
         return align_error_message, output
 
+    def _finalize_taer_repair(self, messages):
+        """Handle repair lifecycle after tool execution result arrives.
+
+        Success → commit_repair; failure/error → rollback_repair.
+        Both paths restore execution focus to consumer_step_id.
+        """
+        if self.taer_state is None or not self.taer_state.repair_steps:
+            return
+        tool_msg = messages[-1]
+        tool_call_id = tool_msg.get("tool_call_id")
+        if not tool_call_id:
+            return
+        for repair in list(self.taer_state.repair_steps.values()):
+            if repair.tool_call_id == tool_call_id and repair.status == "candidate":
+                error = tool_msg.get("error")
+                has_error = bool(error)
+                if not has_error:
+                    self.logger.info(
+                        f"TAER repair success: {repair.repair_id} → commit"
+                    )
+                    commit_repair(self.taer_state, repair.repair_id)
+                else:
+                    self.logger.info(
+                        f"TAER repair failed: {repair.repair_id} → rollback ({error})"
+                    )
+                    rollback_repair(self.taer_state, repair.repair_id)
+                self.taer_state.active_consumer_step_id = repair.consumer_step_id
+                break
+
     def trajectory_constraint_validation(self, to_call_function, output, query, messages):
         """Judge whether if the executing function trajectory conform the control constraints.
 
@@ -1420,17 +1449,24 @@ class DRIFTLLM(PromptingLLM):
                         continue
 
                     relation = anchor_result.get("relation", "AMBIGUOUS")
-                    self.logger.info(f"TAER anchor result: {relation} for {achieved_func}")
+                    self.logger.info(f"TAER anchor raw: {relation} for {achieved_func}")
+
+                    confidence = anchor_result.get("confidence", "LOW")
+                    if confidence != "HIGH":
+                        self.logger.info(
+                            f"TAER confidence='{confidence}' (not HIGH) → AMBIGUOUS → fallback"
+                        )
+                        relation = "AMBIGUOUS"
 
                     VALID_RELATIONS = {"DIRECT_EFFECT", "REPAIR", "NEW_GOAL", "AMBIGUOUS"}
                     if relation not in VALID_RELATIONS:
                         self.logger.info(f"TAER unknown relation '{relation}' → AMBIGUOUS → fallback")
                         relation = "AMBIGUOUS"
 
-                    if relation == "NEW_GOAL":
+                    if confidence == "HIGH" and relation == "NEW_GOAL":
                         self._source_flow_sanitize_rejected_output(
                             output,
-                            f"[CALL ERROR] TAER rejected {achieved_func}: NEW_GOAL — unauthorized effect.",
+                            f"[CALL ERROR] TAER rejected {achieved_func}: HIGH-confidence NEW_GOAL — unauthorized effect.",
                         )
                         error_msg = {
                             "role": "user",
@@ -1440,27 +1476,12 @@ class DRIFTLLM(PromptingLLM):
                             ),
                         }
                         if self.logger:
-                            self.logger.info(f"{achieved_func} rejected by TAER as NEW_GOAL")
+                            self.logger.info(f"{achieved_func} rejected by TAER as HIGH-confidence NEW_GOAL")
                         return error_msg, output
 
                     if relation == "AMBIGUOUS":
                         self.logger.info(
                             f"TAER ambiguous for {achieved_func}; falling back to original DRIFT"
-                        )
-                        align_error_message, output = self._run_original_drift_deviation_validation(
-                            achieved_func, output, query, messages,
-                            extended_function_trajectory, extended_checklist,
-                            thought_content, latest_function_messages,
-                        )
-                        if align_error_message:
-                            return align_error_message, output
-                        temp_achieved_trajectory.append(achieved_func)
-                        continue
-
-                    confidence = anchor_result.get("confidence", "LOW")
-                    if confidence != "HIGH":
-                        self.logger.info(
-                            f"TAER {relation} confidence='{confidence}' (not HIGH) → AMBIGUOUS → fallback"
                         )
                         align_error_message, output = self._run_original_drift_deviation_validation(
                             achieved_func, output, query, messages,
@@ -1531,9 +1552,16 @@ class DRIFTLLM(PromptingLLM):
                         return error_msg, output
 
                     if relation == "REPAIR":
+                        repair_tool_call_id = None
+                        for tc in (output.get("tool_calls") or []):
+                            if hasattr(tc, "function") and tc.function == achieved_func:
+                                repair_tool_call_id = getattr(tc, "id", None)
+                                break
                         repair = create_repair_step(self.taer_state, achieved_func, tool_args, anchor_result)
+                        repair.tool_call_id = repair_tool_call_id
                         self.logger.info(
-                            f"TAER REPAIR stored: {repair.repair_id} → consumer {repair.consumer_step_id}"
+                            f"TAER REPAIR stored: {repair.repair_id} → consumer {repair.consumer_step_id} "
+                            f"(tool_call_id={repair_tool_call_id})"
                         )
                         self.taer_state.active_consumer_step_id = repair.consumer_step_id
 
@@ -1642,6 +1670,9 @@ class DRIFTLLM(PromptingLLM):
                 msg["content"] = msg["content"][0]["content"]
 
         source_flow_context = self._source_flow_record_tool_message(messages)
+
+        if self.taer_state is not None and messages and messages[-1]["role"] == "tool":
+            self._finalize_taer_repair(messages)
 
         adapted_messages = [
             self._tool_message_to_user_message(message) if message["role"] == "tool" else message

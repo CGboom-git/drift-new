@@ -213,11 +213,13 @@ def commit_repair(state, repair_id):
 
 
 def check_params_against_consumer(tool_name, tool_args, anchor_result, taer_state):
-    """Minimal parameter-consistency check against consumer backbone step.
+    """Parameter-consistency check against consumer backbone step.
 
-    Returns ("allow", None) if all fixed params match,
-            ("block", reason) if any fixed param conflicts,
-            ("fallback", reason) if any required fixed param is missing.
+    DIRECT_EFFECT: all fixed authority params must be present and match.
+    REPAIR: only block when the repair explicitly conflicts with an
+            authorized consumer param; missing params are allowed.
+
+    Returns ("allow", None), ("block", reason), or ("fallback", reason).
     Reads only immutable backbone (taer_state.backbone_steps).
     """
     consumer_step_id = anchor_result.get("consumer_step_id")
@@ -225,6 +227,7 @@ def check_params_against_consumer(tool_name, tool_args, anchor_result, taer_stat
         return ("fallback", f"consumer {consumer_step_id} not found in immutable backbone")
 
     consumer = taer_state.backbone_steps[consumer_step_id]
+    relation = anchor_result.get("relation", "")
     req_params = consumer.required_parameters or {}
     auth_effect = consumer.authorized_effect or {}
 
@@ -240,8 +243,12 @@ def check_params_against_consumer(tool_name, tool_args, anchor_result, taer_stat
                 continue
             if expected_val is None or expected_val == "":
                 continue
+
             if arg_name not in (tool_args or {}):
-                return ("fallback", f"required param '{arg_name}' missing")
+                if relation == "DIRECT_EFFECT":
+                    return ("fallback", f"required param '{arg_name}' missing")
+                continue
+
             actual_val = str(tool_args[arg_name])
             if str(expected_val) != actual_val:
                 return ("block", f"param '{arg_name}' conflict: expected={expected_val}, got={actual_val}")
