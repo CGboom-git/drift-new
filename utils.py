@@ -69,6 +69,14 @@ def get_args(description='DRIFT'):
         help="Disable delegated task source detection (ablation).",
     )
 
+    parser.add_argument(
+        "--taer_mode",
+        type=str,
+        choices=["on", "off"],
+        default="on",
+        help="TAER mode. 'on' enables task-anchored ephemeral repair. 'off' for SourceFlow + original DRIFT.",
+    )
+
     # Environment
     parser.add_argument('--seed', type=int, default=98, help='Random Seed.')
 

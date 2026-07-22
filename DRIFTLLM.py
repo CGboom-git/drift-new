@@ -1,5 +1,7 @@
 from import_lib import *
 from prompts import CAE_PLAN_EXTENSION_PROMPT
+from taer import init_taer_backbone, match_candidate_to_backbone, create_repair_step, \
+    rollback_repair, commit_repair, get_taer_metrics
 from source_flow import (
     ContractHelper,
     FlowAwareValidator,
@@ -33,9 +35,20 @@ class DRIFTLLM(PromptingLLM):
         self.source_flow_resolver = SinkEvidenceResolver()
         self.source_flow_validator = FlowAwareValidator()
         self._source_flow_run_active = False
+        self.taer_mode = getattr(args, "taer_mode", "on")
+        self.taer_state = None
+        if self.taer_mode == "on" and not getattr(args, "source_flow_validation", False):
+            raise ValueError("taer_mode=on requires --source_flow_validation")
+        if self.logger:
+            self.logger.info(f"TAER mode: {self.taer_mode}")
         self.cae_mode = getattr(args, "cae_mode", "on")
         if self.logger:
             self.logger.info(f"Resolved CAE mode: {self.cae_mode}")
+
+    def get_taer_metrics(self):
+        if self.taer_state:
+            return get_taer_metrics(self.taer_state)
+        return {}
 
     def source_flow_enabled(self):
         return bool(
@@ -1810,6 +1823,16 @@ Thought: {(thought_content or '')[:500]}
             return
         self.source_label_store.reset()
         self.source_label_store.record_user_query(user_query)
+        if self.taer_mode == "on":
+            try:
+                self.taer_state = init_taer_backbone(
+                    self.initial_function_trajectory,
+                    self.initial_node_checklist,
+                    user_query,
+                    self.source_flow_contract_helper,
+                )
+            except Exception:
+                self.taer_state = None
         self._source_flow_run_active = True
 
     def _source_flow_tool_name(self, tool_message):
@@ -2840,6 +2863,83 @@ Thought: {(thought_content or '')[:500]}
                 else:
                     latest_function_messages = "No Called Functions."
 
+                # TAER / Deviation handling
+                is_action = self._is_action_tool(achieved_func)
+
+                if self.taer_mode == "off":
+                    # Preserve original DRIFT deviation path
+                    pass  # fall through to original DRIFT below
+
+                elif self.taer_mode == "on" and is_action:
+                    tool_args_by_name = {}
+                    for call in (output.get("tool_calls", []) or []):
+                        fn = call.function if hasattr(call, "function") else call.get("function", "")
+                        if isinstance(fn, str):
+                            tool_args_by_name[fn] = call.args if hasattr(call, "args") else (call.get("args") or {})
+                    tool_args = tool_args_by_name.get(achieved_func, {})
+
+                    if self.taer_state:
+                        self.taer_state.candidate_count += 1
+                        consumer_id = match_candidate_to_backbone(achieved_func, tool_args, self.taer_state)
+                        if consumer_id is not None:
+                            # In-plan action matched to backbone - continue normal DRIFT path
+                            temp_achieved_trajectory.append(achieved_func)
+                            continue
+
+                    # Out-of-plan: run TAER analyzer
+                    try:
+                        tool_meta = self._get_tool_semantic_metadata(achieved_func, tool_args) if hasattr(self, '_get_tool_semantic_metadata') else {}
+                    except Exception:
+                        tool_meta = {}
+                    is_se = self._infer_side_effect_from_tool_metadata(achieved_func, tool_meta) if hasattr(self, '_infer_side_effect_from_tool_metadata') else True
+                    if not is_se:
+                        # Read-only out-of-plan: allow as probe
+                        if self.taer_state:
+                            self.taer_state.probe_count += 1
+                        temp_achieved_trajectory.append(achieved_func)
+                        continue
+
+                    # Run TAER LLM analyzer for side-effect out-of-plan actions
+                    recent_obs = ""
+                    if messages and len(messages) > 0:
+                        for m in reversed(messages):
+                            if isinstance(m, dict) and m.get("role") == "tool":
+                                recent_obs = str(m.get("content", ""))[:2000]
+                                break
+                    try:
+                        taer_input = f"User: {query}\nTool: {achieved_func}\nArgs: {tool_args}\nBackbone: {[(s.tool_name, s.step_id, s.status) for s in (self.taer_state.backbone_steps.values() if self.taer_state else [])]}\nRecent: {recent_obs[:1000]}"
+                        resp = self.client.llm_run(TAER_ANCHOR_PROMPT, taer_input)
+                        anchor = self._safe_parse_json_object(resp) if hasattr(self, '_safe_parse_json_object') else {}
+                        if not isinstance(anchor, dict):
+                            anchor = {"relation": "AMBIGUOUS", "confidence": "LOW"}
+                    except Exception:
+                        anchor = {"relation": "AMBIGUOUS", "confidence": "LOW"}
+
+                    rel = anchor.get("relation", "AMBIGUOUS")
+                    conf = anchor.get("confidence", "LOW")
+                    scope = anchor.get("scope_delta", "NONE")
+
+                    if rel == "NEW_GOAL" and conf == "HIGH":
+                        if self.taer_state:
+                            self.taer_state.new_goal_count += 1
+                            self.taer_state.boundary_block_count += 1
+                        self._source_flow_sanitize_rejected_output(output, f"[TAER BLOCKED] {achieved_func}: new goal not authorized.")
+                        return {"role": "user", "content": f"[TAER BLOCKED] {achieved_func}."}, output
+
+                    if rel in ("DIRECT_EFFECT", "REPAIR") and conf == "HIGH" and scope == "NONE":
+                        if self.taer_state:
+                            self.taer_state.direct_effect_count += 1
+                            create_repair_step(self.taer_state, achieved_func, tool_args, anchor)
+                        temp_achieved_trajectory.append(achieved_func)
+                        continue
+
+                    if rel == "AMBIGUOUS":
+                        if self.taer_state:
+                            self.taer_state.ambiguous_count += 1
+                            self.taer_state.fallback_count += 1
+                        # Fall through to original DRIFT below
+
+                # Original DRIFT dynamic validation (fallback for off/ambiguous)
                 # Controlled Action Extension (Phase 3)
                 is_action = self._is_action_tool(achieved_func)
                 is_trajectory_outside = True  # already determined by being in this else branch
