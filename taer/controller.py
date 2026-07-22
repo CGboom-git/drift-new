@@ -80,7 +80,7 @@ def match_candidate_to_backbone(tool_name, tool_args, state):
             candidates.append(sid)
 
     if len(candidates) == 1:
-        return BackboneMatchResult(status="UNIQUE", step_id=candidates[0], candidate_step_ids=candidates, reason="single_match", is_currently_ready=True)
+        return BackboneMatchResult(status="UNIQUE", step_id=candidates[0], candidate_step_ids=candidates, reason="single_match", is_currently_ready=state.backbone_steps.get(candidates[0]) and state.backbone_steps[candidates[0]].status in ("ready", "running"))
 
     if len(candidates) == 0:
         return BackboneMatchResult(status="NONE", step_id=None, candidate_step_ids=[], reason="no_match")
@@ -112,7 +112,7 @@ def match_candidate_to_backbone(tool_name, tool_args, state):
             best_sid = sid
 
     if best_sid and best_score >= len(candidates):
-        return BackboneMatchResult(status="UNIQUE", step_id=best_sid, candidate_step_ids=list(candidates), reason=f"value_match_score_{best_score}", is_currently_ready=True)
+        return BackboneMatchResult(status="UNIQUE", step_id=best_sid, candidate_step_ids=list(candidates), reason=f"value_match_score_{best_score}", is_currently_ready=state.backbone_steps.get(candidates[0]) and state.backbone_steps[candidates[0]].status in ("ready", "running"))
 
     return BackboneMatchResult(status="AMBIGUOUS", step_id=None, candidate_step_ids=list(candidates), reason=f"multiple_matches_{len(candidates)}")
 

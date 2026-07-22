@@ -2881,7 +2881,7 @@ Thought: {(thought_content or '')[:500]}
                     if self.taer_state:
                         self.taer_state.candidate_count += 1
                         match = match_candidate_to_backbone(achieved_func, tool_args, self.taer_state)
-                        if match.status == "UNIQUE" and match.is_currently_ready and match.parameter_compatibility != "CONFLICT":
+                        if match.status == "UNIQUE" and match.is_currently_ready and match.parameter_compatibility == "MATCH":
                             # In-plan action matched to backbone - continue normal DRIFT path
                             temp_achieved_trajectory.append(achieved_func)
                             continue
