@@ -10,6 +10,7 @@ from source_flow import (
 )
 from prompts import TAER_ANCHOR_PROMPT
 from taer import init_taer_backbone, match_candidate_to_backbone, check_taer_boundary
+from taer import check_params_against_consumer, create_repair_step, commit_repair, rollback_repair
 
 class DRIFTLLM(PromptingLLM):
     def __init__(self, args, client, model: str | None = "", temperature: float | None = 0.0, logger=None) -> None:
@@ -1421,6 +1422,11 @@ class DRIFTLLM(PromptingLLM):
                     relation = anchor_result.get("relation", "AMBIGUOUS")
                     self.logger.info(f"TAER anchor result: {relation} for {achieved_func}")
 
+                    VALID_RELATIONS = {"DIRECT_EFFECT", "REPAIR", "NEW_GOAL", "AMBIGUOUS"}
+                    if relation not in VALID_RELATIONS:
+                        self.logger.info(f"TAER unknown relation '{relation}' → AMBIGUOUS → fallback")
+                        relation = "AMBIGUOUS"
+
                     if relation == "NEW_GOAL":
                         self._source_flow_sanitize_rejected_output(
                             output,
@@ -1451,6 +1457,54 @@ class DRIFTLLM(PromptingLLM):
                         temp_achieved_trajectory.append(achieved_func)
                         continue
 
+                    confidence = anchor_result.get("confidence", "LOW")
+                    if confidence != "HIGH":
+                        self.logger.info(
+                            f"TAER {relation} confidence='{confidence}' (not HIGH) → AMBIGUOUS → fallback"
+                        )
+                        align_error_message, output = self._run_original_drift_deviation_validation(
+                            achieved_func, output, query, messages,
+                            extended_function_trajectory, extended_checklist,
+                            thought_content, latest_function_messages,
+                        )
+                        if align_error_message:
+                            return align_error_message, output
+                        temp_achieved_trajectory.append(achieved_func)
+                        continue
+
+                    param_result, param_reason = check_params_against_consumer(
+                        achieved_func, tool_args, anchor_result, self.taer_state,
+                    )
+                    if param_result == "fallback":
+                        self.logger.info(
+                            f"TAER param check fallback: {param_reason} → original DRIFT"
+                        )
+                        align_error_message, output = self._run_original_drift_deviation_validation(
+                            achieved_func, output, query, messages,
+                            extended_function_trajectory, extended_checklist,
+                            thought_content, latest_function_messages,
+                        )
+                        if align_error_message:
+                            return align_error_message, output
+                        temp_achieved_trajectory.append(achieved_func)
+                        continue
+
+                    if param_result == "block":
+                        self._source_flow_sanitize_rejected_output(
+                            output,
+                            f"[CALL ERROR] TAER rejected {achieved_func}: {param_reason}.",
+                        )
+                        error_msg = {
+                            "role": "user",
+                            "content": (
+                                f"[CALL ERROR] TAER rejected {achieved_func}: "
+                                f"{param_reason}. Continue the original user task."
+                            ),
+                        }
+                        if self.logger:
+                            self.logger.info(f"{achieved_func} blocked by TAER param check: {param_reason}")
+                        return error_msg, output
+
                     source_records = list(self.source_label_store.records) if self.source_label_store else []
                     boundary = check_taer_boundary(
                         achieved_func, tool_args, anchor_result,
@@ -1476,17 +1530,19 @@ class DRIFTLLM(PromptingLLM):
                         }
                         return error_msg, output
 
+                    if relation == "REPAIR":
+                        repair = create_repair_step(self.taer_state, achieved_func, tool_args, anchor_result)
+                        self.logger.info(
+                            f"TAER REPAIR stored: {repair.repair_id} → consumer {repair.consumer_step_id}"
+                        )
+                        self.taer_state.active_consumer_step_id = repair.consumer_step_id
+
                     if self.logger:
                         self.logger.info(
-                            f"TAER allowed {achieved_func} with boundary pass"
+                            f"TAER allowed {achieved_func} (relation={relation}, confidence={confidence})"
                         )
-                    self.function_trajectory = extended_function_trajectory
+
                     temp_achieved_trajectory.append(achieved_func)
-                    self.achieved_function_trajectory = temp_achieved_trajectory
-                    try:
-                        self.node_checklist = json.dumps(extended_checklist)
-                    except:
-                        self.node_checklist = extended_checklist
                     continue
 
                 align_error_message, output = self._run_original_drift_deviation_validation(

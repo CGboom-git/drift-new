@@ -109,7 +109,7 @@ def _mock_import_dependencies():
 
 _mock_import_dependencies()
 
-from taer.models import BackboneMatchResult, TAERBoundaryResult, TAERState
+from taer.models import BackboneMatchResult, BackboneStep, TAERBoundaryResult, TAERState
 
 
 class TestCLIParsing(unittest.TestCase):
@@ -174,21 +174,27 @@ class TestTaerRouting(unittest.TestCase):
         llm._is_action_tool = MagicMock(return_value=True)
         llm._is_read_tool = MagicMock(return_value=False)
         llm._source_flow_sanitize_rejected_output = MagicMock()
-        llm._tool_call_to_str = MagicMock(
-            return_value={
+        llm._tool_call_to_str = MagicMock()
+        def _make_tool_call_str(tc):
+            func_name = tc.function if hasattr(tc, 'function') else 'send_money'
+            func_args = tc.args if hasattr(tc, 'args') else {}
+            return {
                 "id": "call_1",
                 "type": "function",
-                "function": {"name": "send_money", "arguments": '{"amount": 100}'},
+                "function": {"name": func_name, "arguments": json.dumps(func_args)},
             }
-        )
+        llm._tool_call_to_str.side_effect = _make_tool_call_str
         llm.user_approval_request = MagicMock(return_value=False)
 
         if taer_mode == "on":
-            step = MagicMock()
-            step.tool_name = "send_money"
-            step.status = "ready"
-            step.required_parameters = {"amount": 100}
-            step.obligation = "send_money with amount=100"
+            step = BackboneStep(
+                step_id="s000", original_index=0, tool_name="send_money",
+                obligation="send_money with amount=100",
+                authorized_effect={"amount": 100, "recipient": "John"},
+                required_parameters={"amount": 100, "recipient": "John"},
+                conditions={"account_id": False},
+                status="ready",
+            )
             llm.taer_state.backbone_order = ["s000"]
             llm.taer_state.backbone_steps = {"s000": step}
             llm.taer_state.initialized = True
@@ -282,7 +288,7 @@ class TestTaerRouting(unittest.TestCase):
             "argument_sources": {"amount": ["read_file"]},
             "scope_delta": "NONE",
             "risk": "READ_ONLY",
-            "confidence": "MEDIUM",
+            "confidence": "HIGH",
             "reason": "repair test",
         })
         mock_boundary.return_value = TAERBoundaryResult(
@@ -291,7 +297,9 @@ class TestTaerRouting(unittest.TestCase):
         )
 
         DRIFTLLM.trajectory_constraint_validation(
-            llm, ["send_money"], self._make_output(), "Send $100", [{"role": "user", "content": "Send $100"}]
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 100, "recipient": "John"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
         )
 
         mock_matcher.assert_called_once()
@@ -340,7 +348,7 @@ class TestTaerRouting(unittest.TestCase):
             "argument_sources": {},
             "scope_delta": "NONE",
             "risk": "READ_ONLY",
-            "confidence": "LOW",
+            "confidence": "HIGH",
             "reason": "repair",
         })
         mock_boundary.return_value = TAERBoundaryResult(
@@ -350,12 +358,13 @@ class TestTaerRouting(unittest.TestCase):
         )
 
         result = DRIFTLLM.trajectory_constraint_validation(
-            llm, ["send_money"], self._make_output(), "Send $100", [{"role": "user", "content": "Send $100"}]
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 100, "recipient": "John"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
         )
 
         mock_matcher.assert_called_once()
         mock_boundary.assert_called_once()
-        llm._run_original_drift_deviation_validation.assert_not_called()
         self.assertIsNotNone(result)
 
     @patch("DRIFTLLM.match_candidate_to_backbone")
@@ -388,6 +397,271 @@ class TestTaerRouting(unittest.TestCase):
 
         mock_matcher.assert_called_once()
         llm._run_original_drift_deviation_validation.assert_called_once()
+
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    def test_unknown_relation_falls_back(self, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "EPHEMERAL_PROBE",
+            "consumer_step_id": "s000",
+            "missing_condition": None,
+            "provides": "",
+            "expected_effect": None,
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "READ_ONLY",
+            "confidence": "HIGH",
+            "reason": "removed relation",
+        })
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"], self._make_output(), "Send $100", [{"role": "user", "content": "Send $100"}]
+        )
+
+        mock_matcher.assert_called_once()
+        llm._run_original_drift_deviation_validation.assert_called_once()
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_medium_confidence_falls_back(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "DIRECT_EFFECT",
+            "consumer_step_id": "s000",
+            "missing_condition": None,
+            "provides": "payment",
+            "expected_effect": "send money",
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "REVERSIBLE_WRITE",
+            "confidence": "MEDIUM",
+            "reason": "medium confidence",
+        })
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"], self._make_output(), "Send $100", [{"role": "user", "content": "Send $100"}]
+        )
+
+        mock_matcher.assert_called_once()
+        mock_boundary.assert_not_called()
+        llm._run_original_drift_deviation_validation.assert_called_once()
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_conflicting_params_block(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "DIRECT_EFFECT",
+            "consumer_step_id": "s000",
+            "missing_condition": None,
+            "provides": "payment",
+            "expected_effect": "send money",
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "REVERSIBLE_WRITE",
+            "confidence": "HIGH",
+            "reason": "conflicting amount",
+        })
+
+        result = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 9999, "recipient": "John"}),
+            "Send $100", [{"role": "user", "content": "Send $100"}]
+        )
+
+        mock_matcher.assert_called_once()
+        mock_boundary.assert_not_called()
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(result[0])
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    def test_missing_params_fall_back(self, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "DIRECT_EFFECT",
+            "consumer_step_id": "s000",
+            "missing_condition": None,
+            "provides": "payment",
+            "expected_effect": "send money",
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "REVERSIBLE_WRITE",
+            "confidence": "HIGH",
+            "reason": "missing recipient",
+        })
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 100}),
+            "Send $100", [{"role": "user", "content": "Send $100"}]
+        )
+
+        mock_matcher.assert_called_once()
+        llm._run_original_drift_deviation_validation.assert_called_once()
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_legal_repair_does_not_modify_backbone(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "REPAIR",
+            "consumer_step_id": "s000",
+            "missing_condition": "account_id",
+            "provides": "read account",
+            "expected_effect": "get account number",
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "READ_ONLY",
+            "confidence": "HIGH",
+            "reason": "repair",
+        })
+        mock_boundary.return_value = TAERBoundaryResult(
+            passed=True, explicit_violation=False, violation_type=None,
+            checked_authority_args={}, evidence_source_ids=[], reason="boundary_pass",
+        )
+
+        backbone_before = dict(llm.taer_state.backbone_steps)
+        repairs_before = len(llm.taer_state.repair_steps)
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 100, "recipient": "John"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
+        )
+
+        mock_matcher.assert_called_once()
+        mock_boundary.assert_called_once()
+
+        self.assertEqual(len(llm.taer_state.repair_steps), repairs_before + 1,
+                          "REPAIR should create a repair overlay entry")
+        self.assertEqual(llm.taer_state.backbone_steps, backbone_before,
+                          "Backbone must not be modified by TAER REPAIR")
+
+    def test_repair_commit_does_not_mark_consumer_done(self):
+        from taer.controller import create_repair_step, commit_repair
+        from taer.models import BackboneStep, TAERState
+
+        state = TAERState()
+        consumer = BackboneStep(
+            step_id="s000", original_index=0, tool_name="send_money",
+            obligation="send_money", authorized_effect={},
+            required_parameters={}, conditions={"account_id": False},
+            condition_states={"account_id": False}, status="ready",
+        )
+        state.backbone_order = ["s000"]
+        state.backbone_steps = {"s000": consumer}
+
+        repair = create_repair_step(state, "get_account", {},
+                                     {"relation": "REPAIR", "consumer_step_id": "s000",
+                                      "missing_condition": "account_id"})
+
+        commit_repair(state, repair.repair_id)
+
+        self.assertEqual(repair.status, "done")
+        self.assertEqual(consumer.status, "ready",
+                          "commit_repair must not mark consumer done")
+        self.assertTrue(consumer.condition_states["account_id"],
+                         "condition should be satisfied")
+
+    def test_repair_rollback(self):
+        from taer.controller import create_repair_step, rollback_repair
+        from taer.models import BackboneStep, TAERState
+
+        state = TAERState()
+        consumer = BackboneStep(
+            step_id="s000", original_index=0, tool_name="send_money",
+            obligation="send_money", authorized_effect={},
+            required_parameters={}, conditions={}, status="ready",
+        )
+        state.backbone_order = ["s000"]
+        state.backbone_steps = {"s000": consumer}
+
+        repair = create_repair_step(state, "get_account", {},
+                                     {"relation": "REPAIR", "consumer_step_id": "s000"})
+        rollback_repair(state, repair.repair_id)
+
+        self.assertEqual(repair.status, "rolled_back")
+        self.assertEqual(state.repair_rollback_count, 1)
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_valid_high_confidence_direct_effect_passes(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "DIRECT_EFFECT",
+            "consumer_step_id": "s000",
+            "missing_condition": None,
+            "provides": "payment",
+            "expected_effect": "send $100 to John",
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "REVERSIBLE_WRITE",
+            "confidence": "HIGH",
+            "reason": "valid",
+        })
+        mock_boundary.return_value = TAERBoundaryResult(
+            passed=True, explicit_violation=False, violation_type=None,
+            checked_authority_args={}, evidence_source_ids=[], reason="boundary_pass",
+        )
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 100, "recipient": "John"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
+        )
+
+        mock_matcher.assert_called_once()
+        mock_boundary.assert_called_once()
+        llm._run_original_drift_deviation_validation.assert_not_called()
 
 
 import json

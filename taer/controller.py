@@ -206,12 +206,47 @@ def commit_repair(state, repair_id):
         consumer_id = repair.consumer_step_id
         if consumer_id and consumer_id in state.backbone_steps:
             consumer = state.backbone_steps[consumer_id]
-            # Mark condition satisfied
             if repair.missing_condition:
                 consumer.condition_states[repair.missing_condition] = True
-            # Set consumer ready only if all conditions satisfied
             if all(consumer.condition_states.values()) if consumer.condition_states else True:
                 consumer.status = "ready"
+
+
+def check_params_against_consumer(tool_name, tool_args, anchor_result, taer_state):
+    """Minimal parameter-consistency check against consumer backbone step.
+
+    Returns ("allow", None) if all fixed params match,
+            ("block", reason) if any fixed param conflicts,
+            ("fallback", reason) if any required fixed param is missing.
+    Reads only immutable backbone (taer_state.backbone_steps).
+    """
+    consumer_step_id = anchor_result.get("consumer_step_id")
+    if not consumer_step_id or consumer_step_id not in (taer_state.backbone_steps or {}):
+        return ("fallback", f"consumer {consumer_step_id} not found in immutable backbone")
+
+    consumer = taer_state.backbone_steps[consumer_step_id]
+    req_params = consumer.required_parameters or {}
+    auth_effect = consumer.authorized_effect or {}
+
+    authority_keys = {"recipient", "recipients", "principal", "user", "account",
+                       "account_id", "amount", "destination", "url", "file_id",
+                       "path", "resource_id", "event_id", "channel", "participants", "target"}
+
+    for param_dict in (req_params, auth_effect):
+        for arg_name, expected_val in param_dict.items():
+            if "_task_query" in arg_name:
+                continue
+            if not any(kw in arg_name.lower() for kw in authority_keys):
+                continue
+            if expected_val is None or expected_val == "":
+                continue
+            if arg_name not in (tool_args or {}):
+                return ("fallback", f"required param '{arg_name}' missing")
+            actual_val = str(tool_args[arg_name])
+            if str(expected_val) != actual_val:
+                return ("block", f"param '{arg_name}' conflict: expected={expected_val}, got={actual_val}")
+
+    return ("allow", None)
 
 
 def get_taer_metrics(state):
