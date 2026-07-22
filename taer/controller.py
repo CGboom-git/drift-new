@@ -35,13 +35,29 @@ def init_taer_backbone(initial_function_trajectory, initial_node_checklist, quer
 
         obligation = f"{tool_name}"
         if req_params:
-            obligation += " with " + ", ".join(str(k) for k in req_params)
+            param_vals = []
+            for k, v in (req_params if isinstance(req_params, dict) else {}).items():
+                param_vals.append(f"{k}={v}")
+            if param_vals:
+                obligation += " with " + ", ".join(param_vals)
+            else:
+                obligation += " with " + ", ".join(str(k) for k in req_params)
+
+        # Build authorized_effect from params and query
+        auth_effect = {"tool": tool_name}
+        if isinstance(req_params, dict):
+            for k, v in req_params.items():
+                if v is not None and v != "":
+                    auth_effect[k] = v
+        if isinstance(query, str):
+            auth_effect["_task_query"] = query[:200]
 
         step = BackboneStep(
             step_id=step_id,
             original_index=i,
             tool_name=tool_name,
             obligation=obligation,
+            authorized_effect=auth_effect,
             required_parameters=req_params if isinstance(req_params, dict) else {},
             conditions=conditions if isinstance(conditions, dict) else {},
         )
@@ -53,7 +69,7 @@ def init_taer_backbone(initial_function_trajectory, initial_node_checklist, quer
 
 
 def match_candidate_to_backbone(tool_name, tool_args, state):
-    """Match candidate action to an unfinished backbone step. Returns step_id or None."""
+    """Match candidate to unfinished backbone step. Returns dict: {status, step_id, reason}."""
     candidates = []
     for sid in state.backbone_order:
         step = state.backbone_steps[sid]
@@ -63,18 +79,41 @@ def match_candidate_to_backbone(tool_name, tool_args, state):
             candidates.append(sid)
 
     if len(candidates) == 1:
-        return candidates[0]
+        return {"status": "UNIQUE", "step_id": candidates[0], "reason": "single_match"}
+
     if len(candidates) == 0:
-        return None
-    # Multiple matches - try to disambiguate by args match
+        return {"status": "NONE", "step_id": None, "reason": "no_match"}
+
+    # Disambiguate by parameter value matching
+    best_sid = None
+    best_score = 0
     for sid in candidates:
         step = state.backbone_steps[sid]
+        score = 0
         req = step.required_parameters or {}
         if req and tool_args:
-            match_count = sum(1 for k in req if k in tool_args)
-            if match_count >= len(req) * 0.5:
-                return sid
-    return None
+            for k, req_val in req.items():
+                if req_val is not None and k in tool_args:
+                    if str(tool_args[k]) == str(req_val):
+                        score += 2  # exact value match
+                    else:
+                        score += 1  # key match only
+        # Check authorized_effect values
+        auth = step.authorized_effect or {}
+        for k, v in auth.items():
+            if k.startswith("_"):
+                continue
+            if k in (tool_args or {}):
+                if str(tool_args[k]) == str(v):
+                    score += 2
+        if score > best_score:
+            best_score = score
+            best_sid = sid
+
+    if best_sid and best_score >= len(candidates):
+        return {"status": "UNIQUE", "step_id": best_sid, "reason": f"value_match_score_{best_score}"}
+
+    return {"status": "AMBIGUOUS", "step_id": None, "reason": f"multiple_matches_{len(candidates)}"}
 
 
 def create_repair_step(state, tool_name, tool_args, anchor_result):
@@ -107,13 +146,20 @@ def rollback_repair(state, repair_id):
 
 
 def commit_repair(state, repair_id):
-    """Mark a repair as done."""
+    """Mark a repair as done. Satisfies a missing condition, does NOT complete the consumer."""
     if repair_id in state.repair_steps:
-        state.repair_steps[repair_id].status = "done"
+        repair = state.repair_steps[repair_id]
+        repair.status = "done"
         state.repair_success_count += 1
-        consumer_id = state.repair_steps[repair_id].consumer_step_id
+        consumer_id = repair.consumer_step_id
         if consumer_id and consumer_id in state.backbone_steps:
-            state.backbone_steps[consumer_id].status = "done"
+            consumer = state.backbone_steps[consumer_id]
+            # Mark condition satisfied
+            if repair.missing_condition:
+                consumer.condition_states[repair.missing_condition] = True
+            # Set consumer ready only if all conditions satisfied
+            if all(consumer.condition_states.values()) if consumer.condition_states else True:
+                consumer.status = "ready"
 
 
 def get_taer_metrics(state):
@@ -130,3 +176,35 @@ def get_taer_metrics(state):
         "repair_success_count": state.repair_success_count,
         "repair_rollback_count": state.repair_rollback_count,
     }
+
+def check_taer_boundary(tool_name, tool_args, anchor, consumer_step, source_records, contract_helper):
+    """Minimal evidence boundary guard. Returns {passed, explicit_violation, violation_type, reason}."""
+    authority_args = {"recipient", "recipients", "principal", "user", "account", "account_id",
+                       "amount", "destination", "url", "file_id", "path", "resource_id",
+                       "event_id", "channel", "participants", "target", "password"}
+    non_authority = {"limit", "page", "sort", "order", "format", "count", "query", "syntax"}
+
+    for arg_name, arg_val in (tool_args or {}).items():
+        name_lower = arg_name.lower()
+        if any(kw in name_lower for kw in non_authority):
+            continue
+        if any(kw in name_lower for kw in authority_args):
+            # Check injected source
+            for rec in (source_records or []):
+                labels = set(getattr(rec, "source_labels", []) or [])
+                if "injected_instruction" in labels:
+                    rec_val = str(getattr(rec, "value", "") or "")
+                    if rec_val and str(arg_val) in rec_val:
+                        return {"passed": False, "explicit_violation": True,
+                                 "violation_type": "injected_control_arg",
+                                 "reason": f"{arg_name} sourced from injected instruction"}
+
+    # Check scope_delta against relation
+    scope = anchor.get("scope_delta", "NONE")
+    if scope in ("NEW_PRINCIPAL", "NEW_DESTINATION", "NEW_EFFECT"):
+        return {"passed": False, "explicit_violation": True,
+                 "violation_type": f"scope_delta_{scope.lower()}",
+                 "reason": f"unauthorized {scope}"}
+
+    return {"passed": True, "explicit_violation": False, "violation_type": None, "reason": "boundary_pass"}
+
