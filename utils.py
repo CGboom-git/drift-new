@@ -51,20 +51,15 @@ def get_args(description='DRIFT'):
         help="Enable source-flow validation before ACTION/WRITE execution.",
     )
     parser.add_argument(
-        "--controlled_action_extension",
         action="store_true",
         help="Enable Controlled Action Extension for trajectory-outside ACTION tools (Phase 3).",
     )
     parser.add_argument(
-        "--cae_mode",
         type=str,
         choices=["on", "off", "strict", "block", "repair", "eba"],
         default=None,
-        help="CAE mode: on (current behavior), off (fully disabled), strict (block high-risk ACTION). "
-             "If not set, uses --controlled_action_extension flag for backward compatibility.",
     )
     parser.add_argument(
-        "--disable_delegated_task_source",
         action="store_true",
         help="Disable delegated task source detection (ablation).",
     )
@@ -82,12 +77,7 @@ def get_args(description='DRIFT'):
 
     args = parser.parse_args()
 
-    # Resolve cae_mode with backward compatibility
-    if args.cae_mode is not None:
         pass  # explicitly set, use as-is
-    elif getattr(args, 'controlled_action_extension', False):
-        args.cae_mode = 'on'
     else:
-        args.cae_mode = 'off'
 
     return args
