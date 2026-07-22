@@ -70,51 +70,102 @@ def init_taer_backbone(initial_function_trajectory, initial_node_checklist, quer
 
 
 def match_candidate_to_backbone(tool_name, tool_args, state):
-    """Match candidate to unfinished backbone step. Returns dict: {status, step_id, reason}."""
+    """Match candidate to backbone step with proper scoring and AMBIGUOUS ties."""
+    authority_keys = {"recipient", "recipients", "principal", "user", "account",
+                       "account_id", "amount", "destination", "url", "file_id",
+                       "path", "resource_id", "event_id", "channel", "participants", "target"}
+
     candidates = []
     for sid in state.backbone_order:
-        step = state.backbone_steps[sid]
-        if step.status in ("done", "failed"):
+        step = state.backbone_steps.get(sid)
+        if step is None or step.status in ("done", "failed"):
             continue
         if step.tool_name == tool_name:
             candidates.append(sid)
 
-    if len(candidates) == 1:
-        return BackboneMatchResult(status="UNIQUE", step_id=candidates[0], candidate_step_ids=candidates, reason="single_match", is_currently_ready=state.backbone_steps.get(candidates[0]) and state.backbone_steps[candidates[0]].status in ("ready", "running"))
-
     if len(candidates) == 0:
-        return BackboneMatchResult(status="NONE", step_id=None, candidate_step_ids=[], reason="no_match")
+        return BackboneMatchResult(status="NONE", step_id=None, candidate_step_ids=[],
+                                    reason="no_match", is_currently_ready=False,
+                                    parameter_compatibility="UNKNOWN")
 
-    # Disambiguate by parameter value matching
-    best_sid = None
-    best_score = 0
+    if len(candidates) == 1:
+        sid = candidates[0]
+        step = state.backbone_steps[sid]
+        comp = "MATCH"
+        req = step.required_parameters or {}
+        for k, v in req.items():
+            if v is None:
+                continue
+            if k in (tool_args or {}):
+                cv = str(tool_args[k])
+                if str(v) != cv:
+                    if k.lower() in authority_keys or any(
+                        kw in k.lower() for kw in authority_keys):
+                        comp = "CONFLICT"
+                        break
+                    else:
+                        comp = "UNKNOWN" if comp == "MATCH" else comp
+            else:
+                comp = "UNKNOWN" if comp == "MATCH" else comp
+        ready = step.status in ("ready", "running")
+        return BackboneMatchResult(status="UNIQUE", step_id=sid,
+                                    candidate_step_ids=candidates, reason="single_match",
+                                    is_currently_ready=ready,
+                                    parameter_compatibility=comp)
+
+    # Multiple candidates: score them
+    scored = []
     for sid in candidates:
         step = state.backbone_steps[sid]
         score = 0
+        conflict = False
         req = step.required_parameters or {}
-        if req and tool_args:
-            for k, req_val in req.items():
-                if req_val is not None and k in tool_args:
-                    if str(tool_args[k]) == str(req_val):
-                        score += 2  # exact value match
-                    else:
-                        score += 1  # key match only
-        # Check authorized_effect values
-        auth = step.authorized_effect or {}
-        for k, v in auth.items():
-            if k.startswith("_"):
+        for k, v in req.items():
+            if v is None:
+                if k in (tool_args or {}):
+                    score += 1
                 continue
-            if k in (tool_args or {}):
-                if str(tool_args[k]) == str(v):
-                    score += 2
-        if score > best_score:
-            best_score = score
-            best_sid = sid
+            if k not in (tool_args or {}):
+                continue
+            cv = str(tool_args[k])
+            if str(v) == cv:
+                if k.lower() in authority_keys:
+                    score += 10
+                else:
+                    score += 3
+            else:
+                if k.lower() in authority_keys:
+                    conflict = True
+                    break
+        if not conflict:
+            scored.append((sid, score))
 
-    if best_sid and best_score >= len(candidates):
-        return BackboneMatchResult(status="UNIQUE", step_id=best_sid, candidate_step_ids=list(candidates), reason=f"value_match_score_{best_score}", is_currently_ready=state.backbone_steps.get(candidates[0]) and state.backbone_steps[candidates[0]].status in ("ready", "running"))
+    if not scored:
+        return BackboneMatchResult(status="AMBIGUOUS", step_id=None,
+                                    candidate_step_ids=list(candidates),
+                                    reason="all_authority_conflict",
+                                    is_currently_ready=False,
+                                    parameter_compatibility="CONFLICT")
 
-    return BackboneMatchResult(status="AMBIGUOUS", step_id=None, candidate_step_ids=list(candidates), reason=f"multiple_matches_{len(candidates)}")
+    max_score = max(s for _, s in scored)
+    winners = [sid for sid, s in scored if s == max_score]
+
+    if len(winners) == 1:
+        sid = winners[0]
+        step = state.backbone_steps[sid]
+        ready = step.status in ("ready", "running")
+        comp = "MATCH" if max_score >= 3 else "UNKNOWN"
+        return BackboneMatchResult(status="UNIQUE", step_id=sid,
+                                    candidate_step_ids=list(candidates),
+                                    reason=f"scored_{max_score}",
+                                    is_currently_ready=ready,
+                                    parameter_compatibility=comp)
+
+    return BackboneMatchResult(status="AMBIGUOUS", step_id=None,
+                                candidate_step_ids=list(candidates),
+                                reason="tied_scores",
+                                is_currently_ready=False,
+                                parameter_compatibility="UNKNOWN")
 
 
 def create_repair_step(state, tool_name, tool_args, anchor_result):
