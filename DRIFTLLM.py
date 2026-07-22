@@ -1,5 +1,5 @@
 from import_lib import *
-from prompts import CAE_PLAN_EXTENSION_PROMPT
+from prompts import TAER_ANCHOR_PROMPT, TAER_POSTCONDITION_PROMPT
 from taer import init_taer_backbone, match_candidate_to_backbone, create_repair_step, \
     rollback_repair, commit_repair, get_taer_metrics, check_taer_boundary
 from source_flow import (
@@ -539,7 +539,7 @@ Thought Content:
 {(thought_content or '')[:500]}
 """
 
-            system_msg = CAE_PLAN_EXTENSION_PROMPT
+            system_msg = TAER_ANCHOR_PROMPT
             response = self.client.llm_run(system_msg, judge_data)
             parsed = self._safe_parse_json_object(response)
 
@@ -2880,8 +2880,8 @@ Thought: {(thought_content or '')[:500]}
 
                     if self.taer_state:
                         self.taer_state.candidate_count += 1
-                        consumer_id = match_candidate_to_backbone(achieved_func, tool_args, self.taer_state)
-                        if consumer_id is not None:
+                        match = match_candidate_to_backbone(achieved_func, tool_args, self.taer_state)
+                        if match.status == "UNIQUE" and match.is_currently_ready and match.parameter_compatibility != "CONFLICT":
                             # In-plan action matched to backbone - continue normal DRIFT path
                             temp_achieved_trajectory.append(achieved_func)
                             continue
