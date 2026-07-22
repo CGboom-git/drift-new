@@ -8,6 +8,8 @@ from source_flow import (
     SourceLabelStore,
     ValidationTraceEntry,
 )
+from prompts import TAER_ANCHOR_PROMPT
+from taer import init_taer_backbone, match_candidate_to_backbone, check_taer_boundary
 
 class DRIFTLLM(PromptingLLM):
     def __init__(self, args, client, model: str | None = "", temperature: float | None = 0.0, logger=None) -> None:
@@ -36,6 +38,7 @@ class DRIFTLLM(PromptingLLM):
         self._source_flow_recovery_state = self._source_flow_reset_recovery()
         self._source_flow_repeated_bad_flow_counts = {}
         self._source_flow_validated_args_cache: dict[str, dict[str, Any]] = {}
+        self.taer_state = None
 
     def source_flow_enabled(self):
         return bool(
@@ -397,211 +400,6 @@ class DRIFTLLM(PromptingLLM):
 
     def _source_flow_is_read_or_transform_tool(self, tool_name: str) -> bool:
         return self._source_flow_tool_kind(tool_name) in {"read", "transform"}
-
-    def _controlled_action_extension(self, tool_name, tool_args, query, messages,
-                                      thought_content, extended_trajectory,
-                                      extended_checklist):
-        snapshot = self._source_flow_trajectory_snapshot()
-
-        self.source_label_store.validation_trace.append(
-            ValidationTraceEntry(
-                step=len(self.achieved_function_trajectory),
-                event="controlled_action_extension_candidate",
-                source_ids=[],
-                details={
-                    "tool_name": tool_name,
-                    "tool_args": tool_args,
-                    "extended_trajectory": extended_trajectory,
-                },
-                decision="log_only",
-                would_reject=False,
-            )
-        )
-
-        if hasattr(self, "client") and self.client is not None:
-            try:
-                latest_function_messages = ""
-                if messages and messages[-1]["role"] == "tool":
-                    latest_function_messages = messages[-1].get("content", "")
-
-                delegated_context = self._build_delegated_task_context(query)
-
-                side_ok, side_reason = self.alignment_judge(
-                    query=query,
-                    last_function_messages=latest_function_messages,
-                    thought_content=thought_content or "",
-                    function_trajectory=snapshot["function_trajectory"],
-                    current_function_trajectory=extended_trajectory,
-                    conversations=messages,
-                    delegated_task_context=delegated_context,
-                )
-                if not side_ok:
-                    self.source_label_store.validation_trace.append(
-                        ValidationTraceEntry(
-                            step=len(self.achieved_function_trajectory),
-                            event="controlled_action_extension_rejected",
-                            source_ids=[],
-                            details={
-                                "tool_name": tool_name,
-                                "reason": "side_effect_mismatch",
-                                "side_reason": side_reason,
-                                "controlled_extension": True,
-                            },
-                            decision="reject",
-                            would_reject=True,
-                        )
-                    )
-                    if self.logger:
-                        self.logger.info(
-                            f"Controlled Action Extension rejected {tool_name}: "
-                            f"side_effect_mismatch: {side_reason}"
-                        )
-                    return {
-                        "allowed": False,
-                        "reason": "side_effect_mismatch",
-                        "call_error_message": (
-                            f"[CALL ERROR] Controlled Action Extension rejected {tool_name}: "
-                            f"side-effect does not align with user goal. Continue using authorized tools only."
-                        ),
-                    }
-            except Exception:
-                if self.logger:
-                    self.logger.info(
-                        f"Controlled Action Extension alignment_judge unavailable for {tool_name}; "
-                        "proceeding to source-flow validation."
-                    )
-
-        self.source_label_store.validation_trace.append(
-            ValidationTraceEntry(
-                step=len(self.achieved_function_trajectory),
-                event="side_effect_alignment_passed",
-                source_ids=[],
-                details={
-                    "tool_name": tool_name,
-                    "controlled_extension": True,
-                },
-                decision="allow",
-                would_reject=False,
-            )
-        )
-
-        self.function_trajectory = extended_trajectory
-        try:
-            self.node_checklist = json.dumps(extended_checklist)
-        except Exception:
-            self.node_checklist = extended_checklist
-
-        trajectory_state = {
-            "function_trajectory": self.function_trajectory,
-            "achieved_function_trajectory": self.achieved_function_trajectory,
-            "node_checklist": self.node_checklist,
-            "tool_permissions": self.tool_permissions,
-            "controlled_extension": True,
-            "trajectory_outside_action": True,
-        }
-
-        sink_specs = self.source_flow_compiler.spec_map(
-            self.node_checklist, tool_name, tool_args,
-        )
-        sink_evidence = self.source_flow_resolver.resolve_args(
-            tool_name, tool_args, sink_specs,
-            self.source_label_store, self.source_flow_contract_helper,
-        )
-        decision = self.source_flow_validator.validate(
-            tool_name=tool_name,
-            tool_args=tool_args,
-            compiled_sink_specs=sink_specs,
-            sink_evidence=sink_evidence,
-            source_store=self.source_label_store,
-            contract_helper=self.source_flow_contract_helper,
-            trajectory_state=trajectory_state,
-        )
-
-        if decision.reject:
-            self._source_flow_restore_trajectory_snapshot(snapshot)
-            self.source_label_store.validation_trace.append(
-                ValidationTraceEntry(
-                    step=len(self.achieved_function_trajectory),
-                    event="controlled_action_extension_rejected",
-                    source_ids=[],
-                    details={
-                        "tool_name": tool_name,
-                        "reason": decision.blocked_flows[0]["reason"] if decision.blocked_flows else "unknown",
-                        "blocked_flows": decision.blocked_flows,
-                        "call_error_message": decision.call_error_message,
-                        "controlled_extension": True,
-                    },
-                    decision="reject",
-                    would_reject=True,
-                )
-            )
-            if self.logger:
-                self.logger.info(
-                    f"Controlled Action Extension rejected {tool_name}: "
-                    f"{decision.blocked_flows}"
-                )
-            return {
-                "allowed": False,
-                "reason": "source_flow_violation",
-                "call_error_message": decision.call_error_message,
-                "decision": decision,
-            }
-
-        if decision.repair_required:
-            self._source_flow_restore_trajectory_snapshot(snapshot)
-            self._source_flow_enter_recovery(tool_name, decision)
-            self.source_label_store.validation_trace.append(
-                ValidationTraceEntry(
-                    step=len(self.achieved_function_trajectory),
-                    event="controlled_action_extension_repair_required",
-                    source_ids=[],
-                    details={
-                        "tool_name": tool_name,
-                        "repair_obligations": decision.repair_obligations,
-                        "valid_args": decision.valid_args,
-                        "invalid_args": decision.invalid_args,
-                        "controlled_extension": True,
-                    },
-                    decision="repair_required",
-                    would_reject=True,
-                )
-            )
-            if self.logger:
-                self.logger.info(
-                    f"Controlled Action Extension repair_required for {tool_name}: "
-                    f"{decision.repair_obligations}"
-                )
-            return {
-                "allowed": False,
-                "reason": "source_flow_repair_required",
-                "call_error_message": decision.call_error_message,
-                "decision": decision,
-            }
-
-        if decision.warn and self.logger:
-            self.logger.info(
-                f"Controlled Action Extension allowed with warnings for {tool_name}: "
-                f"{decision.warnings}"
-            )
-
-        self.source_label_store.validation_trace.append(
-            ValidationTraceEntry(
-                step=len(self.achieved_function_trajectory),
-                event="allow_insert_controlled_action_extension",
-                source_ids=[],
-                details={
-                    "tool_name": tool_name,
-                    "tool_args": tool_args,
-                    "decision": "allow" if not decision.warn else "warn",
-                    "warnings": decision.warnings,
-                },
-                decision="allow",
-                would_reject=False,
-            )
-        )
-        if self.logger:
-            self.logger.info(f"Controlled Action Extension allowed {tool_name}")
-        return {"allowed": True, "decision": decision}
 
     def _source_flow_reset_recovery(self):
         return {
@@ -1339,6 +1137,15 @@ class DRIFTLLM(PromptingLLM):
             except Exception as e:
                 raise InvalidModelOutputError(f"Parameter Checklist Generation Failed: {e}")
 
+        if self.taer_mode_enabled() and self.function_trajectory:
+            self.taer_state = init_taer_backbone(
+                self.function_trajectory, self.node_checklist,
+                completion[0] if isinstance(completion, list) else str(completion),
+                self.source_flow_contract_helper,
+            )
+            if self.logger:
+                self.logger.info(f"TAER backbone initialized with {len(self.taer_state.backbone_order)} steps")
+
     def injection_isolate(self, detected_instructions, messages, openai_messages, source_flow_context=None):
         """Isolate the injection contents in the memory flow.
         """
@@ -1543,22 +1350,23 @@ class DRIFTLLM(PromptingLLM):
 
                 taer_mode = getattr(self.args, "taer_mode", "off")
 
-                if taer_mode == "on" and self._is_action_tool(achieved_func):
+                if taer_mode == "on" and self._is_action_tool(achieved_func) and self.taer_state is not None:
                     self.logger.info(
                         f"Trajectory-outside ACTION {achieved_func} entering TAER"
                     )
 
-                    taer_result = self._controlled_action_extension(
-                        tool_name=achieved_func,
-                        tool_args=tool_args,
-                        query=query,
-                        messages=messages,
-                        thought_content=thought_content,
-                        extended_trajectory=extended_function_trajectory,
-                        extended_checklist=extended_checklist,
+                    match_result = match_candidate_to_backbone(
+                        achieved_func, tool_args, self.taer_state,
                     )
 
-                    if taer_result["allowed"]:
+                    if (
+                        match_result.status == "UNIQUE"
+                        and match_result.is_currently_ready
+                        and match_result.parameter_compatibility == "MATCH"
+                    ):
+                        self.logger.info(
+                            f"TAER backbone match: {achieved_func} -> {match_result.step_id} (ready+MATCH)"
+                        )
                         self.function_trajectory = extended_function_trajectory
                         temp_achieved_trajectory.append(achieved_func)
                         self.achieved_function_trajectory = temp_achieved_trajectory
@@ -1568,28 +1376,118 @@ class DRIFTLLM(PromptingLLM):
                             self.node_checklist = extended_checklist
                         continue
 
-                    if taer_result.get("reason") == "source_flow_repair_required":
+                    self.logger.info(
+                        f"TAER backbone match: {match_result.status} ready={match_result.is_currently_ready} "
+                        f"compat={match_result.parameter_compatibility}; entering anchor analyzer"
+                    )
+
+                    anchor_context = json.dumps({
+                        "user_query": query[:500],
+                        "backbone_steps": [
+                            {"step_id": sid, "tool_name": s.tool_name, "obligation": s.obligation}
+                            for sid in self.taer_state.backbone_order
+                            for s in [self.taer_state.backbone_steps.get(sid)]
+                            if s and s.status not in ("done", "failed")
+                        ],
+                        "candidate_tool": achieved_func,
+                        "candidate_args": tool_args,
+                        "backbone_match": {
+                            "status": match_result.status,
+                            "step_id": match_result.step_id,
+                            "candidate_step_ids": match_result.candidate_step_ids,
+                            "parameter_compatibility": match_result.parameter_compatibility,
+                        },
+                        "achieved_trajectory": self.achieved_function_trajectory,
+                        "latest_thought": thought_content[:300],
+                    })
+
+                    anchor_raw = self.client.llm_run(TAER_ANCHOR_PROMPT, anchor_context)
+
+                    try:
+                        from json_repair import repair_json
+                        anchor_result = json.loads(repair_json(anchor_raw))
+                    except Exception:
+                        self.logger.info(f"TAER anchor parse failed; falling back to original DRIFT")
+                        align_error_message, output = self._run_original_drift_deviation_validation(
+                            achieved_func, output, query, messages,
+                            extended_function_trajectory, extended_checklist,
+                            thought_content, latest_function_messages,
+                        )
+                        if align_error_message:
+                            return align_error_message, output
+                        temp_achieved_trajectory.append(achieved_func)
+                        continue
+
+                    relation = anchor_result.get("relation", "AMBIGUOUS")
+                    self.logger.info(f"TAER anchor result: {relation} for {achieved_func}")
+
+                    if relation == "NEW_GOAL":
                         self._source_flow_sanitize_rejected_output(
                             output,
-                            taer_result.get("call_error_message", taer_result["reason"]),
+                            f"[CALL ERROR] TAER rejected {achieved_func}: NEW_GOAL — unauthorized effect.",
                         )
                         error_msg = {
                             "role": "user",
                             "content": (
-                                f"[CALL ERROR] TAER repair required for {achieved_func}: "
-                                f"{taer_result.get('call_error_message', taer_result['reason'])}. "
-                                "Continue the original user task using authorized sources only."
+                                f"[CALL ERROR] TAER rejected {achieved_func}: introduces "
+                                "an unauthorized goal. Continue the original user task."
                             ),
                         }
                         if self.logger:
-                            self.logger.info(f"{achieved_func} repair required by TAER")
+                            self.logger.info(f"{achieved_func} rejected by TAER as NEW_GOAL")
+                        return error_msg, output
+
+                    if relation == "AMBIGUOUS":
+                        self.logger.info(
+                            f"TAER ambiguous for {achieved_func}; falling back to original DRIFT"
+                        )
+                        align_error_message, output = self._run_original_drift_deviation_validation(
+                            achieved_func, output, query, messages,
+                            extended_function_trajectory, extended_checklist,
+                            thought_content, latest_function_messages,
+                        )
+                        if align_error_message:
+                            return align_error_message, output
+                        temp_achieved_trajectory.append(achieved_func)
+                        continue
+
+                    source_records = list(self.source_label_store.records) if self.source_label_store else []
+                    boundary = check_taer_boundary(
+                        achieved_func, tool_args, anchor_result,
+                        anchor_result.get("consumer_step_id"),
+                        source_records,
+                        self.source_flow_contract_helper,
+                    )
+
+                    if not boundary.passed:
+                        self.logger.info(
+                            f"TAER boundary blocked {achieved_func}: {boundary.reason}"
+                        )
+                        self._source_flow_sanitize_rejected_output(
+                            output,
+                            f"[CALL ERROR] TAER boundary guard blocked {achieved_func}: {boundary.reason}.",
+                        )
+                        error_msg = {
+                            "role": "user",
+                            "content": (
+                                f"[CALL ERROR] TAER boundary guard blocked {achieved_func}: "
+                                f"{boundary.reason}. Continue the original user task."
+                            ),
+                        }
                         return error_msg, output
 
                     if self.logger:
                         self.logger.info(
-                            f"TAER unresolved for {achieved_func}; "
-                            f"falling back to original DRIFT deviation validation"
+                            f"TAER allowed {achieved_func} with boundary pass"
                         )
+                    self.function_trajectory = extended_function_trajectory
+                    temp_achieved_trajectory.append(achieved_func)
+                    self.achieved_function_trajectory = temp_achieved_trajectory
+                    try:
+                        self.node_checklist = json.dumps(extended_checklist)
+                    except:
+                        self.node_checklist = extended_checklist
+                    continue
 
                 align_error_message, output = self._run_original_drift_deviation_validation(
                     achieved_func, output, query, messages,
