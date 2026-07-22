@@ -1,7 +1,7 @@
 from import_lib import *
 from prompts import CAE_PLAN_EXTENSION_PROMPT
 from taer import init_taer_backbone, match_candidate_to_backbone, create_repair_step, \
-    rollback_repair, commit_repair, get_taer_metrics
+    rollback_repair, commit_repair, get_taer_metrics, check_taer_boundary
 from source_flow import (
     ContractHelper,
     FlowAwareValidator,

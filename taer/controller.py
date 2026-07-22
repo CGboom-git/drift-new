@@ -1,6 +1,7 @@
 """TAER Controller - backbone init, matching, overlay lifecycle."""
 import json
-from .models import BackboneStep, RepairStep, TAERState
+import re
+from .models import BackboneStep, RepairStep, TAERState, BackboneMatchResult, TAERBoundaryResult, ConditionState
 
 
 def init_taer_backbone(initial_function_trajectory, initial_node_checklist, query, contract_helper):
@@ -79,10 +80,10 @@ def match_candidate_to_backbone(tool_name, tool_args, state):
             candidates.append(sid)
 
     if len(candidates) == 1:
-        return {"status": "UNIQUE", "step_id": candidates[0], "reason": "single_match"}
+        return BackboneMatchResult(status="UNIQUE", step_id=candidates[0], candidate_step_ids=candidates, reason="single_match", is_currently_ready=True)
 
     if len(candidates) == 0:
-        return {"status": "NONE", "step_id": None, "reason": "no_match"}
+        return BackboneMatchResult(status="NONE", step_id=None, candidate_step_ids=[], reason="no_match")
 
     # Disambiguate by parameter value matching
     best_sid = None
@@ -111,9 +112,9 @@ def match_candidate_to_backbone(tool_name, tool_args, state):
             best_sid = sid
 
     if best_sid and best_score >= len(candidates):
-        return {"status": "UNIQUE", "step_id": best_sid, "reason": f"value_match_score_{best_score}"}
+        return BackboneMatchResult(status="UNIQUE", step_id=best_sid, candidate_step_ids=list(candidates), reason=f"value_match_score_{best_score}", is_currently_ready=True)
 
-    return {"status": "AMBIGUOUS", "step_id": None, "reason": f"multiple_matches_{len(candidates)}"}
+    return BackboneMatchResult(status="AMBIGUOUS", step_id=None, candidate_step_ids=list(candidates), reason=f"multiple_matches_{len(candidates)}")
 
 
 def create_repair_step(state, tool_name, tool_args, anchor_result):
@@ -195,16 +196,17 @@ def check_taer_boundary(tool_name, tool_args, anchor, consumer_step, source_reco
                 if "injected_instruction" in labels:
                     rec_val = str(getattr(rec, "value", "") or "")
                     if rec_val and str(arg_val) in rec_val:
-                        return {"passed": False, "explicit_violation": True,
-                                 "violation_type": "injected_control_arg",
-                                 "reason": f"{arg_name} sourced from injected instruction"}
+                        return TAERBoundaryResult(passed=False, explicit_violation=True,
+                                 violation_type="injected_control_arg", checked_authority_args={arg_name: str(arg_val)}, evidence_source_ids=[], reason=f"{arg_name} sourced from injected instruction")
 
     # Check scope_delta against relation
     scope = anchor.get("scope_delta", "NONE")
     if scope in ("NEW_PRINCIPAL", "NEW_DESTINATION", "NEW_EFFECT"):
-        return {"passed": False, "explicit_violation": True,
-                 "violation_type": f"scope_delta_{scope.lower()}",
-                 "reason": f"unauthorized {scope}"}
+        return TAERBoundaryResult(passed=False, explicit_violation=True,
+                 violation_type=f"scope_delta_{scope.lower()}",
+                 checked_authority_args={},
+                 evidence_source_ids=[],
+                 reason=f"unauthorized {scope}")
 
-    return {"passed": True, "explicit_violation": False, "violation_type": None, "reason": "boundary_pass"}
+    return TAERBoundaryResult(passed=True, explicit_violation=False, violation_type=None, checked_authority_args={}, evidence_source_ids=[], reason="boundary_pass")
 

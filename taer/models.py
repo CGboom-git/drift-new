@@ -13,6 +13,7 @@ class BackboneStep:
     authorized_effect: dict[str, Any] = field(default_factory=dict)
     required_parameters: dict[str, Any] = field(default_factory=dict)
     conditions: dict[str, Any] = field(default_factory=dict)
+    condition_states: dict = field(default_factory=dict)
     status: str = "pending"
 
 
@@ -33,6 +34,9 @@ class RepairStep:
     status: str = "candidate"
     remaining_uses: int = 1
     depends_on_repair_ids: list[str] = field(default_factory=list)
+    tool_call_id: str | None = None
+    result_source_ids: list[str] = field(default_factory=list)
+    created_at_step: int | None = None
     expected_effect: str | None = None
     source: str = "taer"
 
@@ -55,3 +59,30 @@ class TAERState:
     fallback_count: int = 0
     repair_success_count: int = 0
     repair_rollback_count: int = 0
+
+@dataclass(frozen=True)
+class BackboneMatchResult:
+    status: str
+    step_id: str | None
+    candidate_step_ids: list[str]
+    reason: str
+    is_currently_ready: bool = False
+    parameter_compatibility: str = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class TAERBoundaryResult:
+    passed: bool
+    explicit_violation: bool
+    violation_type: str | None
+    checked_authority_args: dict[str, Any]
+    evidence_source_ids: list[str]
+    reason: str
+
+
+@dataclass
+class ConditionState:
+    condition_id: str
+    description: str
+    satisfied: bool = False
+    satisfied_by_repair_id: str | None = None
