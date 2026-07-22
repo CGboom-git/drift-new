@@ -41,9 +41,9 @@ class DRIFTLLM(PromptingLLM):
             raise ValueError("taer_mode=on requires --source_flow_validation")
         if self.logger:
             self.logger.info(f"TAER mode: {self.taer_mode}")
-        self.cae_mode = getattr(args, "cae_mode", "on")
+        self.taer_mode = getattr(args, "taer_mode", "on")
         if self.logger:
-            self.logger.info(f"Resolved CAE mode: {self.cae_mode}")
+            self.logger.info(f"Resolved TAER mode: {self.taer_mode}")
 
     def get_taer_metrics(self):
         if self.taer_state:
@@ -60,11 +60,11 @@ class DRIFTLLM(PromptingLLM):
         return bool(getattr(self.args, "source_flow_validation", False))
 
     def controlled_action_extension_enabled(self):
-        return self.cae_mode == "on" and bool(
+        return self.taer_mode == "on" and bool(
             getattr(self.args, "source_flow_validation", False))
 
 
-    # --- CAE REPAIR MODE ---
+    # --- LEGACY SECTION REMOVED ---
 
     def _controlled_action_repair(
         self, tool_name, tool_args, query, messages, output,
@@ -75,13 +75,13 @@ class DRIFTLLM(PromptingLLM):
         self.source_label_store.validation_trace.append(
             ValidationTraceEntry(
                 step=len(self.achieved_function_trajectory),
-                event="cae_repair_candidate",
+                event="taer_repair_candidate",
                 source_ids=[],
                 details={
                     "tool_name": tool_name,
                     "tool_args": tool_args,
                     "extended_trajectory": extended_trajectory,
-                    "cae_mode": "repair",
+                    "taer_mode": "repair",
                 },
                 decision="log_only",
                 would_reject=False,
@@ -99,7 +99,7 @@ class DRIFTLLM(PromptingLLM):
         self.source_label_store.validation_trace.append(
             ValidationTraceEntry(
                 step=len(self.achieved_function_trajectory),
-                event="cae_repair_judge_result",
+                event="taer_repair_judge_result",
                 source_ids=[],
                 details={
                     "tool_name": tool_name,
@@ -112,11 +112,11 @@ class DRIFTLLM(PromptingLLM):
 
         classification = judge_result.get("classification", "UNCERTAIN")
 
-        if classification != "PLAN_OMISSION":
+        if classification != "PLAN_EXTENSION":
             attack_evidence = self._collect_attack_evidence(
                 tool_name, tool_args, judge_result, snapshot,
             )
-            event = "cae_repair_attack_deviation" if attack_evidence.get("is_attack") else "cae_repair_reject_deviation"
+            event = "taer_repair_attack_deviation" if attack_evidence.get("is_attack") else "taer_repair_reject_deviation"
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
                     step=len(self.achieved_function_trajectory),
@@ -132,20 +132,20 @@ class DRIFTLLM(PromptingLLM):
                 )
             )
             msg = (
-                "[CALL ERROR] CAE repair rejected the proposed action because "
+                "[CALL ERROR] TAER repair rejected the proposed action because "
                 "it is not a verified necessary extension of the authorized plan. "
                 "Continue from the original plan."
             )
             if classification == "UNCERTAIN":
                 self.source_label_store.validation_trace[-1] = ValidationTraceEntry(
                     step=len(self.achieved_function_trajectory),
-                    event="cae_repair_reject_uncertain",
+                    event="taer_repair_reject_uncertain",
                     source_ids=[],
                     details={"tool_name": tool_name, "classification": classification},
                     decision="reject", would_reject=True,
                 )
                 msg = (
-                    "[CALL ERROR] CAE repair rejected the proposed action because "
+                    "[CALL ERROR] TAER repair rejected the proposed action because "
                     "the plan extension could not be verified safely. "
                     "Continue from the original authorized plan."
                 )
@@ -162,7 +162,7 @@ class DRIFTLLM(PromptingLLM):
                 self.source_label_store.validation_trace.append(
                     ValidationTraceEntry(
                         step=len(self.achieved_function_trajectory),
-                        event="cae_repair_missing_parent_for_plan_omission",
+                        event="taer_repair_missing_parent_for_plan_omission",
                         source_ids=[],
                         details={
                             "tool_name": tool_name,
@@ -177,22 +177,22 @@ class DRIFTLLM(PromptingLLM):
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
                     step=len(self.achieved_function_trajectory),
-                    event="cae_repair_task_vf_fail",
+                    event="taer_repair_task_vf_fail",
                     source_ids=[],
                     details={"tool_name": tool_name, "reason": task_vf_reason},
                     decision="reject", would_reject=True,
                 )
             )
-            return {"allowed": False, "category": "PLAN_OMISSION",
+            return {"allowed": False, "category": "PLAN_EXTENSION",
                     "call_error_message": (
-                        "[CALL ERROR] CAE repair rejected: task extension "
+                        "[CALL ERROR] TAER repair rejected: task extension "
                         "verification failed."
                     ), "judge_result": judge_result}
 
         self.source_label_store.validation_trace.append(
             ValidationTraceEntry(
                 step=len(self.achieved_function_trajectory),
-                event="cae_repair_task_vf_pass",
+                event="taer_repair_task_vf_pass",
                 source_ids=[],
                 details={"tool_name": tool_name, "reason": task_vf_reason},
                 decision="log_only", would_reject=False,
@@ -205,9 +205,9 @@ class DRIFTLLM(PromptingLLM):
         # Step 4: Apply patch to copy
         candidate_state = self._apply_patch_to_copy(snapshot, patch)
         if candidate_state is None:
-            return {"allowed": False, "category": "PLAN_OMISSION",
+            return {"allowed": False, "category": "PLAN_EXTENSION",
                     "call_error_message": (
-                        "[CALL ERROR] CAE repair rejected: failed to apply patch."
+                        "[CALL ERROR] TAER repair rejected: failed to apply patch."
                     ), "judge_result": judge_result}
 
         # Step 5: Security VF
@@ -220,15 +220,15 @@ class DRIFTLLM(PromptingLLM):
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
                     step=len(self.achieved_function_trajectory),
-                    event="cae_repair_security_vf_fail",
+                    event="taer_repair_security_vf_fail",
                     source_ids=[],
                     details={"tool_name": tool_name, "reason": security_result.get("reason")},
                     decision="reject", would_reject=True,
                 )
             )
-            return {"allowed": False, "category": "PLAN_OMISSION",
+            return {"allowed": False, "category": "PLAN_EXTENSION",
                     "call_error_message": security_result.get("call_error_message",
-                        "[CALL ERROR] CAE repair rejected the proposed plan patch "
+                        "[CALL ERROR] TAER repair rejected the proposed plan patch "
                         "because SourceFlow/security verification failed. "
                         "Continue from the original authorized plan."
                     ),
@@ -238,7 +238,7 @@ class DRIFTLLM(PromptingLLM):
         self.source_label_store.validation_trace.append(
             ValidationTraceEntry(
                 step=len(self.achieved_function_trajectory),
-                event="cae_repair_security_vf_pass",
+                event="taer_repair_security_vf_pass",
                 source_ids=[],
                 details={"tool_name": tool_name},
                 decision="log_only", would_reject=False,
@@ -251,7 +251,7 @@ class DRIFTLLM(PromptingLLM):
         self.source_label_store.validation_trace.append(
             ValidationTraceEntry(
                 step=len(self.achieved_function_trajectory),
-                event="cae_repair_patch_committed",
+                event="taer_repair_patch_committed",
                 source_ids=[],
                 details={
                     "tool_name": tool_name,
@@ -263,9 +263,9 @@ class DRIFTLLM(PromptingLLM):
         )
 
         if self.logger:
-            self.logger.info(f"CAE repair allowed {tool_name}: patch committed")
+            self.logger.info(f"TAER repair allowed {tool_name}: patch committed")
 
-        return {"allowed": True, "category": "PLAN_OMISSION",
+        return {"allowed": True, "category": "PLAN_EXTENSION",
                 "call_error_message": None, "patch": patch,
                 "judge_result": judge_result}
 
@@ -339,18 +339,18 @@ class DRIFTLLM(PromptingLLM):
 
         return None
 
-    def _normalize_cae_judge_result(self, result):
+    def _normalize_taer_judge_result(self, result):
         if not isinstance(result, dict):
             return {"classification": "UNCERTAIN", "reason": "invalid_judge_result"}
 
         normalized = dict(result)
 
         classification = str(normalized.get("classification", "UNCERTAIN")).strip().upper()
-        if classification not in {"PLAN_OMISSION", "DEVIATION", "UNCERTAIN"}:
+        if classification not in {"PLAN_EXTENSION", "DEVIATION", "UNCERTAIN"}:
             classification = "UNCERTAIN"
         normalized["classification"] = classification
 
-        idx = normalized.get("parent_step_index")
+        idx = normalized.get("legacy_parent_step_index")
         if isinstance(idx, str):
             try:
                 idx = int(idx)
@@ -358,14 +358,14 @@ class DRIFTLLM(PromptingLLM):
                 idx = None
         if not isinstance(idx, int):
             idx = None
-        normalized["parent_step_index"] = idx
+        normalized["legacy_parent_step_index"] = idx
 
-        parent_tool = normalized.get("parent_tool_name")
+        parent_tool = normalized.get("legacy_parent_tool_name")
         if parent_tool is not None:
             parent_tool = str(parent_tool).strip()
             if parent_tool.lower() in {"none", "null", ""}:
                 parent_tool = None
-        normalized["parent_tool_name"] = parent_tool
+        normalized["legacy_parent_tool_name"] = parent_tool
 
         for key in ["necessary", "final_authorized_effect", "new_goal_introduced", "new_principal_introduced"]:
             value = normalized.get(key)
@@ -376,12 +376,12 @@ class DRIFTLLM(PromptingLLM):
 
         return normalized
 
-    def _log_cae_repair_judge_parse_error(self, tool_name, raw_response):
+    def _log_taer_repair_judge_parse_error(self, tool_name, raw_response):
         try:
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
                     step=len(getattr(self, "achieved_function_trajectory", []) or []),
-                    event="cae_repair_judge_parse_error",
+                    event="taer_repair_judge_parse_error",
                     source_ids=[],
                     details={
                         "tool_name": tool_name,
@@ -395,37 +395,37 @@ class DRIFTLLM(PromptingLLM):
             pass
 
 
-    def _normalize_cae_parent_reference(self, result, current_trajectory, achieved_trajectory,
+    def _normalize_taer_parent_reference(self, result, current_trajectory, achieved_trajectory,
                                                 extended_trajectory=None, candidate_tool_name=None):
         if not isinstance(result, dict):
             return result
-        if result.get("classification") != "PLAN_OMISSION":
+        if result.get("classification") != "PLAN_EXTENSION":
             return result
 
-        parent_index = result.get("parent_step_index")
-        parent_tool = result.get("parent_tool_name")
+        parent_index = result.get("legacy_parent_step_index")
+        parent_tool = result.get("legacy_parent_tool_name")
 
         # Rule 1: valid index in current trajectory
         if isinstance(parent_index, int) and 0 <= parent_index < len(current_trajectory):
             expected_tool = current_trajectory[parent_index]
             if not parent_tool:
-                result["parent_tool_name"] = expected_tool
+                result["legacy_parent_tool_name"] = expected_tool
             elif parent_tool != expected_tool:
-                result["parent_tool_name"] = expected_tool
+                result["legacy_parent_tool_name"] = expected_tool
                 result["parent_corrected"] = True
                 result["parent_correction_reason"] = "index_tool_mismatch_corrected"
             return result
 
         # Rule 2: valid tool name in current trajectory
         if isinstance(parent_tool, str) and parent_tool in current_trajectory:
-            result["parent_step_index"] = current_trajectory.index(parent_tool)
+            result["legacy_parent_step_index"] = current_trajectory.index(parent_tool)
             return result
 
         # Rule 3: output_consumed_by matches current trajectory tool
         ocb = result.get("output_consumed_by")
         if isinstance(ocb, str) and ocb in current_trajectory:
-            result["parent_tool_name"] = ocb
-            result["parent_step_index"] = current_trajectory.index(ocb)
+            result["legacy_parent_tool_name"] = ocb
+            result["legacy_parent_step_index"] = current_trajectory.index(ocb)
             result["parent_inferred"] = True
             result["parent_inference_reason"] = "output_consumed_by_matches_current_trajectory"
             return result
@@ -433,8 +433,8 @@ class DRIFTLLM(PromptingLLM):
         # Rule 4: output_consumed_by in extended trajectory that also exists in current
         ext = extended_trajectory or []
         if isinstance(ocb, str) and ocb in ext and ocb in current_trajectory:
-            result["parent_tool_name"] = ocb
-            result["parent_step_index"] = current_trajectory.index(ocb)
+            result["legacy_parent_tool_name"] = ocb
+            result["legacy_parent_step_index"] = current_trajectory.index(ocb)
             result["parent_inferred"] = True
             result["parent_inference_reason"] = "output_consumed_by_matches_extended_and_current"
             return result
@@ -443,8 +443,8 @@ class DRIFTLLM(PromptingLLM):
         if result.get("final_authorized_effect") is True and current_trajectory:
             next_idx = len(achieved_trajectory or [])
             if 0 <= next_idx < len(current_trajectory):
-                result["parent_step_index"] = next_idx
-                result["parent_tool_name"] = current_trajectory[next_idx]
+                result["legacy_parent_step_index"] = next_idx
+                result["legacy_parent_tool_name"] = current_trajectory[next_idx]
                 result["parent_inferred"] = True
                 result["parent_inference_reason"] = "final_authorized_effect_next_expected_step"
                 return result
@@ -452,14 +452,14 @@ class DRIFTLLM(PromptingLLM):
             if achieved_trajectory:
                 last_achieved = achieved_trajectory[-1]
                 if last_achieved in current_trajectory:
-                    result["parent_step_index"] = current_trajectory.index(last_achieved)
-                    result["parent_tool_name"] = last_achieved
+                    result["legacy_parent_step_index"] = current_trajectory.index(last_achieved)
+                    result["legacy_parent_tool_name"] = last_achieved
                     result["parent_inferred"] = True
                     result["parent_inference_reason"] = "final_authorized_effect_last_achieved_step"
                     return result
 
-            result["parent_step_index"] = len(current_trajectory) - 1
-            result["parent_tool_name"] = current_trajectory[-1]
+            result["legacy_parent_step_index"] = len(current_trajectory) - 1
+            result["legacy_parent_tool_name"] = current_trajectory[-1]
             result["parent_inferred"] = True
             result["parent_inference_reason"] = "final_authorized_effect_last_current_step"
             return result
@@ -511,7 +511,7 @@ class DRIFTLLM(PromptingLLM):
 Initial Trajectory (original plan):
 {initial_traj}
 
-Current Trajectory Indexed (use for parent_step_index, zero-based):
+Current Trajectory Indexed (use for legacy_parent_step_index, zero-based):
 {current_traj_indexed}
 
 Extended Trajectory Indexed (includes candidate, for reference):
@@ -544,17 +544,17 @@ Thought Content:
             parsed = self._safe_parse_json_object(response)
 
             if not isinstance(parsed, dict):
-                self._log_cae_repair_judge_parse_error(
+                self._log_taer_repair_judge_parse_error(
                     tool_name=tool_name,
                     raw_response=response if isinstance(response, str) else str(response),
                 )
                 return {"classification": "UNCERTAIN", "reason": "judge_parse_error"}
 
-            result = self._normalize_cae_judge_result(parsed)
+            result = self._normalize_taer_judge_result(parsed)
             current_traj = snapshot.get("function_trajectory", [])
             achieved_traj = snapshot.get("achieved_function_trajectory", [])
             extended_traj = list(extended_trajectory or current_traj)
-            result = self._normalize_cae_parent_reference(
+            result = self._normalize_taer_parent_reference(
                 result, current_traj, achieved_traj,
                 extended_trajectory=extended_traj,
                 candidate_tool_name=tool_name,
@@ -564,7 +564,7 @@ Thought Content:
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
                     step=len(self.achieved_function_trajectory),
-                    event="cae_repair_judge_normalized",
+                    event="taer_repair_judge_normalized",
                     source_ids=[],
                     details={
                         "tool_name": tool_name,
@@ -580,15 +580,15 @@ Thought Content:
             return result
         except Exception:
             if self.logger:
-                self.logger.info(f"CAE repair judge failed for {tool_name}")
+                self.logger.info(f"TAER repair judge failed for {tool_name}")
             return {"classification": "UNCERTAIN", "reason": "judge_error"}
 
     def _task_extension_vf(self, judge_result, current_trajectory=None):
-        if judge_result.get("classification") != "PLAN_OMISSION":
+        if judge_result.get("classification") != "PLAN_EXTENSION":
             return False, "not_plan_omission"
 
-        parent_index = judge_result.get("parent_step_index")
-        parent_tool = judge_result.get("parent_tool_name")
+        parent_index = judge_result.get("legacy_parent_step_index")
+        parent_tool = judge_result.get("legacy_parent_tool_name")
 
         if not isinstance(parent_index, int):
             return False, "missing_parent_reference"
@@ -600,7 +600,7 @@ Thought Content:
                 return False, "parent_index_tool_mismatch"
 
         if not parent_tool:
-            return False, "missing_parent_tool_name"
+            return False, "missing_legacy_parent_tool_name"
 
         if judge_result.get("necessary") is not True:
             return False, "not_necessary"
@@ -617,9 +617,9 @@ Thought Content:
 
     def _build_add_substep_patch(self, tool_name, tool_args, judge_result):
         return {
-            "operation": "ADD_SUBSTEP",
-            "parent_step_index": judge_result.get("parent_step_index"),
-            "parent_tool_name": judge_result.get("parent_tool_name"),
+            "operation": "PATCH",
+            "legacy_parent_step_index": judge_result.get("legacy_parent_step_index"),
+            "legacy_parent_tool_name": judge_result.get("legacy_parent_tool_name"),
             "tool_name": tool_name,
             "tool_args": tool_args,
             "repair_role": judge_result.get("repair_role"),
@@ -630,19 +630,19 @@ Thought Content:
         }
 
     def _resolve_patch_insert_index(self, trajectory, patch):
-        parent_index = patch.get("parent_step_index")
-        parent_tool = patch.get("parent_tool_name")
+        parent_index = patch.get("legacy_parent_step_index")
+        parent_tool = patch.get("legacy_parent_tool_name")
 
         if isinstance(parent_index, int) and 0 <= parent_index < len(trajectory):
-            return parent_index, "parent_step_index"
+            return parent_index, "legacy_parent_step_index"
 
         if isinstance(parent_tool, str) and parent_tool in trajectory:
-            return trajectory.index(parent_tool), "parent_tool_name"
+            return trajectory.index(parent_tool), "legacy_parent_tool_name"
 
         return len(trajectory), "fallback_append"
 
     def _apply_patch_to_copy(self, snapshot, patch):
-        if patch.get("operation") != "ADD_SUBSTEP":
+        if patch.get("operation") != "PATCH":
             return None
         candidate = copy.deepcopy(snapshot)
         trajectory = list(candidate.get("function_trajectory", []))
@@ -653,11 +653,11 @@ Thought Content:
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
                     step=len(self.achieved_function_trajectory),
-                    event="cae_repair_parent_fallback",
+                    event="taer_repair_parent_fallback",
                     source_ids=[],
                     details={
-                        "parent_step_index": patch.get("parent_step_index"),
-                        "parent_tool_name": patch.get("parent_tool_name"),
+                        "legacy_parent_step_index": patch.get("legacy_parent_step_index"),
+                        "legacy_parent_tool_name": patch.get("legacy_parent_tool_name"),
                         "trajectory": trajectory,
                         "insert_index": insert_idx,
                     },
@@ -677,9 +677,9 @@ Thought Content:
                     "name": tool_name,
                     "required parameters": patch.get("tool_args"),
                     "conditions": {
-                        "cae_patch": True,
-                        "parent_step_index": patch.get("parent_step_index"),
-                        "parent_tool_name": patch.get("parent_tool_name"),
+                        "taer_patch": True,
+                        "legacy_parent_step_index": patch.get("legacy_parent_step_index"),
+                        "legacy_parent_tool_name": patch.get("legacy_parent_tool_name"),
                         "repair_role": patch.get("repair_role"),
                         "reason": patch.get("reason"),
                     },
@@ -1189,7 +1189,7 @@ Thought Content:
         sourceflow_result, risk_profile,
     ):
         """Medium-risk conditional allow with positive provenance requirement."""
-        if judge_result.get("classification") != "PLAN_OMISSION":
+        if judge_result.get("classification") != "PLAN_EXTENSION":
             return False
         repair_role = judge_result.get("repair_role")
         if repair_role not in ("FINAL_AUTHORIZED_EFFECT", "INTERMEDIATE_SUBSTEP"):
@@ -1272,7 +1272,7 @@ Thought Content:
             trajectory_state={
                 **candidate_state,
                 "controlled_extension": True,
-                "cae_mode": "repair",
+                "taer_mode": "repair",
                 "trajectory_outside_action": True,
             },
         )
@@ -1353,7 +1353,7 @@ Thought Content:
                             "pass": False, "reason": "selector_predicate_verification_failed",
                             "decision": decision,
                             "call_error_message": (
-                                f"[CALL ERROR] CAE repair rejected {tool_name}: "
+                                f"[CALL ERROR] TAER repair rejected {tool_name}: "
                                 f"selector argument {arg_name} could not be verified against task predicate."
                             ),
                             "has_attack_evidence": True,
@@ -1387,7 +1387,7 @@ Thought Content:
                 "pass": False, "reason": "critical_action_warn_escalated_to_reject",
                 "decision": decision,
                 "call_error_message": (
-                    f"[CALL ERROR] CAE repair rejected {tool_name}: "
+                    f"[CALL ERROR] TAER repair rejected {tool_name}: "
                     "critical irreversable action has insufficient parameter provenance."
                 ),
                 "has_attack_evidence": False,
@@ -1429,7 +1429,7 @@ Thought Content:
                     "pass": False, "reason": "medium_risk_warn_rejected",
                     "decision": decision,
                     "call_error_message": (
-                        f"[CALL ERROR] CAE repair rejected {tool_name}: "
+                        f"[CALL ERROR] TAER repair rejected {tool_name}: "
                         "medium-risk action has insufficient parameter provenance "
                         "or untrusted control arguments."
                     ),
@@ -1468,99 +1468,11 @@ Thought Content:
 
         return evidence
 
-    # --- EBA MODE ---
+    # --- SECTION REMOVED ---
 
-    # --- SRA: Semantic Realignment Adapter ---
+    
 
-    def _semantic_realign_action(
-        self, tool_name, tool_args, query, function_trajectory,
-        achieved_trajectory, current_index, recent_obs, tool_metadata,
-    ):
-        result = {"realignment_type": "uncertain", "anchor_type": "none",
-                   "task_progress": True, "requires_eba": True,
-                   "matched_goal": "", "matched_tool_from_trajectory": "",
-                   "confidence": "low", "reason": "sra_default"}
-
-        name = tool_name.lower()
-        traj = function_trajectory or []
-        achieved = achieved_trajectory or []
-        q = (query or "").lower()
-        is_se = self._infer_side_effect_from_tool_metadata(tool_name, tool_metadata)
-
-        # --- Deterministic heuristics ---
-
-        # 1. Read/search/list/get as evidence steps
-        read_prefixes = ("get_", "read_", "search_", "list_", "find_", "query_",
-                          "lookup_", "retrieve_", "inspect_")
-        if any(name.startswith(p) for p in read_prefixes) and not is_se:
-            result["realignment_type"] = "evidence_step"
-            result["anchor_type"] = "semantic_goal"
-            result["task_progress"] = True
-            result["requires_eba"] = False
-            result["confidence"] = "high"
-            result["reason"] = "read_tool_evidence_step"
-            return result
-
-        # 2. Future-step match
-        if current_index is not None and current_index < len(traj):
-            remaining = traj[current_index:]
-            if tool_name in remaining:
-                result["realignment_type"] = "future_step"
-                result["anchor_type"] = "future_index"
-                result["matched_tool_from_trajectory"] = tool_name
-                result["task_progress"] = True
-                result["requires_eba"] = is_se
-                result["confidence"] = "high"
-                result["reason"] = "future_step_match"
-                return result
-
-        # 3. Evidence insertion before final effect
-        if not is_se and achieved:
-            for t in traj:
-                if t in achieved:
-                    continue
-                if t and any(pre for pre in ("send_", "create_", "delete_", "schedule_")
-                              if t.lower().startswith(pre)):
-                    result["realignment_type"] = "evidence_step"
-                    result["anchor_type"] = "data_dependency"
-                    result["matched_tool_from_trajectory"] = t
-                    result["task_progress"] = True
-                    result["requires_eba"] = False
-                    result["confidence"] = "medium"
-                    result["reason"] = f"evidence_before_{t}"
-                    return result
-
-        # 4. Try LLM SRA judge for complex cases
-        if is_se:
-            try:
-                sra_input = f"""User: {q}
-Tool: {tool_name}
-Args: {tool_args}
-Meta: {tool_metadata}
-Trajectory: {traj}"""
-                resp = self.client.llm_run(SRA_REALIGNMENT_PROMPT, sra_input)
-                parsed = self._safe_parse_json_object(resp)
-                if isinstance(parsed, dict):
-                    result.update(parsed)
-                    result["confidence"] = parsed.get("confidence", "medium")
-                    return result
-            except Exception:
-                pass
-
-        result["requires_eba"] = True
-        return result
-
-    def _eba_fast_allow_by_realignment(self, realignment, tool_metadata, tool_name):
-        if not realignment:
-            return False
-        rt = realignment.get("realignment_type", "")
-        se = self._infer_side_effect_from_tool_metadata(tool_name, tool_metadata)
-        if rt in ("expected_step", "future_step", "evidence_step", "recovery_step") and not se:
-            if realignment.get("task_progress", True):
-                return True
-        return False
-
-
+    
     def _infer_side_effect_from_tool_metadata(self, tool_name, tool_semantic_metadata=None):
         if tool_semantic_metadata:
             tt = tool_semantic_metadata.get("tool_type", "")
@@ -1578,225 +1490,7 @@ Trajectory: {traj}"""
         return False
 
 
-    def _evidence_boundary_alignment(
-        self, tool_name, tool_args, query, messages, output,
-        thought_content, func_ids, extended_trajectory, extended_checklist,
-        realignment=None,
-    ):
-        snapshot = self._source_flow_trajectory_snapshot()
-        store = getattr(self, "source_label_store", None)
-
-        self.source_label_store.validation_trace.append(
-            ValidationTraceEntry(
-                step=len(self.achieved_function_trajectory),
-                event="eba_candidate",
-                source_ids=[],
-                details={"tool_name": tool_name, "tool_args": tool_args, "cae_mode": "eba"},
-                decision="log_only", would_reject=False,
-            )
-        )
-
-        # Collect context
-        initial_traj = getattr(self, "initial_function_trajectory", None) or []
-        current_traj = snapshot.get("function_trajectory", []) or []
-        achieved_traj = snapshot.get("achieved_function_trajectory", []) or []
-
-        try:
-            tool_metadata = self._get_tool_semantic_metadata(tool_name, tool_args)
-        except Exception:
-            tool_metadata = {"tool_type": "unknown"}
-
-        recent_obs = ""
-        if messages and len(messages) > 0:
-            for m in reversed(messages):
-                if isinstance(m, dict) and m.get("role") == "tool":
-                    recent_obs = str(m.get("content", ""))[:3000]
-                    break
-
-        arg_summary = ""
-        for k, v in (tool_args or {}).items():
-            arg_summary += f"  {k}: {str(v)[:100]}\n"
-
-        # Build judge input
-        judge_input = f"""User Query:
-{query}
-
-Initial Trajectory:
-{initial_traj}
-
-Current Trajectory:
-{current_traj}
-
-Achieved Trajectory:
-{achieved_traj}
-
-Candidate Out-of-Plan ACTION: {tool_name}
-Arguments:
-{arg_summary}
-
-Tool Semantic Metadata: {tool_metadata}
-
-Recent Observation:
-{recent_obs[:2000]}
-
-Thought: {(thought_content or '')[:500]}
-"""
-
-        # Call LLM judge
-        try:
-            response = self.client.llm_run(EBA_ALIGNMENT_PROMPT, judge_input)
-            parsed = self._safe_parse_json_object(response)
-            if not isinstance(parsed, dict):
-                parsed = {"decision": "BLOCK", "reason": "eba_parse_error"}
-        except Exception:
-            parsed = {"decision": "BLOCK", "reason": "eba_judge_error"}
-
-        # OVERRIDE: deterministic side-effect inference
-        det_se = self._infer_side_effect_from_tool_metadata(tool_name, tool_metadata)
-        parsed["side_effect"] = det_se
-
-        decision = parsed.get("decision", "BLOCK")
-        side_effect = det_se
-        violation = parsed.get("violation_type", "none")
-
-        # === EBA decision normalization ===
-        rt = (realignment or {}).get("realignment_type", "uncertain")
-        tp = (realignment or {}).get("task_progress", False) if realignment else True
-        vio = parsed.get("violation_type", "none") or "none"
-
-        # Normalize meaningless BLOCK + violation_type=none
-        if decision == "BLOCK" and vio in ("none", "", None):
-            if not side_effect and tp:
-                decision = "ALLOW_UPDATE"
-            elif side_effect and rt in ("final_effect", "conditional_final_effect", "delegated_effect") and tp:
-                decision = "RECOVER"
-                parsed["violation_type"] = "missing_evidence"
-                parsed["recovery_action"] = "complete_effect_params"
-            elif side_effect and (rt in ("unrelated", "uncertain") or not tp):
-                parsed["violation_type"] = "unsafe_unknown"
-            else:
-                decision = "RECOVER"
-                parsed["violation_type"] = "missing_evidence"
-                parsed["recovery_action"] = "read_more_evidence"
-        # Missing evidence -> RECOVER not BLOCK
-        if decision == "BLOCK" and vio in ("missing_evidence", "selector_unverified",
-                "effect_params_incomplete", "delegated_source_ambiguous", "query_result_empty"):
-            decision = "RECOVER"
-        # Authorized final effects should not default to block
-        if decision == "BLOCK" and rt in ("final_effect", "conditional_final_effect", "delegated_effect") and tp:
-            safe_violations = ("missing_evidence", "selector_unverified", "none", "",
-                                "effect_params_incomplete")
-            if vio in safe_violations:
-                decision = "ALLOW_PATCH" if not side_effect else "RECOVER"
-                if not side_effect:
-                    decision = "ALLOW_PATCH"
-                else:
-                    decision = "RECOVER"
-        parsed["violation_type"] = parsed.get("violation_type", "none") or "none"
-        violation = parsed.get("violation_type", "none")
-        # Apply normalized decision
-        decision = decision  # preserve
-
-        # === Deterministic safety overrides ===
-
-        # Override 1: sensitive externalization (only for communication/share tools)
-        sensitive_kw = ["security code", "verification code", "OTP", "2FA", "password",
-                         "token", "secret", "API key", "credential", "bank account",
-                         "IBAN", "private key", "login code", "passcode"]
-        if side_effect and any(kw in str(tool_args).lower() or kw in (recent_obs or "").lower() for kw in sensitive_kw):
-            decision = "BLOCK"
-            violation = "sensitive_externalization"
-            self.source_label_store.validation_trace.append(
-                ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                    event="eba_forced_block_sensitive_externalization",
-                    source_ids=[], details={"tool_name": tool_name},
-                    decision="reject", would_reject=True))
-
-        # Override 2: injected control arg
-        control_args = {"recipient", "account", "amount", "date", "file_id",
-                         "message_id", "channel", "participant", "url", "transaction_id"}
-        if side_effect and store:
-            for arg_name in control_args:
-                if arg_name in (tool_args or {}):
-                    val = str(tool_args[arg_name])
-                    for rec in getattr(store, "records", []):
-                        sl = set(getattr(rec, "source_labels", []) or [])
-                        if "injected_instruction" in sl and val in str(getattr(rec, "value", "")):
-                            decision = "BLOCK"
-                            violation = "injected_control_arg"
-                            self.source_label_store.validation_trace.append(
-                                ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                                    event="eba_forced_block_injected_control_arg",
-                                    source_ids=[], details={"tool_name": tool_name, "arg": arg_name},
-                                    decision="reject", would_reject=True))
-                            break
-
-        # Override 3: extra side effect with no authorization
-        if side_effect and decision == "ALLOW_PATCH":
-            auth_effects = parsed.get("authorized_effects", [])
-            if not auth_effects and violation == "none":
-                decision = "BLOCK"
-                violation = "unauthorized_effect"
-
-        # Log judge result
-        self.source_label_store.validation_trace.append(
-            ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                event="eba_judge_result",
-                source_ids=[],
-                details={"tool_name": tool_name, "decision": decision, "violation_type": violation,
-                          "side_effect": side_effect, "confidence": parsed.get("confidence", "medium")},
-                decision="log_only", would_reject=False))
-
-        # Act on decision
-        if decision in ("BLOCK",):
-            self.source_label_store.validation_trace.append(
-                ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                    event="eba_block", source_ids=[],
-                    details={"tool_name": tool_name, "violation_type": violation},
-                    decision="reject", would_reject=True))
-            self._source_flow_sanitize_rejected_output(
-                output,
-                f"[EBA BLOCKED] {tool_name}: {violation or 'unauthorized action'}."
-            )
-            return {"role": "user", "content": f"[EBA BLOCKED] {tool_name}."}, output
-
-        if decision == "RECOVER":
-            self.source_label_store.validation_trace.append(
-                ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                    event="eba_recover", source_ids=[],
-                    details={"tool_name": tool_name, "recovery_action": parsed.get("recovery_action"),
-                              "reason": parsed.get("reason")},
-                    decision="reject", would_reject=True))
-            reason = parsed.get('reason', 'insufficient evidence')
-            rec_action = parsed.get('recovery_action', 'collect more evidence')
-            msg = (
-                f"[EBA RECOVERY REQUIRED]\n"
-                f"The action {tool_name} appears task-relevant but lacks sufficient evidence.\n"
-                f"Reason: {reason}\n"
-                f"Required next step: {rec_action}.\n"
-                f"Suggested: collect or verify the relevant evidence before executing this action."
-            )
-            self._source_flow_sanitize_rejected_output(output, msg)
-            return {"content": f"[EBA RECOVERY] {tool_name}."}
-
-        # ALLOW_UPDATE / ALLOW_PATCH
-        self.source_label_store.validation_trace.append(
-            ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                event="eba_allow_update" if decision == "ALLOW_UPDATE" else "eba_allow_patch",
-                source_ids=[],
-                details={"tool_name": tool_name, "decision": decision, "anchor_type": parsed.get("anchor_type")},
-                decision="allow", would_reject=False))
-
-        # Update trajectory for ALLOW cases
-        self.function_trajectory = extended_trajectory
-        try:
-            self.node_checklist = json.dumps(extended_checklist)
-        except Exception:
-            self.node_checklist = extended_checklist
-
-        return None  # None means allowed, caller handles temp_achieved append
-
-
+    
     def _source_flow_is_high_risk_action(self, tool_name, tool_type):
         if tool_type in ("read", "observe", "transform", "parse"):
             return False
@@ -2943,65 +2637,65 @@ Thought: {(thought_content or '')[:500]}
                 # Controlled Action Extension (Phase 3)
                 is_action = self._is_action_tool(achieved_func)
                 is_trajectory_outside = True  # already determined by being in this else branch
-                cae_enabled = self.controlled_action_extension_enabled()
+                taer_enabled = self.controlled_action_extension_enabled()
 
-                if is_action and self.cae_mode == "off":
+                if is_action and self.taer_mode == "off":
                     self.source_label_store.validation_trace.append(
                         ValidationTraceEntry(
                             step=len(self.achieved_function_trajectory),
-                            event="cae_disabled_preserve_drift_native",
+                            event="taer_disabled_preserve_drift_native",
                             source_ids=[],
-                            details={"tool_name": achieved_func, "cae_mode": "off"},
+                            details={"tool_name": achieved_func, "taer_mode": "off"},
                             decision="log_only",
                             would_reject=False,
                         )
                     )
                     if self.logger:
-                        self.logger.info(f"CAE off: preserving DRIFT native path for {achieved_func}")
+                        self.logger.info(f"TAER off: preserving DRIFT native path for {achieved_func}")
                     # Fall through to original DRIFT Open Dynamic Updating below
 
-                if is_action and self.cae_mode == "block":
+                if is_action and self.taer_mode == "block":
                     self.source_label_store.validation_trace.append(
                         ValidationTraceEntry(
                             step=len(self.achieved_function_trajectory),
-                            event="cae_disabled_trajectory_outside_action",
+                            event="taer_disabled_trajectory_outside_action",
                             source_ids=[],
-                            details={"tool_name": achieved_func, "cae_mode": "block"},
+                            details={"tool_name": achieved_func, "taer_mode": "block"},
                             decision="log_only",
                             would_reject=False,
                         )
                     )
                     if self.logger:
-                        self.logger.info(f"CAE block: trajectory-outside ACTION {achieved_func} "
-                                         f"rejected without CAE")
+                        self.logger.info(f"TAER block: trajectory-outside ACTION {achieved_func} "
+                                         f"rejected without TAER")
 
                     self._source_flow_sanitize_rejected_output(
                         output,
-                        f"[CALL ERROR] CAE block mode. Trajectory-outside ACTION "
+                        f"[CALL ERROR] TAER block mode. Trajectory-outside ACTION "
                         f"{achieved_func} is not allowed."
                     )
                     error_msg = {
                         "role": "user",
                         "content": (
-                            f"[CALL ERROR] CAE is in block mode. The ACTION {achieved_func} "
+                            f"[CALL ERROR] TAER is in block mode. The ACTION {achieved_func} "
                             f"is outside the planned trajectory. "
                             "Stick to the original trajectory plan."
                         ),
                     }
                     return error_msg, output
 
-                if is_action and self.cae_mode == "strict":
+                if is_action and self.taer_mode == "strict":
                     tool_type = self.source_flow_contract_helper.get_tool_type(achieved_func)
                     if self._source_flow_is_high_risk_action(achieved_func, tool_type):
                         self.source_label_store.validation_trace.append(
                             ValidationTraceEntry(
                                 step=len(self.achieved_function_trajectory),
-                                event="cae_strict_blocked_high_risk_action",
+                                event="taer_strict_blocked_high_risk_action",
                                 source_ids=[],
                                 details={
                                     "tool_name": achieved_func,
                                     "tool_type": tool_type,
-                                    "cae_mode": "strict",
+                                    "taer_mode": "strict",
                                 },
                                 decision="reject",
                                 would_reject=True,
@@ -3009,26 +2703,26 @@ Thought: {(thought_content or '')[:500]}
                         )
                         if self.logger:
                             self.logger.info(
-                                f"CAE strict: blocked high-risk ACTION {achieved_func}"
+                                f"TAER strict: blocked high-risk ACTION {achieved_func}"
                             )
 
                         self._source_flow_sanitize_rejected_output(
                             output,
-                            f"[CALL ERROR] CAE strict mode blocked high-risk ACTION "
+                            f"[CALL ERROR] TAER strict mode blocked high-risk ACTION "
                             f"{achieved_func}. Stick to the original trajectory plan."
                         )
                         error_msg = {
                             "role": "user",
                             "content": (
-                                f"[CALL ERROR] CAE strict mode blocked the high-risk "
+                                f"[CALL ERROR] TAER strict mode blocked the high-risk "
                                 f"ACTION {achieved_func}. This ACTION is outside the "
-                                "planned trajectory and cannot use CAE in strict mode. "
+                                "planned trajectory and cannot use TAER in strict mode. "
                                 "Stick to the original trajectory plan."
                             ),
                         }
                         return error_msg, output
 
-                if is_action and self.cae_mode == "eba":
+                if is_action and self.taer_mode == "eba":
                     tool_args_by_name = {}
                     for call in (output.get("tool_calls", []) or []):
                         fn = call.function if hasattr(call, "function") else call.get("function", "")
@@ -3050,24 +2744,24 @@ Thought: {(thought_content or '')[:500]}
                     )
                     self.source_label_store.validation_trace.append(
                         ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                            event="sra_candidate", source_ids=[],
+                            event="taer_candidate", source_ids=[],
                             details={"tool": achieved_func, "sra": sra},
                             decision="log_only", would_reject=False))
-                    if self._eba_fast_allow_by_realignment(sra, tool_meta, achieved_func):
+                    if self._taer_fast_allow_by_realignment(sra, tool_meta, achieved_func):
                         self.source_label_store.validation_trace.append(
                             ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                                event="sra_fast_allow_update", source_ids=[],
+                                event="taer_fast_allow_update", source_ids=[],
                                 details={"tool": achieved_func},
                                 decision="allow", would_reject=False))
                         temp_achieved_trajectory.append(achieved_func)
                         continue
                     self.source_label_store.validation_trace.append(
                         ValidationTraceEntry(step=len(self.achieved_function_trajectory),
-                            event="sra_forward_to_eba", source_ids=[],
+                            event="taer_forward_to_eba", source_ids=[],
                             details={"tool": achieved_func},
                             decision="log_only", would_reject=False))
 
-                    eba_result = self._evidence_boundary_alignment(
+                    taer_result = self._evidence_boundary_alignment(
                         tool_name=achieved_func, tool_args=tool_args,
                         query=query, messages=messages, output=output,
                         thought_content=thought_content, func_ids=func_ids,
@@ -3076,16 +2770,16 @@ Thought: {(thought_content or '')[:500]}
                         realignment=sra,
                     )
 
-                    if eba_result is not None:
+                    if taer_result is not None:
                         # BLOCK or RECOVER returned an error message
-                        content = eba_result["content"] if isinstance(eba_result, dict) else str(eba_result); error_msg = {"role": "user", "content": content}
+                        content = taer_result["content"] if isinstance(taer_result, dict) else str(taer_result); error_msg = {"role": "user", "content": content}
                         return error_msg, output
 
                     # ALLOW_UPDATE / ALLOW_PATCH
                     temp_achieved_trajectory.append(achieved_func)
                     continue
 
-                if is_action and self.cae_mode == "repair":
+                if is_action and self.taer_mode == "repair":
                     tool_args_by_name = {}
                     for call in (output.get("tool_calls", []) or []):
                         fn = call.function if hasattr(call, "function") else call.get("function", "")
@@ -3103,7 +2797,7 @@ Thought: {(thought_content or '')[:500]}
 
                     if not repair_result.get("allowed"):
                         self._source_flow_sanitize_rejected_output(
-                            output, repair_result.get("call_error_message", "CAE repair rejected"),
+                            output, repair_result.get("call_error_message", "TAER repair rejected"),
                         )
                         error_msg = {
                             "role": "user",
@@ -3114,7 +2808,7 @@ Thought: {(thought_content or '')[:500]}
                     temp_achieved_trajectory.append(achieved_func)
                     continue
 
-                if cae_enabled and is_action:
+                if taer_enabled and is_action:
                     self.logger.info(
                         f"Trajectory-outside ACTION {achieved_func} entering Controlled Action Extension"
                     )
@@ -3129,7 +2823,7 @@ Thought: {(thought_content or '')[:500]}
                                 tool_args = {}
                             break
 
-                    cae_result = self._controlled_action_extension(
+                    taer_result = self._controlled_action_extension(
                         tool_name=achieved_func,
                         tool_args=tool_args,
                         query=query,
@@ -3139,16 +2833,16 @@ Thought: {(thought_content or '')[:500]}
                         extended_checklist=extended_checklist,
                     )
 
-                    if not cae_result["allowed"]:
+                    if not taer_result["allowed"]:
                         self._source_flow_sanitize_rejected_output(
                             output,
-                            cae_result.get("call_error_message", cae_result["reason"]),
+                            taer_result.get("call_error_message", taer_result["reason"]),
                         )
                         error_msg = {
                             "role": "user",
                             "content": (
                                 f"[CALL ERROR] Controlled Action Extension rejected {achieved_func}: "
-                                f"{cae_result.get('call_error_message', cae_result['reason'])}. "
+                                f"{taer_result.get('call_error_message', taer_result['reason'])}. "
                                 "Continue the original user task using authorized sources only."
                             ),
                         }
