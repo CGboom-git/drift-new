@@ -1,0 +1,5 @@
+=== EBA 60-CASE SMOKE (v2) ===
+Start: Tue Jul 21 21:58:22 CST 2026
+--- banking (10 x 3 = 30, injections 0,1,2) ---
+--- workspace (10 x 3 = 30, injections 0,1,2) ---
+=== DONE Tue Jul 21 22:00:15 CST 2026 ===
