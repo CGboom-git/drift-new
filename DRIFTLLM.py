@@ -40,6 +40,8 @@ class DRIFTLLM(PromptingLLM):
         self._source_flow_repeated_bad_flow_counts = {}
         self._source_flow_validated_args_cache: dict[str, dict[str, Any]] = {}
         self.taer_state = None
+        self._taer_one_time_auth = None  # {"tool_name", "tool_args", "used"} for checklist bypass
+        self._taer_pending_repairs = {}  # {repair_id: {repair, tool_name, tool_args}} for delayed binding
 
     def source_flow_enabled(self):
         return bool(
@@ -1308,31 +1310,50 @@ class DRIFTLLM(PromptingLLM):
     def _finalize_taer_repair(self, messages):
         """Handle repair lifecycle after tool execution result arrives.
 
-        Success → commit_repair; failure/error → rollback_repair.
-        Both paths restore execution focus to consumer_step_id.
+        Binds pending repairs to actual tool_call_id, then commits or rolls back.
+        Both paths clear pending repairs and one-time authorization.
         """
-        if self.taer_state is None or not self.taer_state.repair_steps:
+        if self.taer_state is None:
             return
         tool_msg = messages[-1]
-        tool_call_id = tool_msg.get("tool_call_id")
-        if not tool_call_id:
+        actual_tool_call_id = tool_msg.get("tool_call_id")
+        if not actual_tool_call_id:
             return
-        for repair in list(self.taer_state.repair_steps.values()):
-            if repair.tool_call_id == tool_call_id and repair.status == "candidate":
-                error = tool_msg.get("error")
-                has_error = bool(error)
+
+        error = tool_msg.get("error")
+        has_error = bool(error)
+        tool_result_args_raw = tool_msg.get("tool_call", {})
+        tool_name = None
+        if isinstance(tool_result_args_raw, dict):
+            tool_name = tool_result_args_raw.get("function") if isinstance(tool_result_args_raw.get("function"), str) else tool_result_args_raw.get("name")
+
+        if not tool_name and isinstance(tool_msg.get("name"), str):
+            tool_name = tool_msg.get("name")
+
+        matched = False
+        for repair_id, pending in list(self._taer_pending_repairs.items()):
+            repair = pending["repair"]
+            if tool_name and tool_name == pending["tool_name"]:
+                repair.tool_call_id = actual_tool_call_id
                 if not has_error:
                     self.logger.info(
-                        f"TAER repair success: {repair.repair_id} → commit"
+                        f"TAER repair success: {repair_id} (tool_name={tool_name}, "
+                        f"tool_call_id={actual_tool_call_id}) → commit"
                     )
-                    commit_repair(self.taer_state, repair.repair_id)
+                    commit_repair(self.taer_state, repair_id)
                 else:
                     self.logger.info(
-                        f"TAER repair failed: {repair.repair_id} → rollback ({error})"
+                        f"TAER repair failed: {repair_id} (tool_name={tool_name}, "
+                        f"tool_call_id={actual_tool_call_id}) → rollback ({error})"
                     )
-                    rollback_repair(self.taer_state, repair.repair_id)
+                    rollback_repair(self.taer_state, repair_id)
                 self.taer_state.active_consumer_step_id = repair.consumer_step_id
+                matched = True
                 break
+
+        if matched:
+            self._taer_pending_repairs.clear()
+            self._taer_one_time_auth = None
 
     def trajectory_constraint_validation(self, to_call_function, output, query, messages):
         """Judge whether if the executing function trajectory conform the control constraints.
@@ -1552,22 +1573,27 @@ class DRIFTLLM(PromptingLLM):
                         return error_msg, output
 
                     if relation == "REPAIR":
-                        repair_tool_call_id = None
-                        for tc in (output.get("tool_calls") or []):
-                            if hasattr(tc, "function") and tc.function == achieved_func:
-                                repair_tool_call_id = getattr(tc, "id", None)
-                                break
                         repair = create_repair_step(self.taer_state, achieved_func, tool_args, anchor_result)
-                        repair.tool_call_id = repair_tool_call_id
+                        self._taer_pending_repairs[repair.repair_id] = {
+                            "repair": repair,
+                            "tool_name": achieved_func,
+                            "tool_args": dict(tool_args),
+                        }
                         self.logger.info(
-                            f"TAER REPAIR stored: {repair.repair_id} → consumer {repair.consumer_step_id} "
-                            f"(tool_call_id={repair_tool_call_id})"
+                            f"TAER REPAIR stored as pending: {repair.repair_id} → consumer {repair.consumer_step_id}"
                         )
                         self.taer_state.active_consumer_step_id = repair.consumer_step_id
 
+                    self._taer_one_time_auth = {
+                        "tool_name": achieved_func,
+                        "tool_args": dict(tool_args),
+                        "used": False,
+                    }
+
                     if self.logger:
                         self.logger.info(
-                            f"TAER allowed {achieved_func} (relation={relation}, confidence={confidence})"
+                            f"TAER allowed {achieved_func} (relation={relation}, confidence={confidence}) "
+                            f"+ one-time auth"
                         )
 
                     temp_achieved_trajectory.append(achieved_func)
@@ -1590,6 +1616,17 @@ class DRIFTLLM(PromptingLLM):
     def checklist_constraint_validation(self, json_tool_calls, output, query, messages):
         """Judge whether if the parameter checklist conform the data constraints.
         """
+        if self._taer_one_time_auth is not None and not self._taer_one_time_auth.get("used", True):
+            auth = self._taer_one_time_auth
+            if json_tool_calls and len(json_tool_calls) == 1:
+                tc = json_tool_calls[0]
+                tc_name = tc["function"]["name"]
+                tc_args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"].get("arguments", {})
+                if tc_name == auth["tool_name"] and tc_args == auth["tool_args"]:
+                    self._taer_one_time_auth["used"] = True
+                    self.logger.info("One-time TAER authorization consumed; skipping checklist rejection")
+                    return None, output
+
         align_error_message = None
         if messages[-1]["role"] == "tool":
             latest_function_messages = messages[-1]["content"]

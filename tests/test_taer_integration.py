@@ -763,91 +763,210 @@ class TestTaerRouting(unittest.TestCase):
         mock_boundary.assert_not_called()
         llm._run_original_drift_deviation_validation.assert_called_once()
 
-    def test_repair_binds_tool_call_id(self):
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_one_time_auth_bypasses_checklist(self, mock_boundary, mock_matcher):
         from DRIFTLLM import DRIFTLLM
-        from taer.controller import create_repair_step
-        from taer.models import BackboneStep, TAERState
-
-        state = TAERState()
-        consumer = BackboneStep(
-            step_id="s005", original_index=0, tool_name="send_money",
-            obligation="send_money", authorized_effect={},
-            required_parameters={}, conditions={"account_id": False},
-            condition_states={}, status="ready",
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
         )
-        state.backbone_order = ["s005"]
-        state.backbone_steps = {"s005": consumer}
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "DIRECT_EFFECT",
+            "consumer_step_id": "s000",
+            "missing_condition": None,
+            "provides": "payment",
+            "expected_effect": "send $100 to John",
+            "control_sources": [],
+            "argument_sources": {},
+            "scope_delta": "NONE",
+            "risk": "REVERSIBLE_WRITE",
+            "confidence": "HIGH",
+            "reason": "valid",
+        })
+        mock_boundary.return_value = TAERBoundaryResult(
+            passed=True, explicit_violation=False, violation_type=None,
+            checked_authority_args={}, evidence_source_ids=[], reason="boundary_pass",
+        )
 
-        repair = create_repair_step(state, "get_account_details", {},
-                                     {"relation": "REPAIR", "consumer_step_id": "s005",
-                                      "missing_condition": "account_id"})
-        repair.tool_call_id = "call_tc_12345"
+        # TAER allows the call → sets _taer_one_time_auth
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 100, "recipient": "John"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
+        )
 
-        self.assertEqual(repair.tool_call_id, "call_tc_12345",
-                          "repair must be bound to its tool_call_id for lifecycle tracking")
+        self.assertIsNotNone(llm._taer_one_time_auth)
+        self.assertFalse(llm._taer_one_time_auth["used"])
 
-    def test_taer_finalize_lifecycle_success(self):
-        from taer.controller import create_repair_step, commit_repair
-        from taer.models import BackboneStep, TAERState
+        # Simulate checklist validation with matching call
+        json_tc = [{"function": {"name": "send_money", "arguments": json.dumps({"amount": 100, "recipient": "John"})}}]
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm, json_tc,
+            {"role": "assistant", "content": "<function_thought></function_thought>", "tool_calls": []},
+            "Send $100 to John", [{"role": "user", "content": "Send $100"}]
+        )
+        self.assertIsNone(err, "one-time auth should bypass checklist rejection")
+        self.assertTrue(llm._taer_one_time_auth["used"], "auth should be consumed")
+
+    def test_modified_args_still_rejected(self):
         from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._taer_one_time_auth = {
+            "tool_name": "send_money",
+            "tool_args": {"amount": 100, "recipient": "John"},
+            "used": False,
+        }
+        llm.logger = MagicMock()
 
-        state = TAERState()
+        # Different args → should not consume auth
+        json_tc = [{"function": {"name": "send_money", "arguments": json.dumps({"amount": 999, "recipient": "John"})}}]
+        DRIFTLLM.checklist_constraint_validation(
+            llm, json_tc,
+            {"role": "assistant", "content": "<function_thought></function_thought>", "tool_calls": []},
+            "Send $100", [{"role": "user", "content": "Send $100"}]
+        )
+        self.assertFalse(llm._taer_one_time_auth["used"],
+                          "modified args must not consume one-time auth")
+
+    def test_pending_repair_bound_to_real_tool_call_id(self):
+        from DRIFTLLM import DRIFTLLM
+        from taer.models import BackboneStep, TAERState
+
+        llm = self._make_llm("off")
+        llm.taer_state = TAERState()
         consumer = BackboneStep(
             step_id="s000", original_index=0, tool_name="send_money",
             obligation="send_money", authorized_effect={},
-            required_parameters={}, conditions={"account_id": False},
-            condition_states={"account_id": False}, status="ready",
+            required_parameters={}, conditions={"acct": False},
+            condition_states={"acct": False}, status="ready",
         )
-        state.backbone_order = ["s000"]
-        state.backbone_steps = {"s000": consumer}
-
-        repair1 = create_repair_step(state, "get_account", {},
-                                      {"relation": "REPAIR", "consumer_step_id": "s000",
-                                       "missing_condition": "account_id"})
-        repair1.tool_call_id = "call_ok"
-
-        llm = MagicMock()
-        llm.taer_state = state
+        llm.taer_state.backbone_order = ["s000"]
+        llm.taer_state.backbone_steps = {"s000": consumer}
+        llm._taer_pending_repairs = {}
         llm.logger = MagicMock()
-        llm._finalize_taer_repair = DRIFTLLM._finalize_taer_repair
 
-        messages = [{"role": "tool", "tool_call_id": "call_ok", "content": "Account: 12345", "error": None}]
-        llm._finalize_taer_repair(llm, messages)
+        # Simulate a pending repair from TAER
+        repair_id = "r000"
+        repair = MagicMock()
+        repair.repair_id = repair_id
+        repair.tool_call_id = None
+        repair.consumer_step_id = "s000"
+        repair.status = "candidate"
+        llm._taer_pending_repairs[repair_id] = {
+            "repair": repair, "tool_name": "get_account", "tool_args": {},
+        }
 
-        self.assertEqual(repair1.status, "done")
-        self.assertTrue(consumer.condition_states.get("account_id"))
+        # Simulate tool result with real tool_call_id
+        messages = [{"role": "tool", "tool_call_id": "call_real_001",
+                      "tool_call": {"function": "get_account"}, "name": "get_account",
+                      "content": "ok", "error": None}]
+        DRIFTLLM._finalize_taer_repair(llm, messages)
 
-    def test_taer_finalize_lifecycle_failure(self):
-        from taer.controller import create_repair_step
-        from taer.models import BackboneStep, TAERState
+        self.assertEqual(repair.tool_call_id, "call_real_001")
+        self.assertEqual(len(llm._taer_pending_repairs), 0)
+
+    def test_taer_finalize_success_clears_state(self):
         from DRIFTLLM import DRIFTLLM
+        from taer.models import BackboneStep, TAERState
 
-        state = TAERState()
+        llm = self._make_llm("off")
+        llm.taer_state = TAERState()
         consumer = BackboneStep(
             step_id="s000", original_index=0, tool_name="send_money",
             obligation="send_money", authorized_effect={},
-            required_parameters={}, conditions={"account_id": False},
-            condition_states={"account_id": False}, status="ready",
+            required_parameters={}, conditions={"acct": False},
+            condition_states={"acct": False}, status="ready",
         )
-        state.backbone_order = ["s000"]
-        state.backbone_steps = {"s000": consumer}
-
-        repair2 = create_repair_step(state, "get_account", {},
-                                      {"relation": "REPAIR", "consumer_step_id": "s000",
-                                       "missing_condition": "account_id"})
-        repair2.tool_call_id = "call_fail"
-
-        llm = MagicMock()
-        llm.taer_state = state
+        llm.taer_state.backbone_order = ["s000"]
+        llm.taer_state.backbone_steps = {"s000": consumer}
+        llm._taer_pending_repairs = {}
+        llm._taer_one_time_auth = {"tool_name": "get_account", "tool_args": {}, "used": False}
         llm.logger = MagicMock()
-        llm._finalize_taer_repair = DRIFTLLM._finalize_taer_repair
 
-        messages = [{"role": "tool", "tool_call_id": "call_fail", "content": "", "error": "Not Found"}]
-        llm._finalize_taer_repair(llm, messages)
+        repair_id = "r001"
+        rep = MagicMock()
+        rep.repair_id = repair_id
+        rep.tool_call_id = None
+        rep.consumer_step_id = "s000"
+        rep.status = "candidate"
+        llm._taer_pending_repairs[repair_id] = {
+            "repair": rep, "tool_name": "get_account", "tool_args": {},
+        }
 
-        self.assertEqual(repair2.status, "rolled_back")
-        self.assertEqual(state.active_consumer_step_id, "s000",
-                          "after failed repair, focus must return to consumer")
+        DRIFTLLM._finalize_taer_repair(llm, [
+            {"role": "tool", "tool_call_id": "call_ok",
+             "tool_call": {"function": "get_account"}, "name": "get_account",
+             "content": "account 123", "error": None}
+        ])
+
+        self.assertIsNone(llm._taer_one_time_auth)
+        self.assertEqual(len(llm._taer_pending_repairs), 0)
+        self.assertEqual(llm.taer_state.active_consumer_step_id, "s000")
+
+    def test_taer_finalize_failure_clears_state(self):
+        from DRIFTLLM import DRIFTLLM
+        from taer.models import BackboneStep, TAERState
+
+        llm = self._make_llm("off")
+        llm.taer_state = TAERState()
+        consumer = BackboneStep(
+            step_id="s000", original_index=0, tool_name="send_money",
+            obligation="send_money", authorized_effect={},
+            required_parameters={}, conditions={"acct": False},
+            condition_states={"acct": False}, status="ready",
+        )
+        llm.taer_state.backbone_order = ["s000"]
+        llm.taer_state.backbone_steps = {"s000": consumer}
+        llm._taer_pending_repairs = {}
+        llm._taer_one_time_auth = {"tool_name": "get_account", "tool_args": {}, "used": True}
+        llm.logger = MagicMock()
+
+        repair_id = "r002"
+        rep = MagicMock()
+        rep.repair_id = repair_id
+        rep.tool_call_id = None
+        rep.consumer_step_id = "s000"
+        rep.status = "candidate"
+        llm._taer_pending_repairs[repair_id] = {
+            "repair": rep, "tool_name": "get_account", "tool_args": {},
+        }
+
+        DRIFTLLM._finalize_taer_repair(llm, [
+            {"role": "tool", "tool_call_id": "call_fail",
+             "tool_call": {"function": "get_account"}, "name": "get_account",
+             "content": "", "error": "Not Found"}
+        ])
+
+        self.assertIsNone(llm._taer_one_time_auth)
+        self.assertEqual(len(llm._taer_pending_repairs), 0)
+        self.assertEqual(llm.taer_state.active_consumer_step_id, "s000")
+
+    def test_taer_allowed_call_produces_one_time_auth(self):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+
+        # UNIQUE + ready + MATCH path
+        mock_matcher = MagicMock()
+        mock_matcher.return_value = BackboneMatchResult(
+            status="UNIQUE", step_id="s000", candidate_step_ids=["s000"],
+            reason="single_match", is_currently_ready=True,
+            parameter_compatibility="MATCH",
+        )
+
+        with patch("DRIFTLLM.match_candidate_to_backbone", mock_matcher):
+            DRIFTLLM.trajectory_constraint_validation(
+                llm, ["send_money"],
+                self._make_output("send_money", {"amount": 100, "recipient": "John"}),
+                "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}]
+            )
+
+        self.assertIsNotNone(llm._taer_one_time_auth,
+                              "MATCH path should set one-time auth")
 
     @patch("DRIFTLLM.match_candidate_to_backbone")
     @patch("DRIFTLLM.check_taer_boundary")

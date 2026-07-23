@@ -23,11 +23,12 @@ class OpenAIModel():
         self.logger.info(f"Initial Model {model}")
         self.api_version = api_version
         if api_key:
-            self.client = openai.OpenAI(api_key=api_key)
+            self.client = openai.OpenAI(api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL"))
         else:
             try:
                 self.client = openai.OpenAI(
-                    api_key = os.environ.get("OPENAI_API_KEY")
+                    api_key = os.environ.get("OPENAI_API_KEY"),
+                    base_url = os.environ.get("OPENAI_BASE_URL"),
                     )
             except Exception as e:
                 raise ValueError(e)
