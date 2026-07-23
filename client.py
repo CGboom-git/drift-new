@@ -73,12 +73,18 @@ class OpenAIModel():
                 message["role"] = "assistant"
 
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_completion_tokens=10000,
-            # max_tokens=10000,
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=10000,
+            )
+        except openai.BadRequestError as e:
+            self.logger.error(f"API BadRequestError: {e}")
+            return ["CONTENT_FILTERED: The API rejected this request."]
+        except Exception as e:
+            self.logger.error(f"API call failed: {e}")
+            return ["API_ERROR: Generation failed."]
 
         # print(f"{name} (use {self.label}):")
         # self.logger.info(f"completion_tokens: {response.usage.completion_tokens}. prompt_tokens: {response.usage.prompt_tokens}. total_tokens: {response.usage.total_tokens}.\n")
