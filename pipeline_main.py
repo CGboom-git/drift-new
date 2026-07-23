@@ -39,6 +39,9 @@ def main(args, suite_type):
     else:
         output_name = f"{model_name}/{suites[0]}"
 
+    if args.run_tag:
+        output_name = f"{model_name}-{args.run_tag}/{suites[0]}"
+
     output_dir = os.path.join("runs", output_name)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)

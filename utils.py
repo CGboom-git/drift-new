@@ -58,6 +58,12 @@ def get_args(description='DRIFT', argv=None):
         default="off",
         help="TAER mode: on (Trajectory-Aware Execution Recovery enabled), off (use original DRIFT deviation validation).",
     )
+    parser.add_argument(
+        "--run_tag",
+        type=str,
+        default="",
+        help="Tag appended to output directory name for experiment tracking.",
+    )
 
     # Environment
     parser.add_argument('--seed', type=int, default=98, help='Random Seed.')
