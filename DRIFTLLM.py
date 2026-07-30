@@ -1351,12 +1351,12 @@ class DRIFTLLM(PromptingLLM):
             except Exception as exc:
                 if self.logger:
                     self.logger.info(f"Alignment judge failed for {achieved_func}: {exc}")
-                return ("UNKNOWN", None) if advisory_only else (None, output)
+                return ("UNKNOWN", output) if advisory_only else (None, output)
 
         if LLM_judge_result:
             if advisory_only:
                 self.logger.info("DRIFT advisory: ALIGN")
-                return ("ALIGN", None)
+                return ("ALIGN", output)
             self.function_trajectory = extended_function_trajectory
             try:
                 self.node_checklist = json.dumps(extended_checklist)
@@ -1368,7 +1368,7 @@ class DRIFTLLM(PromptingLLM):
 
         if advisory_only:
             self.logger.info("DRIFT advisory: MISALIGN")
-            return ("MISALIGN", None)
+            return ("MISALIGN", output)
 
         self.logger.info("Trajectory does not align with original ones, sending request to user.")
         align_error_message = {"role": "user", "content": f"[CALL ERROR] The function calling of {achieved_func} has been refused due to it does not align with original planned trajectory, please change to call other functions to complete original user query.\nRemember, do not stop working on the original user task to do other things.\nBelow is the specific Refusal Reason:\n {traj_judge_reason}.\nOriginal Planned Trajecotry:\n{self.function_trajectory}.\nAchieved Function Trajectory:\n{self.achieved_function_trajectory}.\nUser Query:\n{query}"}
@@ -1960,13 +1960,23 @@ class DRIFTLLM(PromptingLLM):
             return query, runtime, env, [*messages, output, error_message], extra_args
 
         if self.args.dynamic_validation:
+            pre_validation_output = output
             error_message, output = self.trajectory_constraint_validation(to_call_function, output, query, messages)
+            if not isinstance(output, dict):
+                if self.logger:
+                    self.logger.info("Validation returned invalid output; restoring pre-validation assistant output")
+                output = pre_validation_output
             if error_message:
                 error_message = self._wrap_function_error(error_message)
                 if error_message:
                     return query, runtime, env, [*messages, output, error_message], extra_args
             
+            pre_validation_output = output
             error_message, output = self.checklist_constraint_validation(json_tool_calls, output, query, messages)
+            if not isinstance(output, dict):
+                if self.logger:
+                    self.logger.info("Checklist validation returned invalid output; restoring pre-validation assistant output")
+                output = pre_validation_output
             if error_message:
                 error_message = self._wrap_function_error(error_message)
                 if error_message:

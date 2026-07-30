@@ -368,6 +368,30 @@ class TestTaerRouting(unittest.TestCase):
         self.assertNotIn("function_error", str(result[3]))
         llm._source_flow_sanitize_rejected_output.assert_not_called()
 
+    def test_validator_none_output_restored_before_checklist(self):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm.args.dynamic_validation = True
+        llm.args.source_flow_validation = False
+        llm.source_flow_enabled = MagicMock(return_value=False)
+        llm._message_to_sharegpt = lambda message: DRIFTLLM._message_to_sharegpt(llm, message)
+        llm.achieve_tools = MagicMock()
+        llm.client.agent_run.return_value = ["<function_call>[]</function_call>"]
+        output = {"role": "assistant", "content": "<function_call>[]</function_call>", "tool_calls": []}
+        llm._parse_model_output = MagicMock(return_value=output)
+        llm._load_previous_calls = MagicMock(return_value=[])
+        llm._wrap_function_error = lambda error_message: DRIFTLLM._wrap_function_error(llm, error_message)
+        llm.trajectory_constraint_validation = MagicMock(return_value=("ALIGN", None))
+        llm.checklist_constraint_validation = MagicMock(return_value=(None, output))
+        llm._source_flow_validate_tool_calls = MagicMock(return_value=None)
+        runtime = MagicMock()
+        runtime.functions = {"dummy": MagicMock()}
+
+        result = DRIFTLLM.query(llm, "Send money", runtime, MagicMock(), [{"role": "user", "content": "Send money"}], {})
+
+        self.assertEqual(result[3][-1], output)
+        llm.checklist_constraint_validation.assert_called_once()
+
     def test_forced_advisory_passes_delegated_context(self):
         from DRIFTLLM import DRIFTLLM
         llm = self._make_llm("on")
@@ -375,11 +399,12 @@ class TestTaerRouting(unittest.TestCase):
         llm.tool_permissions = {"send_direct_message": "Write"}
         llm._build_delegated_task_context = MagicMock(return_value="delegated todo")
         llm.alignment_judge = MagicMock(return_value=(True, "ok"))
+        output = {"tool_calls": []}
 
         result = DRIFTLLM._run_original_drift_deviation_validation(
             llm,
             "send_direct_message",
-            {"tool_calls": []},
+            output,
             "Do delegated TODOs",
             [{"role": "tool", "content": "todo"}],
             ["send_direct_message"],
@@ -388,8 +413,32 @@ class TestTaerRouting(unittest.TestCase):
             "todo",
         )
 
-        self.assertEqual(result, ("ALIGN", None))
+        self.assertEqual(result, ("ALIGN", output))
         self.assertEqual(llm.alignment_judge.call_args.kwargs["delegated_task_context"], "delegated todo")
+
+    def test_forced_advisory_misalign_and_unknown_preserve_output(self):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._is_read_tool.return_value = False
+        llm.tool_permissions = {"send_direct_message": "Write"}
+        llm._build_delegated_task_context = MagicMock(return_value="")
+        output = {"tool_calls": []}
+
+        llm.alignment_judge = MagicMock(return_value=(False, "no"))
+        self.assertEqual(
+            DRIFTLLM._run_original_drift_deviation_validation(
+                llm, "send_direct_message", output, "query", [], [], [], "thought", "tool"
+            ),
+            ("MISALIGN", output),
+        )
+
+        llm.alignment_judge = MagicMock(side_effect=RuntimeError("boom"))
+        self.assertEqual(
+            DRIFTLLM._run_original_drift_deviation_validation(
+                llm, "send_direct_message", output, "query", [], [], [], "thought", "tool"
+            ),
+            ("UNKNOWN", output),
+        )
 
     @patch("DRIFTLLM.match_candidate_to_backbone")
     @patch("DRIFTLLM.check_taer_boundary")
