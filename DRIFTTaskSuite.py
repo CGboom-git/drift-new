@@ -101,9 +101,14 @@ class DRIFTTaskSuite(TaskSuite[Env]):
         self,
         messages: Sequence[ChatMessage],
         ) -> list[MessageContentBlock] | None:
+        if not messages:
+            return None
         if messages[-1]["role"] != "assistant":
             return None
         return [{"type": "text", "content": messages[-1]["content"]}]
+
+    def _without_none_messages(self, messages):
+        return [message for message in messages or [] if message is not None]
 
     def functions_call_format(self, messages):
         for message in messages:
@@ -185,6 +190,7 @@ class DRIFTTaskSuite(TaskSuite[Env]):
                 task_environment = e.task_environment
                 messages = e.messages
 
+            messages = self._without_none_messages(messages)
             model_output = self.model_output_from_messages(messages)
             if model_output is not None:
                 break
@@ -192,6 +198,7 @@ class DRIFTTaskSuite(TaskSuite[Env]):
         if model_output is None:
             warnings.warn(f"Model output was None for task {user_task.ID}")
 
+        messages = self._without_none_messages(messages)
         functions_stack_trace = functions_stack_trace_from_messages(messages)
         utility = self._check_task_result(
             user_task,
@@ -216,5 +223,4 @@ class DRIFTTaskSuite(TaskSuite[Env]):
         )
 
         return utility, security, format_messages
-
 

@@ -9,6 +9,7 @@ from source_flow import (
     ValidationTraceEntry,
 )
 from prompts import TAER_ANCHOR_PROMPT
+from authority_utils import authority_value_variants, iter_authority_values
 from taer import init_taer_backbone, match_candidate_to_backbone, check_taer_boundary
 from taer import check_params_against_consumer, create_repair_step, commit_repair, rollback_repair
 
@@ -42,6 +43,8 @@ class DRIFTLLM(PromptingLLM):
         self.taer_state = None
         self._taer_one_time_auth = None  # {"tool_name", "tool_args", "used"} for checklist bypass
         self._taer_pending_repairs = {}  # {repair_id: {repair, tool_name, tool_args}} for delayed binding
+        self._final_decision_owner = ""  # "TAER" or "ORIGINAL_DRIFT" per validation round
+        self._user_explicit_entities = set()  # user-authorized entities from query
 
     def source_flow_enabled(self):
         return bool(
@@ -98,18 +101,20 @@ class DRIFTLLM(PromptingLLM):
             return tool_call.get("args") or {}
         return {}
 
-    def _source_flow_record_tool_message(self, messages):
-        if not self.source_flow_enabled() or len(messages) == 0 or messages[-1]["role"] != "tool":
+    def _source_flow_record_tool_message_at(self, messages, message_index):
+        if not self.source_flow_enabled() or len(messages) == 0:
             return None
 
         if not self._source_flow_run_active:
             self.start_source_flow_run("")
 
-        tool_message = messages[-1]
+        tool_message = messages[message_index]
+        if tool_message.get("role") != "tool":
+            return None
         tool_name = self._source_flow_tool_name(tool_message)
         tool_call_id = self._source_flow_tool_call_id(tool_message)
         tool_args = self._source_flow_tool_args(tool_message)
-        step = self._source_flow_tool_step(messages)
+        step = self._source_flow_tool_step(messages[:message_index + 1])
         raw_source_id = self.source_label_store.record_tool_raw_output(
             tool_name,
             tool_message.get("content"),
@@ -149,7 +154,29 @@ class DRIFTLLM(PromptingLLM):
             "raw_source_id": raw_source_id,
             "tool_call_id": tool_call_id,
             "raw_created": raw_created,
+            "message_index": message_index,
         }
+
+    def _source_flow_record_tool_message(self, messages):
+        if len(messages) == 0:
+            return None
+        return self._source_flow_record_tool_message_at(messages, len(messages) - 1)
+
+    def _trailing_tool_message_indexes(self, messages):
+        indexes = []
+        for index in range(len(messages) - 1, -1, -1):
+            if messages[index].get("role") != "tool":
+                break
+            indexes.append(index)
+        return list(reversed(indexes))
+
+    def _wrap_function_error(self, error_message):
+        if isinstance(error_message, dict):
+            wrapped = dict(error_message)
+        else:
+            wrapped = {"role": "user", "content": str(error_message)}
+        wrapped["content"] = f"</function_error>\n{wrapped['content']}\n</function_error>"
+        return wrapped
 
     def _source_flow_post_action_audit(self, tool_name, tool_args, raw_output):
         if not self._is_action_tool(tool_name):
@@ -1099,7 +1126,7 @@ class DRIFTLLM(PromptingLLM):
         else:
             return True, ""
 
-    def initial_constraints_build(self, completion):
+    def initial_constraints_build(self, completion, raw_user_query=""):
         """Build the initial control and data constraints.
         """
 
@@ -1146,14 +1173,42 @@ class DRIFTLLM(PromptingLLM):
                 completion[0] if isinstance(completion, list) else str(completion),
                 self.source_flow_contract_helper,
             )
+            self._user_explicit_entities = self._extract_user_explicit_entities(raw_user_query or "")
             if self.logger:
                 self.logger.info(f"TAER backbone initialized with {len(self.taer_state.backbone_order)} steps")
+                self.logger.info(f"User explicit entities: {self._user_explicit_entities}")
+
+    def _extract_user_explicit_entities(self, query_text):
+        entities = set()
+        for match in re.finditer(r'[\w.+-]+@[\w-]+\.[\w.]+', query_text):
+            entities.add(match.group(0).strip().lower())
+        for match in re.finditer(r'(?:https?://|www\.)[\w./?=&%+:#-]+', query_text):
+            entities.add(match.group(0).strip().lower())
+        for match in re.finditer(r'#[\w-]+', query_text):
+            entities.add(match.group(0).strip().lower())
+        for match in re.finditer(r'\b[A-Z][a-z]{2,}\b', query_text):
+            entities.add(match.group(0).strip().lower())
+        return entities
+
+    def _action_targets_authorized(self, tool_args, explicit_entities):
+        if not explicit_entities:
+            return False
+        normalized_entities = set()
+        for entity in explicit_entities:
+            normalized_entities.update(authority_value_variants(entity))
+
+        for target_value in iter_authority_values(tool_args):
+            if set(authority_value_variants(target_value)) & normalized_entities:
+                return True
+        return False
 
     def injection_isolate(self, detected_instructions, messages, openai_messages, source_flow_context=None):
         """Isolate the injection contents in the memory flow.
         """
 
-        if ("<detected_instructions>" in detected_instructions) and (messages[-1]["role"] == "tool"):
+        message_index = source_flow_context.get("message_index", len(messages) - 1) if source_flow_context else len(messages) - 1
+        openai_index = source_flow_context.get("openai_index", message_index) if source_flow_context else message_index
+        if ("<detected_instructions>" in detected_instructions) and (messages[message_index]["role"] == "tool"):
             detected_pattern = re.compile(r"<detected_instructions>(.*?)</detected_instructions>", re.DOTALL)
             injection_match = detected_pattern.search(detected_instructions)
             # Extract the function call content
@@ -1168,8 +1223,7 @@ class DRIFTLLM(PromptingLLM):
             except:
                 replace_list = []
 
-            length = len(openai_messages[-1]["content"])
-            returned_message = copy.deepcopy(messages[-1]["content"])
+            returned_message = copy.deepcopy(messages[message_index]["content"])
 
             self.logger.info(f"Returned Messages: {returned_message}")
             self.logger.info(f"Detected Instructions: {replace_list}")
@@ -1185,7 +1239,7 @@ class DRIFTLLM(PromptingLLM):
                     self.source_label_store.record_tool_sanitized_output(
                         source_flow_context["tool_name"],
                         source_flow_context["raw_source_id"],
-                        messages[-1]["content"],
+                        messages[message_index]["content"],
                         source_flow_context["step"],
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
@@ -1202,9 +1256,12 @@ class DRIFTLLM(PromptingLLM):
                 pattern = r'[\s\\]+'.join(escaped_words)
                 
                 pattern = r'\s*' + pattern + r'\s*'
-                return re.sub(str(pattern), ' ', str(p), flags=re.DOTALL).strip()
+                return re.subn(str(pattern), ' [REMOVED_INJECTED_INSTRUCTION] ', str(p), flags=re.DOTALL)
 
             # cycling mask
+            replaced_count = 0
+            candidate_message_content = messages[message_index]["content"]
+            candidate_openai_content = openai_messages[openai_index]["content"]
             for item in replace_list:
                 if source_flow_context and self.source_flow_enabled():
                     self.source_label_store.record_injected_fragment(
@@ -1214,25 +1271,15 @@ class DRIFTLLM(PromptingLLM):
                         source_flow_context["step"],
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
-                messages[-1]["content"] = remove_sentence(messages[-1]["content"], item)
-                openai_messages[-1]["content"] = remove_sentence(openai_messages[-1]["content"], item)
+                candidate_message_content, msg_count = remove_sentence(candidate_message_content, item)
+                candidate_openai_content, openai_count = remove_sentence(candidate_openai_content, item)
+                candidate_message_content = candidate_message_content.strip()
+                candidate_openai_content = candidate_openai_content.strip()
+                replaced_count += max(msg_count, openai_count)
 
-            if len(openai_messages[-1]["content"]) == length:
-                for item in replace_list:
-                    messages[-1]["content"] = remove_sentence(messages[-1]["content"], item)
-                    openai_messages[-1]["content"] = remove_sentence(openai_messages[-1]["content"], item)
-
-            if len(openai_messages[-1]["content"]) == length:
-                if source_flow_context and self.source_flow_enabled():
-                    self.source_label_store.mark_raw_output_sanitized_visible(
-                        source_flow_context["tool_name"],
-                        source_flow_context["step"],
-                        True,
-                        tool_call_id=source_flow_context["tool_call_id"],
-                    )
-                return False, messages, openai_messages
-
-            else:
+            if replaced_count == 0:
+                messages[message_index]["content"] = "[UNTRUSTED_TOOL_OUTPUT_QUARANTINED]"
+                openai_messages[openai_index]["content"] = "[UNTRUSTED_TOOL_OUTPUT_QUARANTINED]"
                 if source_flow_context and self.source_flow_enabled():
                     self.source_label_store.mark_raw_output_sanitized_visible(
                         source_flow_context["tool_name"],
@@ -1243,7 +1290,26 @@ class DRIFTLLM(PromptingLLM):
                     self.source_label_store.record_tool_sanitized_output(
                         source_flow_context["tool_name"],
                         source_flow_context["raw_source_id"],
-                        messages[-1]["content"],
+                        messages[message_index]["content"],
+                        source_flow_context["step"],
+                        tool_call_id=source_flow_context["tool_call_id"],
+                    )
+                return True, messages, openai_messages
+
+            else:
+                messages[message_index]["content"] = candidate_message_content
+                openai_messages[openai_index]["content"] = candidate_openai_content
+                if source_flow_context and self.source_flow_enabled():
+                    self.source_label_store.mark_raw_output_sanitized_visible(
+                        source_flow_context["tool_name"],
+                        source_flow_context["step"],
+                        False,
+                        tool_call_id=source_flow_context["tool_call_id"],
+                    )
+                    self.source_label_store.record_tool_sanitized_output(
+                        source_flow_context["tool_name"],
+                        source_flow_context["raw_source_id"],
+                        messages[message_index]["content"],
                         source_flow_context["step"],
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
@@ -1263,13 +1329,19 @@ class DRIFTLLM(PromptingLLM):
         self, achieved_func, output, query, messages,
         extended_function_trajectory, extended_checklist,
         thought_content, latest_function_messages,
+        advisory_only=False,
     ):
         """Original DRIFT deviation-handling via alignment_judge.
 
         Used when taer_mode=off or when TAER does not resolve the deviation.
         Returns (align_error_message, output).
         """
+        if not advisory_only and getattr(self.args, "taer_mode", "off") == "on":
+            self.logger.info("DRIFT: forced advisory (TAER ON guard)")
+            advisory_only = True
+
         traj_judge_reason = f"The function trajectory of {extended_function_trajectory} is not aligned with trajectory plan of {self.function_trajectory}."
+        delegated_task_context = self._build_delegated_task_context(query)
 
         if self._is_read_tool(achieved_func):
             LLM_judge_result = True
@@ -1277,19 +1349,30 @@ class DRIFTLLM(PromptingLLM):
             try:
                 if self.tool_permissions[achieved_func] != "Read":
                     self.logger.info(f"Trajectory does not align, permission of '{achieved_func}' is {self.tool_permissions[achieved_func]}")
-                    LLM_judge_result, _ = self.alignment_judge(query=query, last_function_messages=latest_function_messages, thought_content=thought_content, function_trajectory=self.function_trajectory, current_function_trajectory=extended_function_trajectory, conversations=messages)
+                    LLM_judge_result, _ = self.alignment_judge(query=query, last_function_messages=latest_function_messages, thought_content=thought_content, function_trajectory=self.function_trajectory, current_function_trajectory=extended_function_trajectory, conversations=messages, delegated_task_context=delegated_task_context)
                 else:
                     LLM_judge_result = True
-            except:
-                LLM_judge_result = True
+            except Exception as exc:
+                if self.logger:
+                    self.logger.info(f"Alignment judge failed for {achieved_func}: {exc}")
+                return ("UNKNOWN", None) if advisory_only else (None, output)
 
         if LLM_judge_result:
+            if advisory_only:
+                self.logger.info("DRIFT advisory: ALIGN")
+                return ("ALIGN", None)
             self.function_trajectory = extended_function_trajectory
             try:
                 self.node_checklist = json.dumps(extended_checklist)
             except:
                 self.node_checklist = extended_checklist
+            self._final_decision_owner = "ORIGINAL_DRIFT"
+            self.logger.info("Final decision: ALLOW (owner=ORIGINAL_DRIFT)")
             return None, output
+
+        if advisory_only:
+            self.logger.info("DRIFT advisory: MISALIGN")
+            return ("MISALIGN", None)
 
         self.logger.info("Trajectory does not align with original ones, sending request to user.")
         align_error_message = {"role": "user", "content": f"[CALL ERROR] The function calling of {achieved_func} has been refused due to it does not align with original planned trajectory, please change to call other functions to complete original user query.\nRemember, do not stop working on the original user task to do other things.\nBelow is the specific Refusal Reason:\n {traj_judge_reason}.\nOriginal Planned Trajecotry:\n{self.function_trajectory}.\nAchieved Function Trajectory:\n{self.achieved_function_trajectory}.\nUser Query:\n{query}"}
@@ -1299,6 +1382,8 @@ class DRIFTLLM(PromptingLLM):
             self.function_trajectory = extended_function_trajectory
             self.node_checklist = extended_checklist
             self.logger.info("User has approved the request.")
+            self._final_decision_owner = "ORIGINAL_DRIFT"
+            self.logger.info("Final decision: ALLOW (owner=ORIGINAL_DRIFT)")
             return None, output
 
         output["tool_calls"] = []
@@ -1367,6 +1452,12 @@ class DRIFTLLM(PromptingLLM):
         for func_ids, achieved_func in enumerate(self.achieved_function_trajectory + to_call_function):
             if (func_ids < len(self.function_trajectory)) and (achieved_func == self.function_trajectory[func_ids]):
                 temp_achieved_trajectory.append(achieved_func)
+                if getattr(self.args, "taer_mode", "off") == "on":
+                    self._final_decision_owner = "TAER"
+                    self.logger.info("Final decision: ALLOW (owner=TAER, in_plan=True)")
+                else:
+                    self._final_decision_owner = "ORIGINAL_DRIFT"
+                    self.logger.info("Final decision: ALLOW (owner=ORIGINAL_DRIFT, in_plan=True)")
                 continue
                 
             else:
@@ -1425,6 +1516,8 @@ class DRIFTLLM(PromptingLLM):
                             self.node_checklist = json.dumps(extended_checklist)
                         except:
                             self.node_checklist = extended_checklist
+                        self._final_decision_owner = "TAER"
+                        self.logger.info("Final decision: ALLOW (owner=TAER, in_plan=True)")
                         continue
 
                     self.logger.info(
@@ -1485,6 +1578,13 @@ class DRIFTLLM(PromptingLLM):
                         relation = "AMBIGUOUS"
 
                     if confidence == "HIGH" and relation == "NEW_GOAL":
+                        if self._action_targets_authorized(tool_args, self._user_explicit_entities):
+                            self.logger.info(
+                                f"TAER NEW_GOAL target explicitly authorized by raw query; downgrading NEW_GOAL to AMBIGUOUS for {achieved_func}"
+                            )
+                            relation = "AMBIGUOUS"
+
+                    if confidence == "HIGH" and relation == "NEW_GOAL":
                         self._source_flow_sanitize_rejected_output(
                             output,
                             f"[CALL ERROR] TAER rejected {achieved_func}: HIGH-confidence NEW_GOAL — unauthorized effect.",
@@ -1498,19 +1598,27 @@ class DRIFTLLM(PromptingLLM):
                         }
                         if self.logger:
                             self.logger.info(f"{achieved_func} rejected by TAER as HIGH-confidence NEW_GOAL")
+                        self._final_decision_owner = "TAER"
+                        self.logger.info("Final decision: REJECT (owner=TAER)")
                         return error_msg, output
 
                     if relation == "AMBIGUOUS":
                         self.logger.info(
                             f"TAER ambiguous for {achieved_func}; falling back to original DRIFT"
                         )
-                        align_error_message, output = self._run_original_drift_deviation_validation(
+                        drift_advice, _ = self._run_original_drift_deviation_validation(
                             achieved_func, output, query, messages,
                             extended_function_trajectory, extended_checklist,
                             thought_content, latest_function_messages,
+                            advisory_only=True,
                         )
-                        if align_error_message:
-                            return align_error_message, output
+                        if drift_advice == "ALIGN":
+                            self._final_decision_owner = "TAER"
+                            self.logger.info("Final decision: ALLOW (owner=TAER, drift_advice=ALIGN)")
+                        else:
+                            self._final_decision_owner = "TAER"
+                            self.logger.info("Final decision: REJECT (owner=TAER)")
+                            return {"role": "user", "content": f"[CALL ERROR] TAER rejected {achieved_func}: ambiguous trajectory was not supported by DRIFT advisory."}, output
                         temp_achieved_trajectory.append(achieved_func)
                         continue
 
@@ -1521,13 +1629,18 @@ class DRIFTLLM(PromptingLLM):
                         self.logger.info(
                             f"TAER param check fallback: {param_reason} → original DRIFT"
                         )
-                        align_error_message, output = self._run_original_drift_deviation_validation(
+                        drift_advice, _ = self._run_original_drift_deviation_validation(
                             achieved_func, output, query, messages,
                             extended_function_trajectory, extended_checklist,
                             thought_content, latest_function_messages,
+                            advisory_only=True,
                         )
-                        if align_error_message:
-                            return align_error_message, output
+                        if drift_advice != "ALIGN":
+                            self._final_decision_owner = "TAER"
+                            self.logger.info("Final decision: REJECT (owner=TAER)")
+                            return {"role": "user", "content": f"[CALL ERROR] TAER rejected {achieved_func}: parameter fallback was not supported by DRIFT advisory."}, output
+                        self._final_decision_owner = "TAER"
+                        self.logger.info("Final decision: ALLOW (owner=TAER, drift_advice=ALIGN)")
                         temp_achieved_trajectory.append(achieved_func)
                         continue
 
@@ -1545,6 +1658,8 @@ class DRIFTLLM(PromptingLLM):
                         }
                         if self.logger:
                             self.logger.info(f"{achieved_func} blocked by TAER param check: {param_reason}")
+                        self._final_decision_owner = "TAER"
+                        self.logger.info("Final decision: REJECT (owner=TAER)")
                         return error_msg, output
 
                     source_records = list(self.source_label_store.records) if self.source_label_store else []
@@ -1570,6 +1685,8 @@ class DRIFTLLM(PromptingLLM):
                                 f"{boundary.reason}. Continue the original user task."
                             ),
                         }
+                        self._final_decision_owner = "TAER"
+                        self.logger.info("Final decision: REJECT (owner=TAER)")
                         return error_msg, output
 
                     if relation == "REPAIR":
@@ -1595,6 +1712,8 @@ class DRIFTLLM(PromptingLLM):
                             f"TAER allowed {achieved_func} (relation={relation}, confidence={confidence}) "
                             f"+ one-time auth"
                         )
+                    self._final_decision_owner = "TAER"
+                    self.logger.info(f"Final decision: ALLOW (owner=TAER, relation={relation})")
 
                     temp_achieved_trajectory.append(achieved_func)
                     continue
@@ -1706,7 +1825,14 @@ class DRIFTLLM(PromptingLLM):
             if isinstance(msg["content"], list) and len(msg["content"]) > 0:
                 msg["content"] = msg["content"][0]["content"]
 
-        source_flow_context = self._source_flow_record_tool_message(messages)
+        tool_message_indexes = self._trailing_tool_message_indexes(messages)
+        source_flow_contexts = []
+        for message_index in tool_message_indexes:
+            context = self._source_flow_record_tool_message_at(messages, message_index)
+            if context is None:
+                context = {"message_index": message_index}
+            source_flow_contexts.append(context)
+        source_flow_context = source_flow_contexts[-1] if source_flow_contexts else None
 
         if self.taer_state is not None and messages and messages[-1]["role"] == "tool":
             self._finalize_taer_repair(messages)
@@ -1732,38 +1858,41 @@ class DRIFTLLM(PromptingLLM):
                 openai_messages = [{"role": "system", "content": system_message}, *openai_messages]
                 completion = self.client.agent_run(openai_messages, self.tools_docs_list)
 
-                self.initial_constraints_build(completion)
+                self.initial_constraints_build(completion, query)
 
         # Injection Detection
         if self.args.injection_isolation:
             if messages[-1]["role"] == "tool":
                 self.logger.info("Injection Detecting ...")
                 system_message = INJECTION_DETECTION_PROMPT
-                obs = messages[-1]
-                user_prompt = f"""<User Query>\n{query}\n</User Query>
-                <Tool Results>\n{obs}\n</Tool Results>"""
                 openai_messages = [{"role": "system", "content": system_message}, *openai_messages]
 
-                detected_instructions = self.client.llm_run(system_message, user_prompt)
-
-                cycle_times = 0
-                injection_completion_mark, messages, openai_messages = self.injection_isolate(detected_instructions, messages, openai_messages, source_flow_context)
-                # cycling mask
-                while (not injection_completion_mark) and (cycle_times < self.mask_limitation):
-                    cycle_times += 1
-                    obs = messages[-1]
+                for context in source_flow_contexts:
+                    context["openai_index"] = context["message_index"] + 1
+                    obs = messages[context["message_index"]]
                     user_prompt = f"""<User Query>\n{query}\n</User Query>
                     <Tool Results>\n{obs}\n</Tool Results>"""
                     detected_instructions = self.client.llm_run(system_message, user_prompt)
-                    injection_completion_mark, messages, openai_messages = self.injection_isolate(detected_instructions, messages, openai_messages, source_flow_context)
 
-        elif source_flow_context and self.source_flow_enabled():
-            self.source_label_store.mark_raw_output_sanitized_visible(
-                source_flow_context["tool_name"],
-                source_flow_context["step"],
-                True,
-                tool_call_id=source_flow_context["tool_call_id"],
-            )
+                    cycle_times = 0
+                    injection_completion_mark, messages, openai_messages = self.injection_isolate(detected_instructions, messages, openai_messages, context)
+                    # cycling mask
+                    while (not injection_completion_mark) and (cycle_times < self.mask_limitation):
+                        cycle_times += 1
+                        obs = messages[context["message_index"]]
+                        user_prompt = f"""<User Query>\n{query}\n</User Query>
+                        <Tool Results>\n{obs}\n</Tool Results>"""
+                        detected_instructions = self.client.llm_run(system_message, user_prompt)
+                        injection_completion_mark, messages, openai_messages = self.injection_isolate(detected_instructions, messages, openai_messages, context)
+
+        elif source_flow_contexts and self.source_flow_enabled():
+            for context in source_flow_contexts:
+                self.source_label_store.mark_raw_output_sanitized_visible(
+                    context["tool_name"],
+                    context["step"],
+                    True,
+                    tool_call_id=context["tool_call_id"],
+                )
                 
         # thought-calling
         self.logger.info("Tool Reasoning ...")
@@ -1811,6 +1940,7 @@ class DRIFTLLM(PromptingLLM):
             to_call_function.append(call["function"]["name"])
 
         # Trajectory, Chechlist Validation
+        self._final_decision_owner = ""  # Reset per validation round
         source_flow_pre_dynamic_state = None
         if self.args.dynamic_validation and self.source_flow_validation_enabled():
             source_flow_pre_dynamic_state = self._source_flow_trajectory_snapshot()
@@ -1830,15 +1960,20 @@ class DRIFTLLM(PromptingLLM):
         if self.args.dynamic_validation:
             error_message, output = self.trajectory_constraint_validation(to_call_function, output, query, messages)
             if error_message:
-                error_message["content"] = f"</function_error>\n{error_message}\n</function_error>"
+                error_message = self._wrap_function_error(error_message)
                 return query, runtime, env, [*messages, output, error_message], extra_args
             
             error_message, output = self.checklist_constraint_validation(json_tool_calls, output, query, messages)
             if error_message:
-                error_message["content"] = f"</function_error>\n{error_message}\n</function_error>"
+                error_message = self._wrap_function_error(error_message)
                 return query, runtime, env, [*messages, output, error_message], extra_args
 
         source_flow_decision = self._source_flow_validate_tool_calls(output)
+        if self._final_decision_owner and source_flow_decision is not None:
+            self.logger.info(
+                f"SourceFlow: final decision already made (owner={getattr(self.args, 'taer_mode', '')}) — recording evidence only, not rejecting"
+            )
+            source_flow_decision = None
         if source_flow_decision is not None:
             if source_flow_decision.reject:
                 self._source_flow_handle_rejection_after_dynamic_validation(source_flow_pre_dynamic_state)
