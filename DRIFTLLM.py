@@ -171,6 +171,8 @@ class DRIFTLLM(PromptingLLM):
         return list(reversed(indexes))
 
     def _wrap_function_error(self, error_message):
+        if isinstance(error_message, str) and error_message in {"ALIGN", "MISALIGN", "UNKNOWN"}:
+            return None
         if isinstance(error_message, dict):
             wrapped = dict(error_message)
         else:
@@ -1133,6 +1135,7 @@ class DRIFTLLM(PromptingLLM):
         self.function_trajectory = []
         self.achieved_function_trajectory = []
         self.node_checklist = "None"
+        self._user_explicit_entities = self._extract_user_explicit_entities(raw_user_query or "")
 
         if ("<function_trajectory>" in completion[0]):
             try:
@@ -1173,7 +1176,6 @@ class DRIFTLLM(PromptingLLM):
                 completion[0] if isinstance(completion, list) else str(completion),
                 self.source_flow_contract_helper,
             )
-            self._user_explicit_entities = self._extract_user_explicit_entities(raw_user_query or "")
             if self.logger:
                 self.logger.info(f"TAER backbone initialized with {len(self.taer_state.backbone_order)} steps")
                 self.logger.info(f"User explicit entities: {self._user_explicit_entities}")
@@ -1197,10 +1199,13 @@ class DRIFTLLM(PromptingLLM):
         for entity in explicit_entities:
             normalized_entities.update(authority_value_variants(entity))
 
-        for target_value in iter_authority_values(tool_args):
-            if set(authority_value_variants(target_value)) & normalized_entities:
-                return True
-        return False
+        target_values = list(iter_authority_values(tool_args) or [])
+        if not target_values:
+            return False
+        for target_value in target_values:
+            if not (set(authority_value_variants(target_value)) & normalized_entities):
+                return False
+        return True
 
     def injection_isolate(self, detected_instructions, messages, openai_messages, source_flow_context=None):
         """Isolate the injection contents in the memory flow.
@@ -1278,20 +1283,11 @@ class DRIFTLLM(PromptingLLM):
                 replaced_count += max(msg_count, openai_count)
 
             if replaced_count == 0:
-                messages[message_index]["content"] = "[UNTRUSTED_TOOL_OUTPUT_QUARANTINED]"
-                openai_messages[openai_index]["content"] = "[UNTRUSTED_TOOL_OUTPUT_QUARANTINED]"
                 if source_flow_context and self.source_flow_enabled():
                     self.source_label_store.mark_raw_output_sanitized_visible(
                         source_flow_context["tool_name"],
                         source_flow_context["step"],
                         False,
-                        tool_call_id=source_flow_context["tool_call_id"],
-                    )
-                    self.source_label_store.record_tool_sanitized_output(
-                        source_flow_context["tool_name"],
-                        source_flow_context["raw_source_id"],
-                        messages[message_index]["content"],
-                        source_flow_context["step"],
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
                 return True, messages, openai_messages
@@ -1948,6 +1944,12 @@ class DRIFTLLM(PromptingLLM):
         # Recovery guard: block new unrelated ACTIONs during repair
         recovery_guard_decision = self._source_flow_recovery_guard(output)
         if recovery_guard_decision is not None:
+            if getattr(self.args, "taer_mode", "off") == "on":
+                self.logger.info(
+                    f"SourceFlow recovery guard evidence-only under TAER ON: blocked_tool={recovery_guard_decision.tool_name}"
+                )
+                recovery_guard_decision = None
+        if recovery_guard_decision is not None:
             self._source_flow_sanitize_rejected_output(
                 output, recovery_guard_decision.call_error_message
             )
@@ -1961,14 +1963,21 @@ class DRIFTLLM(PromptingLLM):
             error_message, output = self.trajectory_constraint_validation(to_call_function, output, query, messages)
             if error_message:
                 error_message = self._wrap_function_error(error_message)
-                return query, runtime, env, [*messages, output, error_message], extra_args
+                if error_message:
+                    return query, runtime, env, [*messages, output, error_message], extra_args
             
             error_message, output = self.checklist_constraint_validation(json_tool_calls, output, query, messages)
             if error_message:
                 error_message = self._wrap_function_error(error_message)
-                return query, runtime, env, [*messages, output, error_message], extra_args
+                if error_message:
+                    return query, runtime, env, [*messages, output, error_message], extra_args
 
         source_flow_decision = self._source_flow_validate_tool_calls(output)
+        if getattr(self.args, "taer_mode", "off") == "on" and source_flow_decision is not None:
+            self.logger.info(
+                "SourceFlow: TAER ON evidence-only mode — recording evidence only, not rejecting"
+            )
+            source_flow_decision = None
         if self._final_decision_owner and source_flow_decision is not None:
             self.logger.info(
                 f"SourceFlow: final decision already made (owner={getattr(self.args, 'taer_mode', '')}) — recording evidence only, not rejecting"
