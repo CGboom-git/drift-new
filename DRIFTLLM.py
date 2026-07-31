@@ -2166,6 +2166,7 @@ If message content is generated from task evidence, set faithful_task_result tru
                         anchor_result.get("consumer_step_id"),
                         source_records,
                         self.source_flow_contract_helper,
+                        self._user_explicit_entities,
                     )
 
                     if not boundary.passed:

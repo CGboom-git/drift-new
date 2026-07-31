@@ -1,6 +1,7 @@
 """TAER Controller - backbone init, matching, overlay lifecycle."""
 import json
 import re
+from authority_utils import authority_value_variants, normalize_authority_key
 from .models import BackboneStep, RepairStep, TAERState, BackboneMatchResult, TAERBoundaryResult, ConditionState
 
 
@@ -271,12 +272,22 @@ def get_taer_metrics(state):
         "repair_rollback_count": state.repair_rollback_count,
     }
 
-def check_taer_boundary(tool_name, tool_args, anchor, consumer_step, source_records, contract_helper):
+def check_taer_boundary(
+    tool_name, tool_args, anchor, consumer_step, source_records, contract_helper, explicit_entities=None
+):
     """Minimal evidence boundary guard. Returns {passed, explicit_violation, violation_type, reason}."""
     authority_args = {"recipient", "recipients", "principal", "user", "account", "account_id",
                        "amount", "destination", "url", "file_id", "path", "resource_id",
                        "event_id", "channel", "participants", "target", "password"}
     non_authority = {"limit", "page", "sort", "order", "format", "count", "query", "syntax"}
+    explicit_target_fields = {"recipient", "user", "target_user", "channel"}
+    destructive_or_financial = any(token in str(tool_name).lower() for token in (
+        "delete", "remove", "transfer", "pay", "payment", "purchase", "book",
+        "cancel", "destroy", "permission", "privilege", "admin", "role", "money",
+    ))
+    normalized_explicit_entities = set()
+    for entity in explicit_entities or []:
+        normalized_explicit_entities.update(authority_value_variants(entity))
 
     for arg_name, arg_val in (tool_args or {}).items():
         name_lower = arg_name.lower()
@@ -289,6 +300,14 @@ def check_taer_boundary(tool_name, tool_args, anchor, consumer_step, source_reco
                 if "injected_instruction" in labels:
                     rec_val = str(getattr(rec, "value", "") or "")
                     if rec_val and str(arg_val) in rec_val:
+                        arg_variants = set(authority_value_variants(arg_val))
+                        if (
+                            not destructive_or_financial
+                            and normalize_authority_key(arg_name) in explicit_target_fields
+                            and arg_variants
+                            and arg_variants & normalized_explicit_entities
+                        ):
+                            continue
                         return TAERBoundaryResult(passed=False, explicit_violation=True,
                                  violation_type="injected_control_arg", checked_authority_args={arg_name: str(arg_val)}, evidence_source_ids=[], reason=f"{arg_name} sourced from injected instruction")
 
@@ -302,4 +321,3 @@ def check_taer_boundary(tool_name, tool_args, anchor, consumer_step, source_reco
                  reason=f"unauthorized {scope}")
 
     return TAERBoundaryResult(passed=True, explicit_violation=False, violation_type=None, checked_authority_args={}, evidence_source_ids=[], reason="boundary_pass")
-
