@@ -507,6 +507,7 @@ class TestTaerRouting(unittest.TestCase):
         )
         self.assertIsNone(err)
         self.assertEqual(llm.function_trajectory, ["read_channel_messages", "send_channel_message"])
+        self.assertEqual(llm.achieved_function_trajectory, ["read_channel_messages"])
 
         err, _ = DRIFTLLM.checklist_constraint_validation(
             llm,
@@ -525,6 +526,90 @@ class TestTaerRouting(unittest.TestCase):
             "RUNTIME_READ_EXTENSION allow get_webpage" in str(call.args[0])
             for call in llm.logger.info.call_args_list
         ))
+        self.assertEqual(llm.achieved_function_trajectory, ["read_channel_messages", "get_webpage"])
+        self.assertEqual(llm._final_decision_owner, "TAER")
+
+    def test_runtime_read_extensions_reset_per_task(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        llm._runtime_read_extensions = {0: {"count": 2, "calls": {("get_webpage", '{}')}}}
+        llm._extract_user_explicit_entities = lambda query: DRIFTLLM._extract_user_explicit_entities(llm, query)
+
+        DRIFTLLM.initial_constraints_build(
+            llm,
+            ["<function_trajectory>[send_channel_message]</function_trajectory>"],
+            "Post hello to general.",
+        )
+
+        self.assertEqual(llm._runtime_read_extensions, {})
+
+    def test_runtime_read_extension_rejection_discards_pending_read(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["send_channel_message"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": "hello"}, "conditions": None},
+        ])
+        llm.client.llm_run.return_value = '{"necessary": false, "reason": "unrelated account lookup"}'
+        output = self._make_runtime_output("get_account", {"account_id": "acct-123"})
+        messages = [{"role": "user", "content": "Post hello to general."}]
+
+        err, output = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["get_account"], output, "Post hello to general.", messages
+        )
+        self.assertIsNone(err)
+        self.assertEqual(llm.achieved_function_trajectory, [])
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_account", {"account_id": "acct-123"}),
+            output,
+            "Post hello to general.",
+            messages,
+        )
+
+        self.assertIsNotNone(err)
+        self.assertEqual(out["tool_calls"], [])
+        self.assertEqual(llm.achieved_function_trajectory, [])
+
+    def test_runtime_read_extension_approval_records_once_with_taer_owner(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["send_channel_message"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": None}, "conditions": None},
+        ])
+        llm.client.llm_run.return_value = '{"necessary": true, "reason": "needed"}'
+        messages = [{"role": "user", "content": "Post a summary of https://one.test."}]
+        output = self._make_runtime_output("get_webpage", {"url": "https://one.test"})
+
+        err, output = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["get_webpage"], output, messages[0]["content"], messages
+        )
+        self.assertIsNone(err)
+        self.assertEqual(llm.achieved_function_trajectory, [])
+
+        err, _ = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_webpage", {"url": "https://one.test"}),
+            output,
+            messages[0]["content"],
+            messages,
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(llm.achieved_function_trajectory, ["get_webpage"])
+        self.assertEqual(llm.achieved_function_trajectory.count("get_webpage"), 1)
+        self.assertEqual(llm._final_decision_owner, "TAER")
 
     def test_runtime_read_extension_rejects_unrelated_read(self):
         from DRIFTLLM import DRIFTLLM

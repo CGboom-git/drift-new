@@ -536,6 +536,8 @@ Do not approve unrelated exploration or any new goal.
 
         node_state["calls"].add(call_key)
         node_state["count"] += 1
+        self.achieved_function_trajectory.append(tool_name)
+        self._final_decision_owner = "TAER"
         if self.source_label_store is not None and hasattr(self.source_label_store, "validation_trace"):
             self.source_label_store.validation_trace.append(
                 ValidationTraceEntry(
@@ -554,6 +556,7 @@ Do not approve unrelated exploration or any new goal.
             )
         if self.logger:
             self.logger.info(f"RUNTIME_READ_EXTENSION allow {tool_name} at plan_node={plan_node}: {reason}")
+            self.logger.info("Final decision: ALLOW (owner=TAER, relation=RUNTIME_READ_EXTENSION)")
         return True
 
     def _source_flow_tool_kind(self, tool_name: str) -> str:
@@ -1281,6 +1284,7 @@ Do not approve unrelated exploration or any new goal.
         self.achieved_function_trajectory = []
         self.node_checklist = "None"
         self._user_explicit_entities = self._extract_user_explicit_entities(raw_user_query or "")
+        self._runtime_read_extensions = {}
 
         if ("<function_trajectory>" in completion[0]):
             try:
@@ -1639,7 +1643,6 @@ Do not approve unrelated exploration or any new goal.
                     self.logger.info(
                         f"TAER runtime Read candidate {achieved_func}; deferring final decision to checklist"
                     )
-                    temp_achieved_trajectory.append(achieved_func)
                     continue
 
                 enter_taer = False
@@ -1999,10 +2002,13 @@ Do not approve unrelated exploration or any new goal.
         messages: Sequence[ChatMessage] = [],
         extra_args: dict = {},
     ) -> tuple[str, FunctionsRuntime, Env, Sequence[ChatMessage], dict]:
+        is_new_conversation = len(messages) > 0 and not any(
+            message.get("role") in {"assistant", "tool"} for message in messages
+        )
+        if is_new_conversation:
+            self._runtime_read_extensions = {}
+
         if self.source_flow_enabled():
-            is_new_conversation = len(messages) > 0 and not any(
-                message.get("role") in {"assistant", "tool"} for message in messages
-            )
             if not self._source_flow_run_active or is_new_conversation:
                 self.start_source_flow_run(query)
 
