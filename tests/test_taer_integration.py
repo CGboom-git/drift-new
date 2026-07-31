@@ -243,7 +243,7 @@ class TestTaerRouting(unittest.TestCase):
 
     def _configure_runtime_read_tools(self, llm):
         read_tools = {"read_channel_messages", "get_webpage", "get_account"}
-        action_tools = {"send_channel_message", "send_direct_message", "invite_user_to_channel", "delete_channel", "send_money"}
+        action_tools = {"send_channel_message", "send_direct_message", "invite_user_to_channel", "delete_channel", "send_money", "custom_write"}
         llm._is_read_tool = lambda name: name in read_tools
         llm._is_action_tool = lambda name: name in action_tools
         llm.tool_permissions = {
@@ -254,6 +254,8 @@ class TestTaerRouting(unittest.TestCase):
             "send_direct_message": "Write",
             "invite_user_to_channel": "Write",
             "delete_channel": "Write",
+            "send_money": "Write",
+            "custom_write": "Write",
         }
         llm.tools_docs_list = [
             {"name": "read_channel_messages"},
@@ -263,6 +265,8 @@ class TestTaerRouting(unittest.TestCase):
             {"name": "send_direct_message"},
             {"name": "invite_user_to_channel"},
             {"name": "delete_channel"},
+            {"name": "send_money"},
+            {"name": "custom_write"},
         ]
         llm.source_flow_contract_helper.get_side_effect.return_value = "none"
         llm.node_json_formatting = MagicMock(side_effect=lambda query, node_checklist: node_checklist)
@@ -666,6 +670,35 @@ class TestTaerRouting(unittest.TestCase):
         self.assertEqual(llm.achieved_function_trajectory.count("get_webpage"), 1)
         self.assertEqual(llm._final_decision_owner, "TAER")
 
+    def test_runtime_read_extension_allows_reason_without_tool_arg_repetition(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["send_channel_message"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": None}, "conditions": None},
+        ])
+        llm.client.llm_run.return_value = '{"necessary": true, "reason": "needed before finishing the authorized task"}'
+        messages = [{"role": "user", "content": "Post a summary of https://one.test."}]
+
+        err, _ = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_webpage", {"url": "https://one.test"}),
+            {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+            messages[0]["content"],
+            messages,
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(llm.achieved_function_trajectory, ["get_webpage"])
+        self.assertTrue(any(
+            "RUNTIME_READ_EXTENSION allow get_webpage args={'url': 'https://one.test'}" in str(call.args[0])
+            for call in llm.logger.info.call_args_list
+        ))
+
     def test_runtime_read_extension_rejects_unrelated_read(self):
         from DRIFTLLM import DRIFTLLM
 
@@ -795,6 +828,37 @@ class TestTaerRouting(unittest.TestCase):
         self.assertIsNone(err)
         self.assertIs(out, output)
         self.assertEqual(llm._runtime_read_extensions, {})
+        llm.client.llm_run.assert_not_called()
+
+    def test_original_planned_allow_path_is_byte_for_byte_unaffected(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        llm.function_trajectory = ["read_channel_messages"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "read_channel_messages", "required parameters": {"channel": "general"}, "conditions": None},
+        ])
+        json_calls = self._make_json_tool_call("read_channel_messages", {"channel": "general"})
+        output = {"role": "assistant", "content": "<function_thought></function_thought>", "tool_calls": [MagicMock()]}
+        before_output = output.copy()
+        before_checklist = llm.node_checklist
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            json_calls,
+            output,
+            "Read general.",
+            [{"role": "user", "content": "Read general."}],
+        )
+
+        self.assertIsNone(err)
+        self.assertIs(out, output)
+        self.assertEqual(output, before_output)
+        self.assertEqual(llm.node_checklist, before_checklist)
+        self.assertEqual(llm.function_trajectory, ["read_channel_messages"])
+        self.assertEqual(llm.achieved_function_trajectory, [])
         llm.client.llm_run.assert_not_called()
 
     def test_runtime_read_extension_rejects_unknown_registered_tool(self):
@@ -1002,7 +1066,13 @@ class TestTaerRouting(unittest.TestCase):
         self._configure_runtime_read_tools(llm)
         self._force_function_name_mismatch(llm)
         llm.node_checklist = json.dumps([{"name": "read_channel_messages", "required parameters": {}, "conditions": None}])
-        llm.source_label_store.has_delegation_anchor.side_effect = lambda value: "todo" in str(value).lower()
+        llm.source_label_store.records = [
+            {
+                "source_labels": ["delegated_task_source"],
+                "sanitized_visible": True,
+                "value": "TODO: send alice@example.com this message: Please review the Q4 report",
+            }
+        ]
         llm.client.llm_run.return_value = self._runtime_write_decision("DELEGATED_EFFECT")
         args = {"recipient": "alice@example.com", "body": "Please review the Q4 report"}
         messages = [
@@ -1021,6 +1091,53 @@ class TestTaerRouting(unittest.TestCase):
         self.assertIsNone(err)
         self.assertEqual(llm._final_decision_owner, "TAER")
         self.assertEqual(len(llm._runtime_write_pending), 1)
+
+    def test_runtime_write_rejected_extension_preserves_original_decision(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.node_checklist = json.dumps([{"name": "read_channel_messages", "required parameters": {}, "conditions": None}])
+        llm.client.llm_run.return_value = self._runtime_write_decision("NEW_GOAL")
+        output = {"role": "assistant", "content": "", "tool_calls": [MagicMock()]}
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("send_direct_message", {"recipient": "alice@example.com", "body": "hello"}),
+            output,
+            "Send alice@example.com this message: hello",
+            [{"role": "user", "content": "Send alice@example.com this message: hello"}],
+        )
+
+        self.assertIsNotNone(err)
+        self.assertIn("function name does not align", err["content"].lower())
+        self.assertEqual(out["tool_calls"], [])
+        self.assertEqual(llm._runtime_write_pending, [])
+
+    def test_runtime_write_extension_rejects_financial_and_unknown_writes(self):
+        from DRIFTLLM import DRIFTLLM
+
+        for tool_name, args in [
+            ("send_money", {"recipient": "alice@example.com", "amount": 10}),
+            ("custom_write", {"recipient": "alice@example.com", "body": "hello"}),
+        ]:
+            llm = self._make_llm("on")
+            self._configure_runtime_read_tools(llm)
+            self._force_function_name_mismatch(llm)
+            llm.node_checklist = json.dumps([{"name": "read_channel_messages", "required parameters": {}, "conditions": None}])
+            llm.client.llm_run.return_value = self._runtime_write_decision()
+
+            err, out = DRIFTLLM.checklist_constraint_validation(
+                llm,
+                self._make_json_tool_call(tool_name, args),
+                {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+                "Send alice@example.com this message: hello and pay alice@example.com 10",
+                [{"role": "user", "content": "Send alice@example.com this message: hello and pay alice@example.com 10"}],
+            )
+
+            self.assertIsNotNone(err)
+            self.assertEqual(out["tool_calls"], [])
 
     def test_runtime_write_extension_rejects_ordinary_tool_output_authorization(self):
         from DRIFTLLM import DRIFTLLM

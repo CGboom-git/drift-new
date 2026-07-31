@@ -502,29 +502,38 @@ class DRIFTLLM(PromptingLLM):
 
     def _runtime_delegated_authorized_texts(self, messages):
         texts = []
-        for message in messages or []:
-            if message.get("role") != "tool":
-                continue
-            content = message.get("content", "")
-            has_anchor = False
-            if self.source_label_store is not None and hasattr(self.source_label_store, "has_delegation_anchor"):
-                try:
-                    has_anchor = self.source_label_store.has_delegation_anchor(content)
-                except Exception:
-                    has_anchor = False
-            if isinstance(has_anchor, bool) and has_anchor:
-                texts.append(str(content).lower())
-
         records = getattr(self.source_label_store, "records", []) if self.source_label_store else []
         for record in records or []:
             labels = getattr(record, "source_labels", None)
             value = getattr(record, "value", None)
+            sanitized_visible = getattr(record, "sanitized_visible", None)
             if isinstance(record, dict):
                 labels = record.get("source_labels", labels)
                 value = record.get("value", value)
-            if "delegated_task_source" in (labels or []):
+                sanitized_visible = record.get("sanitized_visible", sanitized_visible)
+            labels = labels or []
+            if (
+                "delegated_task_source" in labels
+                and "injected_instruction" not in labels
+                and sanitized_visible is True
+            ):
                 texts.append(str(value or "").lower())
         return texts
+
+    def _runtime_write_visible_evidence(self, messages):
+        evidence = []
+        records = getattr(self.source_label_store, "records", []) if self.source_label_store else []
+        for record in records or []:
+            labels = getattr(record, "source_labels", None)
+            value = getattr(record, "value", None)
+            sanitized_visible = getattr(record, "sanitized_visible", None)
+            if isinstance(record, dict):
+                labels = record.get("source_labels", labels)
+                value = record.get("value", value)
+                sanitized_visible = record.get("sanitized_visible", sanitized_visible)
+            if sanitized_visible is True and "injected_instruction" not in (labels or []):
+                evidence.append(str(value or "")[:1200])
+        return evidence[-5:]
 
     def _runtime_read_plan_node(self):
         if not self.function_trajectory:
@@ -568,11 +577,14 @@ class DRIFTLLM(PromptingLLM):
 
     def _runtime_write_kind(self, tool_name):
         name = tool_name.lower()
-        if any(token in name for token in ("delete", "remove", "transfer", "pay", "purchase", "book", "cancel", "destroy")):
+        if any(token in name for token in (
+            "delete", "remove", "transfer", "pay", "payment", "purchase", "book",
+            "cancel", "destroy", "permission", "privilege", "admin", "role", "money",
+        )):
             return "destructive"
         if name.startswith(("invite_", "add_user", "add_", "create_user", "update_user")):
             return "membership"
-        if name in {"send_direct_message", "send_channel_message"}:
+        if name.startswith("send_") and name.endswith("message"):
             return "communication"
         return "other"
 
@@ -666,11 +678,7 @@ If message content is generated from task evidence, set faithful_task_result tru
             "achieved_trajectory": self.achieved_function_trajectory,
             "candidate_tool": tool_name,
             "candidate_args": tool_args,
-            "recent_tool_results": [
-                str(message.get("content", ""))[:1200]
-                for message in (messages or [])
-                if message.get("role") == "tool"
-            ][-5:],
+            "visible_evidence": DRIFTLLM._runtime_write_visible_evidence(self, messages),
         })
         try:
             from json_repair import repair_json
@@ -730,11 +738,6 @@ If message content is generated from task evidence, set faithful_task_result tru
             if self.logger:
                 self.logger.info(f"Runtime Read extension rejected for {tool_name}: {reason}")
             return False
-        if not DRIFTLLM._runtime_reason_mentions_tool_and_args(self, reason, tool_name, tool_args):
-            if self.logger:
-                self.logger.info(f"Runtime Read extension rejected for {tool_name}: approval reason missing tool/args")
-            return False
-
         node_state["calls"].add(call_key)
         node_state["count"] += 1
         self.achieved_function_trajectory.append(tool_name)
@@ -756,7 +759,7 @@ If message content is generated from task evidence, set faithful_task_result tru
                 )
             )
         if self.logger:
-            self.logger.info(f"RUNTIME_READ_EXTENSION allow {tool_name} at plan_node={plan_node}: {reason}")
+            self.logger.info(f"RUNTIME_READ_EXTENSION allow {tool_name} args={tool_args} at plan_node={plan_node}: {reason}")
             self.logger.info("Final decision: ALLOW (owner=TAER, relation=RUNTIME_READ_EXTENSION)")
         return True
 
@@ -819,9 +822,9 @@ If message content is generated from task evidence, set faithful_task_result tru
             if self.logger:
                 self.logger.info(f"Runtime Write extension rejected for {tool_name}: injected/tainted argument evidence")
             return False
-        if write_kind == "membership" and not self._action_targets_authorized(tool_args, self._user_explicit_entities):
+        if write_kind == "membership" and not (direct_authorized or delegated_authorized):
             if self.logger:
-                self.logger.info(f"Runtime Write extension rejected for {tool_name}: membership target not explicitly authorized")
+                self.logger.info(f"Runtime Write extension rejected for {tool_name}: membership target not exactly authorized")
             return False
 
         plan_node = DRIFTLLM._runtime_read_plan_node(self)
@@ -2268,12 +2271,6 @@ If message content is generated from task evidence, set faithful_task_result tru
             ):
                 return None, output
 
-            if is_function_mismatch and DRIFTLLM._allow_runtime_write_extension(
-                self,
-                json_tool_calls, query, messages, node_judge_reason
-            ):
-                return None, output
-
             if self.source_flow_validation_enabled() and not is_function_mismatch:
                 self.logger.info(
                     "Source-flow validation active; downgrading parameter checklist mismatch. "
@@ -2288,8 +2285,13 @@ If message content is generated from task evidence, set faithful_task_result tru
                 self.logger.info("User has approved the request.")
 
             else:
-                output["tool_calls"] = []
                 self.logger.info("User has refused the request.")
+                if is_function_mismatch and DRIFTLLM._allow_runtime_write_extension(
+                    self,
+                    json_tool_calls, query, messages, node_judge_reason
+                ):
+                    return None, output
+                output["tool_calls"] = []
                 if align_error_message:
                     self.logger.info(align_error_message)
                     return align_error_message, output
