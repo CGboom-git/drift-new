@@ -46,6 +46,8 @@ class DRIFTLLM(PromptingLLM):
         self._final_decision_owner = ""  # "TAER" or "ORIGINAL_DRIFT" per validation round
         self._user_explicit_entities = set()  # user-authorized entities from query
         self._runtime_read_extensions = {}  # {plan_node: {"count": int, "calls": set}}
+        self._runtime_write_extensions = {}  # {plan_node: {"count": int, "calls": set}}
+        self._runtime_write_pending = []  # approved writes committed to achieved trajectory after execution
 
     def source_flow_enabled(self):
         return bool(
@@ -148,6 +150,7 @@ class DRIFTLLM(PromptingLLM):
         self._source_flow_post_action_audit(
             tool_name, tool_args, tool_message.get("content")
         )
+        DRIFTLLM._finalize_runtime_write_extension(self, tool_name, tool_args)
 
         return {
             "tool_name": tool_name,
@@ -157,6 +160,17 @@ class DRIFTLLM(PromptingLLM):
             "raw_created": raw_created,
             "message_index": message_index,
         }
+
+    def _finalize_runtime_write_extension(self, tool_name, tool_args):
+        for pending in getattr(self, "_runtime_write_pending", []) or []:
+            if pending.get("used"):
+                continue
+            if pending.get("tool_name") == tool_name and pending.get("tool_args") == (tool_args or {}):
+                self.achieved_function_trajectory.append(tool_name)
+                pending["used"] = True
+                if self.logger:
+                    self.logger.info(f"RUNTIME_WRITE_EXTENSION executed {tool_name}; committed achieved trajectory")
+                break
 
     def _source_flow_record_tool_message(self, messages):
         if len(messages) == 0:
@@ -413,6 +427,10 @@ class DRIFTLLM(PromptingLLM):
         return contract_type in {"read", "observe"}
 
     def _is_side_effect_free_read_tool(self, tool_name):
+        if not DRIFTLLM._tool_registered(self, tool_name):
+            return False
+        if self.tool_permissions.get(tool_name) != "Read":
+            return False
         if not self._is_read_tool(tool_name):
             return False
         if self._is_action_tool(tool_name):
@@ -421,6 +439,36 @@ class DRIFTLLM(PromptingLLM):
         if side_effect is None:
             return True
         return str(side_effect).strip().lower() in {"", "none", "no", "false", "read", "read-only", "readonly"}
+
+    def _tool_registered(self, tool_name):
+        return any(tool.get("name") == tool_name for tool in getattr(self, "tools_docs_list", []) or [])
+
+    def _runtime_scalar_values(self, value):
+        scalar_values = []
+
+        def collect(item):
+            if item is None:
+                return
+            if isinstance(item, dict):
+                for child in item.values():
+                    collect(child)
+            elif isinstance(item, (list, tuple, set)):
+                for child in item:
+                    collect(child)
+            else:
+                text = str(item).strip().lower()
+                if text:
+                    scalar_values.append(text)
+
+        collect(value)
+        return scalar_values
+
+    def _runtime_authorized_texts(self, query, messages):
+        texts = [str(query or "").lower()]
+        for message in messages or []:
+            if message.get("role") == "tool":
+                texts.append(str(message.get("content", "")).lower())
+        return texts
 
     def _runtime_read_plan_node(self):
         if not self.function_trajectory:
@@ -439,31 +487,79 @@ class DRIFTLLM(PromptingLLM):
         return (tool_name, args_key)
 
     def _runtime_read_args_authorized(self, tool_args, query, messages):
-        scalar_values = []
-
-        def collect(value):
-            if value is None:
-                return
-            if isinstance(value, dict):
-                for child in value.values():
-                    collect(child)
-            elif isinstance(value, (list, tuple, set)):
-                for child in value:
-                    collect(child)
-            else:
-                text = str(value).strip().lower()
-                if text:
-                    scalar_values.append(text)
-
-        collect(tool_args or {})
+        scalar_values = DRIFTLLM._runtime_scalar_values(self, tool_args or {})
         if not scalar_values:
             return True
 
-        authorized_texts = [str(query or "").lower()]
-        for message in messages or []:
-            if message.get("role") == "tool":
-                authorized_texts.append(str(message.get("content", "")).lower())
+        authorized_texts = DRIFTLLM._runtime_authorized_texts(self, query, messages)
         return all(any(value in text for text in authorized_texts) for value in scalar_values)
+
+    def _runtime_reason_mentions_tool_and_args(self, reason, tool_name, tool_args):
+        reason_text = str(reason or "").lower()
+        if tool_name.lower() not in reason_text:
+            return False
+        for value in DRIFTLLM._runtime_scalar_values(self, tool_args or {}):
+            if value not in reason_text:
+                return False
+        return True
+
+    def _runtime_tool_args_from_call(self, tc):
+        try:
+            raw_args = tc["function"].get("arguments", {})
+            return json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+        except Exception:
+            return {}
+
+    def _runtime_write_kind(self, tool_name):
+        name = tool_name.lower()
+        if any(token in name for token in ("delete", "remove", "transfer", "pay", "purchase", "book", "cancel", "destroy")):
+            return "destructive"
+        if name.startswith(("invite_", "add_user", "add_", "create_user", "update_user")):
+            return "membership"
+        if name in {"send_direct_message", "send_channel_message"}:
+            return "communication"
+        return "other"
+
+    def _runtime_write_target_values(self, tool_args):
+        target_keys = {"recipient", "channel", "user", "email", "user_email", "to"}
+        return [
+            str(value).strip().lower()
+            for key, value in (tool_args or {}).items()
+            if key in target_keys and value is not None and str(value).strip()
+        ]
+
+    def _runtime_write_content_values(self, tool_args):
+        content_keys = {"body", "content", "message", "text"}
+        return [
+            str(value).strip().lower()
+            for key, value in (tool_args or {}).items()
+            if key in content_keys and value is not None and str(value).strip()
+        ]
+
+    def _runtime_values_authorized(self, values, query, messages):
+        if not values:
+            return False
+        authorized_texts = DRIFTLLM._runtime_authorized_texts(self, query, messages)
+        return all(any(value in text for text in authorized_texts) for value in values)
+
+    def _runtime_has_injection_taint_for_args(self, tool_args):
+        records = getattr(self.source_label_store, "records", []) if self.source_label_store else []
+        arg_values = DRIFTLLM._runtime_scalar_values(self, tool_args or {})
+        for record in records or []:
+            labels = getattr(record, "source_labels", None)
+            value = getattr(record, "value", None)
+            if isinstance(record, dict):
+                labels = record.get("source_labels", labels)
+                value = record.get("value", value)
+            if "injected_instruction" not in (labels or []):
+                continue
+            record_text = str(value or "").lower()
+            if not record_text:
+                continue
+            for arg_value in arg_values:
+                if arg_value and (arg_value in record_text or record_text in arg_value):
+                    return True
+        return False
 
     def _taer_runtime_read_prerequisite(self, tool_name, tool_args, query, messages):
         prompt = """
@@ -533,6 +629,10 @@ Do not approve unrelated exploration or any new goal.
             if self.logger:
                 self.logger.info(f"Runtime Read extension rejected for {tool_name}: {reason}")
             return False
+        if not DRIFTLLM._runtime_reason_mentions_tool_and_args(self, reason, tool_name, tool_args):
+            if self.logger:
+                self.logger.info(f"Runtime Read extension rejected for {tool_name}: approval reason missing tool/args")
+            return False
 
         node_state["calls"].add(call_key)
         node_state["count"] += 1
@@ -557,6 +657,88 @@ Do not approve unrelated exploration or any new goal.
         if self.logger:
             self.logger.info(f"RUNTIME_READ_EXTENSION allow {tool_name} at plan_node={plan_node}: {reason}")
             self.logger.info("Final decision: ALLOW (owner=TAER, relation=RUNTIME_READ_EXTENSION)")
+        return True
+
+    def _allow_runtime_write_extension(self, json_tool_calls, query, messages, node_judge_reason):
+        if getattr(self.args, "taer_mode", "off") != "on":
+            return False
+        if "function name does not align" not in (node_judge_reason or "").lower():
+            return False
+        if not json_tool_calls or len(json_tool_calls) != 1:
+            return False
+
+        tc = json_tool_calls[0]
+        tool_name = tc["function"]["name"]
+        tool_args = DRIFTLLM._runtime_tool_args_from_call(self, tc)
+        if not DRIFTLLM._tool_registered(self, tool_name):
+            return False
+        if self.tool_permissions.get(tool_name) not in {"Write", "Execute"}:
+            return False
+        if not self._is_action_tool(tool_name):
+            return False
+
+        write_kind = DRIFTLLM._runtime_write_kind(self, tool_name)
+        if write_kind in {"destructive", "other"}:
+            if self.logger:
+                self.logger.info(f"Runtime Write extension rejected for {tool_name}: disallowed write kind {write_kind}")
+            return False
+
+        target_values = DRIFTLLM._runtime_write_target_values(self, tool_args)
+        content_values = DRIFTLLM._runtime_write_content_values(self, tool_args)
+        if not DRIFTLLM._runtime_values_authorized(self, target_values, query, messages):
+            if self.logger:
+                self.logger.info(f"Runtime Write extension rejected for {tool_name}: unauthorized targets")
+            return False
+        if not DRIFTLLM._runtime_values_authorized(self, content_values, query, messages):
+            if self.logger:
+                self.logger.info(f"Runtime Write extension rejected for {tool_name}: unauthorized content")
+            return False
+        if DRIFTLLM._runtime_has_injection_taint_for_args(self, tool_args):
+            if self.logger:
+                self.logger.info(f"Runtime Write extension rejected for {tool_name}: injected/tainted argument evidence")
+            return False
+        if write_kind == "membership" and not self._action_targets_authorized(tool_args, self._user_explicit_entities):
+            if self.logger:
+                self.logger.info(f"Runtime Write extension rejected for {tool_name}: membership target not explicitly authorized")
+            return False
+
+        plan_node = DRIFTLLM._runtime_read_plan_node(self)
+        if not hasattr(self, "_runtime_write_extensions") or self._runtime_write_extensions is None:
+            self._runtime_write_extensions = {}
+        node_state = self._runtime_write_extensions.setdefault(plan_node, {"count": 0, "calls": set()})
+        call_key = DRIFTLLM._runtime_read_call_key(self, tool_name, tool_args)
+        if call_key in node_state["calls"]:
+            if self.logger:
+                self.logger.info(f"Runtime Write extension rejected for {tool_name}: duplicate call")
+            return False
+        if node_state["count"] >= 2:
+            if self.logger:
+                self.logger.info(f"Runtime Write extension rejected for {tool_name}: node limit reached")
+            return False
+
+        node_state["calls"].add(call_key)
+        node_state["count"] += 1
+        self._runtime_write_pending.append({"tool_name": tool_name, "tool_args": dict(tool_args), "used": False})
+        self._final_decision_owner = "TAER"
+        if self.source_label_store is not None and hasattr(self.source_label_store, "validation_trace"):
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="RUNTIME_WRITE_EXTENSION",
+                    source_ids=[],
+                    details={
+                        "tool_name": tool_name,
+                        "tool_args": tool_args,
+                        "plan_node": plan_node,
+                        "write_kind": write_kind,
+                    },
+                    decision="allow",
+                    would_reject=False,
+                )
+            )
+        if self.logger:
+            self.logger.info(f"RUNTIME_WRITE_EXTENSION allow {tool_name} at plan_node={plan_node}")
+            self.logger.info("Final decision: ALLOW (owner=TAER, relation=RUNTIME_WRITE_EXTENSION)")
         return True
 
     def _source_flow_tool_kind(self, tool_name: str) -> str:
@@ -1285,6 +1467,8 @@ Do not approve unrelated exploration or any new goal.
         self.node_checklist = "None"
         self._user_explicit_entities = self._extract_user_explicit_entities(raw_user_query or "")
         self._runtime_read_extensions = {}
+        self._runtime_write_extensions = {}
+        self._runtime_write_pending = []
 
         if ("<function_trajectory>" in completion[0]):
             try:
@@ -1958,6 +2142,12 @@ Do not approve unrelated exploration or any new goal.
             ):
                 return None, output
 
+            if is_function_mismatch and DRIFTLLM._allow_runtime_write_extension(
+                self,
+                json_tool_calls, query, messages, node_judge_reason
+            ):
+                return None, output
+
             if self.source_flow_validation_enabled() and not is_function_mismatch:
                 self.logger.info(
                     "Source-flow validation active; downgrading parameter checklist mismatch. "
@@ -2010,6 +2200,8 @@ Do not approve unrelated exploration or any new goal.
         )
         if is_new_conversation:
             self._runtime_read_extensions = {}
+            self._runtime_write_extensions = {}
+            self._runtime_write_pending = []
 
         if self.source_flow_enabled():
             if not self._source_flow_run_active or is_new_conversation:
