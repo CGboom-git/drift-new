@@ -483,6 +483,35 @@ class TestTaerRouting(unittest.TestCase):
             ("UNKNOWN", output),
         )
 
+    def test_query_restores_output_when_dynamic_validation_returns_none(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        llm.args.dynamic_validation = True
+        llm.args.source_flow_validation = False
+        llm.args.build_constraints = False
+        llm.args.injection_isolation = False
+        llm.source_flow_enabled = MagicMock(return_value=False)
+        llm.achieve_tools = MagicMock()
+        llm._message_to_sharegpt = lambda message: DRIFTLLM._message_to_sharegpt(llm, message)
+        llm.client.agent_run.return_value = ["<function_call>[send_direct_message()]</function_call>"]
+        tc = MagicMock()
+        tc.function = "send_direct_message"
+        tc.args = {"recipient": "Alice", "body": "hi"}
+        output = {"role": "assistant", "content": "<function_call>[send_direct_message()]</function_call>", "tool_calls": [tc]}
+        llm._parse_model_output = MagicMock(return_value=output)
+        llm._load_previous_calls = MagicMock(return_value=[])
+        llm.trajectory_constraint_validation = MagicMock(return_value=(None, None))
+        llm.checklist_constraint_validation = MagicMock(return_value=(None, output))
+        llm._source_flow_validate_tool_calls = MagicMock(return_value=None)
+        runtime = MagicMock()
+        runtime.functions = {"dummy": MagicMock()}
+
+        result = DRIFTLLM.query(llm, "Say hi", runtime, MagicMock(), [{"role": "user", "content": "Say hi"}], {})
+
+        self.assertEqual(result[3][-1], output)
+        llm.checklist_constraint_validation.assert_called_once()
+
     def test_runtime_read_extension_allows_prerequisite_read_chain(self):
         from DRIFTLLM import DRIFTLLM
 
