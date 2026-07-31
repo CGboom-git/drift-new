@@ -1653,7 +1653,7 @@ Do not approve unrelated exploration or any new goal.
                         # Allow READ tools through fan-out: check if any backbone fan-out node matches
                         for sid in self.taer_state.backbone_order:
                             step = self.taer_state.backbone_steps.get(sid)
-                            if step and step.fan_out_mode and step.tool_name == achieved_func:
+                            if step and getattr(step, "fan_out_mode", None) and step.tool_name == achieved_func:
                                 enter_taer = True
                                 break
 
@@ -1683,13 +1683,16 @@ Do not approve unrelated exploration or any new goal.
                         }
                         # Fan-out tracking
                         step = self.taer_state.backbone_steps.get(match_result.step_id)
-                        if step and getattr(step, "fan_out_mode", None):
-                            step.fan_out_matched_count += 1
+                        fan_out_mode = getattr(step, "fan_out_mode", None) if step else None
+                        if step and fan_out_mode:
+                            fan_out_matched_count = getattr(step, "fan_out_matched_count", 0) + 1
+                            setattr(step, "fan_out_matched_count", fan_out_matched_count)
+                            fan_out_limit = getattr(step, "fan_out_limit", None)
                             self.logger.info(
-                                f"TAER fan-out: {step.step_id} count={step.fan_out_matched_count}"
-                                f"/{step.fan_out_limit if step.fan_out_limit else 'unlimited'}"
+                                f"TAER fan-out: {step.step_id} count={fan_out_matched_count}"
+                                f"/{fan_out_limit if fan_out_limit else 'unlimited'}"
                             )
-                            if step.fan_out_mode == "TOP-K" and step.fan_out_matched_count >= step.fan_out_limit:
+                            if fan_out_mode == "TOP-K" and fan_out_limit and fan_out_matched_count >= fan_out_limit:
                                 step.status = "done"
                         self.function_trajectory = extended_function_trajectory
                         temp_achieved_trajectory.append(achieved_func)

@@ -738,6 +738,27 @@ class TestTaerRouting(unittest.TestCase):
         self.assertEqual(llm._runtime_read_extensions, {})
         llm.client.llm_run.assert_not_called()
 
+    def test_read_fan_out_check_handles_backbone_without_fan_out_fields(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = False
+        llm._is_read_tool.return_value = False
+        llm.function_trajectory = ["send_channel_message"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = "[]"
+
+        err, _ = DRIFTLLM.trajectory_constraint_validation(
+            llm,
+            ["get_channels"],
+            self._make_output("get_channels", {}),
+            "Find the channel with most users.",
+            [{"role": "user", "content": "Find the channel with most users."}],
+        )
+
+        self.assertIsNone(err)
+        llm._run_original_drift_deviation_validation.assert_called_once()
+
     @patch("DRIFTLLM.match_candidate_to_backbone")
     @patch("DRIFTLLM.check_taer_boundary")
     def test_taer_mode_off_skips_match_and_boundary(self, mock_boundary, mock_matcher):
