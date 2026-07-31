@@ -45,6 +45,7 @@ class DRIFTLLM(PromptingLLM):
         self._taer_pending_repairs = {}  # {repair_id: {repair, tool_name, tool_args}} for delayed binding
         self._final_decision_owner = ""  # "TAER" or "ORIGINAL_DRIFT" per validation round
         self._user_explicit_entities = set()  # user-authorized entities from query
+        self._runtime_read_extensions = {}  # {plan_node: {"count": int, "calls": set}}
 
     def source_flow_enabled(self):
         return bool(
@@ -410,6 +411,150 @@ class DRIFTLLM(PromptingLLM):
             return True
         contract_type = self.source_flow_contract_helper.get_tool_type(tool_name)
         return contract_type in {"read", "observe"}
+
+    def _is_side_effect_free_read_tool(self, tool_name):
+        if not self._is_read_tool(tool_name):
+            return False
+        if self._is_action_tool(tool_name):
+            return False
+        side_effect = self.source_flow_contract_helper.get_side_effect(tool_name)
+        if side_effect is None:
+            return True
+        return str(side_effect).strip().lower() in {"", "none", "no", "false", "read", "read-only", "readonly"}
+
+    def _runtime_read_plan_node(self):
+        if not self.function_trajectory:
+            return 0
+        planned_seen = 0
+        for achieved in self.achieved_function_trajectory:
+            if planned_seen < len(self.function_trajectory) and achieved == self.function_trajectory[planned_seen]:
+                planned_seen += 1
+        return min(planned_seen, len(self.function_trajectory) - 1)
+
+    def _runtime_read_call_key(self, tool_name, tool_args):
+        try:
+            args_key = json.dumps(tool_args or {}, sort_keys=True, default=str)
+        except Exception:
+            args_key = str(tool_args or {})
+        return (tool_name, args_key)
+
+    def _runtime_read_args_authorized(self, tool_args, query, messages):
+        scalar_values = []
+
+        def collect(value):
+            if value is None:
+                return
+            if isinstance(value, dict):
+                for child in value.values():
+                    collect(child)
+            elif isinstance(value, (list, tuple, set)):
+                for child in value:
+                    collect(child)
+            else:
+                text = str(value).strip().lower()
+                if text:
+                    scalar_values.append(text)
+
+        collect(tool_args or {})
+        if not scalar_values:
+            return True
+
+        authorized_texts = [str(query or "").lower()]
+        for message in messages or []:
+            if message.get("role") == "tool":
+                authorized_texts.append(str(message.get("content", "")).lower())
+        return all(any(value in text for text in authorized_texts) for value in scalar_values)
+
+    def _taer_runtime_read_prerequisite(self, tool_name, tool_args, query, messages):
+        prompt = """
+You are a TAER runtime guard. Decide whether this side-effect-free Read is a necessary prerequisite for the current user goal.
+Return strict JSON: {"necessary": true|false, "reason": "..."}.
+Do not approve unrelated exploration or any new goal.
+"""
+        data = json.dumps({
+            "user_query": query,
+            "original_plan": self.function_trajectory,
+            "achieved_trajectory": self.achieved_function_trajectory,
+            "candidate_tool": tool_name,
+            "candidate_args": tool_args,
+            "recent_tool_results": [
+                str(message.get("content", ""))[:1000]
+                for message in (messages or [])
+                if message.get("role") == "tool"
+            ][-3:],
+        })
+        try:
+            from json_repair import repair_json
+            raw = self.client.llm_run(prompt, data)
+            result = json.loads(repair_json(raw))
+            return bool(result.get("necessary")), result.get("reason", "")
+        except Exception as exc:
+            return False, f"taer_runtime_read_parse_failed: {exc}"
+
+    def _allow_runtime_read_extension(self, json_tool_calls, query, messages, node_judge_reason):
+        if getattr(self.args, "taer_mode", "off") != "on":
+            return False
+        if "function name does not align" not in (node_judge_reason or "").lower():
+            return False
+        if not json_tool_calls or len(json_tool_calls) != 1:
+            return False
+
+        tc = json_tool_calls[0]
+        tool_name = tc["function"]["name"]
+        try:
+            raw_args = tc["function"].get("arguments", {})
+            tool_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+        except Exception:
+            tool_args = {}
+
+        if not DRIFTLLM._is_side_effect_free_read_tool(self, tool_name):
+            return False
+        if not DRIFTLLM._runtime_read_args_authorized(self, tool_args, query, messages):
+            if self.logger:
+                self.logger.info(f"Runtime Read extension rejected for {tool_name}: unauthorized arguments")
+            return False
+
+        plan_node = DRIFTLLM._runtime_read_plan_node(self)
+        if not hasattr(self, "_runtime_read_extensions") or self._runtime_read_extensions is None:
+            self._runtime_read_extensions = {}
+        node_state = self._runtime_read_extensions.setdefault(plan_node, {"count": 0, "calls": set()})
+        call_key = DRIFTLLM._runtime_read_call_key(self, tool_name, tool_args)
+        if call_key in node_state["calls"]:
+            if self.logger:
+                self.logger.info(f"Runtime Read extension rejected for {tool_name}: duplicate call")
+            return False
+        if node_state["count"] >= 2:
+            if self.logger:
+                self.logger.info(f"Runtime Read extension rejected for {tool_name}: node limit reached")
+            return False
+
+        necessary, reason = DRIFTLLM._taer_runtime_read_prerequisite(self, tool_name, tool_args, query, messages)
+        if not necessary:
+            if self.logger:
+                self.logger.info(f"Runtime Read extension rejected for {tool_name}: {reason}")
+            return False
+
+        node_state["calls"].add(call_key)
+        node_state["count"] += 1
+        if self.source_label_store is not None and hasattr(self.source_label_store, "validation_trace"):
+            self.source_label_store.validation_trace.append(
+                ValidationTraceEntry(
+                    step=len(self.achieved_function_trajectory),
+                    event="RUNTIME_READ_EXTENSION",
+                    source_ids=[],
+                    details={
+                        "tool_name": tool_name,
+                        "tool_args": tool_args,
+                        "plan_node": plan_node,
+                        "reason": reason,
+                    },
+                    decision="allow",
+                    would_reject=False,
+                )
+            )
+        if self.logger:
+            self.logger.info(f"RUNTIME_READ_EXTENSION allow {tool_name} at plan_node={plan_node}: {reason}")
+        return True
 
     def _source_flow_tool_kind(self, tool_name: str) -> str:
         ct = self.source_flow_contract_helper.get_tool_type(tool_name)
@@ -1448,12 +1593,14 @@ class DRIFTLLM(PromptingLLM):
         for func_ids, achieved_func in enumerate(self.achieved_function_trajectory + to_call_function):
             if (func_ids < len(self.function_trajectory)) and (achieved_func == self.function_trajectory[func_ids]):
                 temp_achieved_trajectory.append(achieved_func)
-                if getattr(self.args, "taer_mode", "off") == "on":
-                    self._final_decision_owner = "TAER"
-                    self.logger.info("Final decision: ALLOW (owner=TAER, in_plan=True)")
-                else:
-                    self._final_decision_owner = "ORIGINAL_DRIFT"
-                    self.logger.info("Final decision: ALLOW (owner=ORIGINAL_DRIFT, in_plan=True)")
+                # In-plan: explicit final owner
+                if func_ids >= len(self.achieved_function_trajectory):
+                    if getattr(self.args, "taer_mode", "off") == "on":
+                        self._final_decision_owner = "TAER"
+                        self.logger.info("Final decision: ALLOW (owner=TAER, in_plan=True)")
+                    else:
+                        self._final_decision_owner = "ORIGINAL_DRIFT"
+                        self.logger.info("Final decision: ALLOW (owner=ORIGINAL_DRIFT, in_plan=True)")
                 continue
                 
             else:
@@ -1488,7 +1635,26 @@ class DRIFTLLM(PromptingLLM):
 
                 taer_mode = getattr(self.args, "taer_mode", "off")
 
-                if taer_mode == "on" and self._is_action_tool(achieved_func) and self.taer_state is not None:
+                if taer_mode == "on" and DRIFTLLM._is_side_effect_free_read_tool(self, achieved_func):
+                    self.logger.info(
+                        f"TAER runtime Read candidate {achieved_func}; deferring final decision to checklist"
+                    )
+                    temp_achieved_trajectory.append(achieved_func)
+                    continue
+
+                enter_taer = False
+                if taer_mode == "on" and self.taer_state is not None:
+                    if self._is_action_tool(achieved_func):
+                        enter_taer = True
+                    else:
+                        # Allow READ tools through fan-out: check if any backbone fan-out node matches
+                        for sid in self.taer_state.backbone_order:
+                            step = self.taer_state.backbone_steps.get(sid)
+                            if step and step.fan_out_mode and step.tool_name == achieved_func:
+                                enter_taer = True
+                                break
+
+                if enter_taer:
                     self.logger.info(
                         f"Trajectory-outside ACTION {achieved_func} entering TAER"
                     )
@@ -1505,6 +1671,23 @@ class DRIFTLLM(PromptingLLM):
                         self.logger.info(
                             f"TAER backbone match: {achieved_func} -> {match_result.step_id} (ready+MATCH)"
                         )
+                        self._final_decision_owner = "TAER"
+                        self.logger.info("Final decision: ALLOW (owner=TAER, relation=DIRECT_EFFECT)")
+                        self._taer_one_time_auth = {
+                            "tool_name": achieved_func,
+                            "tool_args": dict(tool_args),
+                            "used": False,
+                        }
+                        # Fan-out tracking
+                        step = self.taer_state.backbone_steps.get(match_result.step_id)
+                        if step and getattr(step, "fan_out_mode", None):
+                            step.fan_out_matched_count += 1
+                            self.logger.info(
+                                f"TAER fan-out: {step.step_id} count={step.fan_out_matched_count}"
+                                f"/{step.fan_out_limit if step.fan_out_limit else 'unlimited'}"
+                            )
+                            if step.fan_out_mode == "TOP-K" and step.fan_out_matched_count >= step.fan_out_limit:
+                                step.status = "done"
                         self.function_trajectory = extended_function_trajectory
                         temp_achieved_trajectory.append(achieved_func)
                         self.achieved_function_trajectory = temp_achieved_trajectory
@@ -1762,6 +1945,12 @@ class DRIFTLLM(PromptingLLM):
             self.logger.info(f"{json_tool_calls} does not align well with checklist, sending request to user.")
 
             is_function_mismatch = "function name does not align" in node_judge_reason.lower()
+
+            if is_function_mismatch and DRIFTLLM._allow_runtime_read_extension(
+                self,
+                json_tool_calls, query, messages, node_judge_reason
+            ):
+                return None, output
 
             if self.source_flow_validation_enabled() and not is_function_mismatch:
                 self.logger.info(

@@ -1,4 +1,5 @@
 import sys
+import json
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -178,8 +179,10 @@ class TestTaerRouting(unittest.TestCase):
 
         mock_store = MagicMock()
         mock_store.records = []
+        mock_store.validation_trace = []
 
         mock_contracts = MagicMock()
+        mock_contracts.get_side_effect.return_value = "none"
 
         llm = MagicMock()
         llm.args = mock_args
@@ -197,6 +200,9 @@ class TestTaerRouting(unittest.TestCase):
         llm.source_flow_contract_helper = mock_contracts
         llm.taer_mode_enabled = MagicMock(return_value=(taer_mode == "on"))
         llm.taer_state = TAERState() if taer_mode == "on" else None
+        llm._final_decision_owner = ""
+        llm._taer_one_time_auth = None
+        llm._runtime_read_extensions = {}
 
         llm._run_original_drift_deviation_validation = MagicMock(
             return_value=(None, {"role": "assistant", "content": "", "tool_calls": []})
@@ -230,6 +236,43 @@ class TestTaerRouting(unittest.TestCase):
             llm.taer_state.initialized = True
 
         return llm
+
+    def _configure_runtime_read_tools(self, llm):
+        read_tools = {"read_channel_messages", "get_webpage", "get_account"}
+        action_tools = {"send_channel_message", "send_money"}
+        llm._is_read_tool = lambda name: name in read_tools
+        llm._is_action_tool = lambda name: name in action_tools
+        llm.tool_permissions = {
+            "read_channel_messages": "Read",
+            "get_webpage": "Read",
+            "get_account": "Read",
+            "send_channel_message": "Write",
+        }
+        llm.source_flow_contract_helper.get_side_effect.return_value = "none"
+        llm.node_json_formatting = MagicMock(side_effect=lambda query, node_checklist: node_checklist)
+        from DRIFTLLM import DRIFTLLM
+        llm.node_check = lambda node_checklist=None, target_functions=None, **kwargs: DRIFTLLM.node_check(
+            llm,
+            node_checklist if node_checklist is not None else kwargs.get("node_checklist"),
+            target_functions if target_functions is not None else kwargs.get("target_functions"),
+        )
+        llm._runtime_read_extensions = {}
+
+    def _force_function_name_mismatch(self, llm):
+        llm.node_check = MagicMock(return_value=(False, "The function name does not align with checklist."))
+
+    def _make_json_tool_call(self, name, args):
+        return [{"function": {"name": name, "arguments": json.dumps(args)}}]
+
+    def _make_runtime_output(self, name, args):
+        mock_tc = MagicMock()
+        mock_tc.function = name
+        mock_tc.args = args
+        return {
+            "role": "assistant",
+            "content": f"<function_thought>test</function_thought>\n<function_call>[{name}()]</function_call>",
+            "tool_calls": [mock_tc],
+        }
 
     def _make_output(self, function_name="send_money", args=None):
         if args is None:
@@ -439,6 +482,176 @@ class TestTaerRouting(unittest.TestCase):
             ),
             ("UNKNOWN", output),
         )
+
+    def test_runtime_read_extension_allows_prerequisite_read_chain(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["read_channel_messages", "send_channel_message"]
+        llm.achieved_function_trajectory = ["read_channel_messages"]
+        llm.node_checklist = json.dumps([
+            {"name": "read_channel_messages", "required parameters": {"channel": "general"}, "conditions": None},
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": None}, "conditions": None},
+        ])
+        llm.client.llm_run.return_value = '{"necessary": true, "reason": "need webpage content from URL found in channel messages"}'
+        output = self._make_runtime_output("get_webpage", {"url": "https://example.com/report"})
+        messages = [
+            {"role": "user", "content": "Read general and post a summary."},
+            {"role": "tool", "content": "Latest report: https://example.com/report"},
+        ]
+
+        err, output = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["get_webpage"], output, "Read general and post a summary.", messages
+        )
+        self.assertIsNone(err)
+        self.assertEqual(llm.function_trajectory, ["read_channel_messages", "send_channel_message"])
+
+        err, _ = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_webpage", {"url": "https://example.com/report"}),
+            output,
+            "Read general and post a summary.",
+            messages,
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(llm.node_checklist, json.dumps([
+            {"name": "read_channel_messages", "required parameters": {"channel": "general"}, "conditions": None},
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": None}, "conditions": None},
+        ]))
+        self.assertTrue(any(
+            "RUNTIME_READ_EXTENSION allow get_webpage" in str(call.args[0])
+            for call in llm.logger.info.call_args_list
+        ))
+
+    def test_runtime_read_extension_rejects_unrelated_read(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["send_channel_message"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": "hello"}, "conditions": None},
+        ])
+        llm.client.llm_run.return_value = '{"necessary": false, "reason": "unrelated account lookup"}'
+        output = {"role": "assistant", "content": "<function_thought></function_thought>", "tool_calls": [MagicMock()]}
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_account", {"account_id": "acct-123"}),
+            output,
+            "Post hello to general.",
+            [{"role": "user", "content": "Post hello to general."}],
+        )
+
+        self.assertIsNotNone(err)
+        self.assertEqual(out["tool_calls"], [])
+
+    def test_runtime_read_extension_rejects_write_tool(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["read_channel_messages"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "read_channel_messages", "required parameters": {"channel": "general"}, "conditions": None},
+        ])
+        output = {"role": "assistant", "content": "<function_thought></function_thought>", "tool_calls": [MagicMock()]}
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("send_channel_message", {"channel": "general", "body": "hello"}),
+            output,
+            "Read general.",
+            [{"role": "user", "content": "Read general."}],
+        )
+
+        self.assertIsNotNone(err)
+        self.assertEqual(out["tool_calls"], [])
+        llm.client.llm_run.assert_not_called()
+
+    def test_runtime_read_extension_blocks_duplicate_and_limit(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["send_channel_message"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": None}, "conditions": None},
+        ])
+        llm.client.llm_run.return_value = '{"necessary": true, "reason": "needed"}'
+        messages = [{"role": "user", "content": "Post a summary of https://one.test and https://two.test."}]
+
+        err, _ = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_webpage", {"url": "https://one.test"}),
+            {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+            messages[0]["content"],
+            messages,
+        )
+        self.assertIsNone(err)
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_webpage", {"url": "https://one.test"}),
+            {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+            messages[0]["content"],
+            messages,
+        )
+        self.assertIsNotNone(err)
+        self.assertEqual(out["tool_calls"], [])
+
+        err, _ = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_webpage", {"url": "https://two.test"}),
+            {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+            messages[0]["content"],
+            messages,
+        )
+        self.assertIsNone(err)
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_webpage", {"url": "https://three.test"}),
+            {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+            "Post summaries of https://three.test too.",
+            [{"role": "user", "content": "Post summaries of https://three.test too."}],
+        )
+        self.assertIsNotNone(err)
+        self.assertEqual(out["tool_calls"], [])
+
+    def test_runtime_read_extension_leaves_planned_execution_unchanged(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        llm.function_trajectory = ["read_channel_messages"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "read_channel_messages", "required parameters": {"channel": "general"}, "conditions": None},
+        ])
+        output = {"role": "assistant", "content": "<function_thought></function_thought>", "tool_calls": [MagicMock()]}
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("read_channel_messages", {"channel": "general"}),
+            output,
+            "Read general.",
+            [{"role": "user", "content": "Read general."}],
+        )
+
+        self.assertIsNone(err)
+        self.assertIs(out, output)
+        self.assertEqual(llm._runtime_read_extensions, {})
+        llm.client.llm_run.assert_not_called()
 
     @patch("DRIFTLLM.match_candidate_to_backbone")
     @patch("DRIFTLLM.check_taer_boundary")
