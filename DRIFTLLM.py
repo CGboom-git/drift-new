@@ -227,6 +227,7 @@ class DRIFTLLM(PromptingLLM):
             messages.append({
                 "role": "tool",
                 "content": f"</function_error>\n{content}\n</function_error>",
+                "error": content,
                 "tool_call_id": tool_call_id or "",
                 "tool_call": tool_call,
             })

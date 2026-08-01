@@ -480,7 +480,11 @@ class TestTaerRouting(unittest.TestCase):
         self.assertEqual(len(wrapped), 1)
         self.assertEqual(wrapped[0]["role"], "tool")
         self.assertEqual(wrapped[0]["tool_call_id"], "call_send_direct_message")
+        self.assertEqual(wrapped[0]["error"], "blocked")
         self.assertIn("blocked", wrapped[0]["content"])
+
+        user_visible = DRIFTLLM._tool_message_to_user_message(llm, wrapped[0])
+        self.assertIn("blocked", user_visible["content"])
 
     def test_multi_call_rejection_returns_ordered_tool_responses(self):
         from DRIFTLLM import DRIFTLLM
