@@ -1583,6 +1583,34 @@ Do not approve unrelated exploration or any new goal.
             self.logger.info(align_error_message)
         return align_error_message, output
 
+    def _commit_aligned_read_extension(
+        self,
+        achieved_func,
+        tool_args,
+        extended_function_trajectory,
+        extended_checklist,
+        temp_achieved_trajectory,
+    ):
+        self.function_trajectory = extended_function_trajectory
+        try:
+            self.node_checklist = json.dumps(extended_checklist)
+        except:
+            self.node_checklist = extended_checklist
+
+        temp_achieved_trajectory.append(achieved_func)
+        self.achieved_function_trajectory = list(temp_achieved_trajectory)
+        self._final_decision_owner = "TAER"
+
+        auth_call = {"tool_name": achieved_func, "tool_args": dict(tool_args or {})}
+        auth = self._taer_one_time_auth
+        if auth and not auth.get("used", True) and "tool_calls" in auth:
+            auth["tool_calls"].append(auth_call)
+        else:
+            self._taer_one_time_auth = {"tool_calls": [auth_call], "used": False}
+
+        if self.logger:
+            self.logger.info(f"Final decision: ALLOW (owner=TAER, drift_advice=ALIGN, read_extension={achieved_func})")
+
     def _finalize_taer_repair(self, messages):
         """Handle repair lifecycle after tool execution result arrives.
 
@@ -1685,10 +1713,40 @@ Do not approve unrelated exploration or any new goal.
 
                 taer_mode = getattr(self.args, "taer_mode", "off")
 
-                if taer_mode == "on" and DRIFTLLM._is_side_effect_free_read_tool(self, achieved_func):
-                    self.logger.info(
-                        f"TAER runtime Read candidate {achieved_func}; deferring final decision to checklist"
-                    )
+                if taer_mode == "on" and self._is_read_tool(achieved_func):
+                    try:
+                        drift_status, preserved_output = self._run_original_drift_deviation_validation(
+                            achieved_func, output, query, messages,
+                            extended_function_trajectory, extended_checklist,
+                            thought_content, latest_function_messages,
+                            advisory_only=True,
+                        )
+                    except Exception as exc:
+                        if self.logger:
+                            self.logger.info(f"DRIFT advisory failed for Read {achieved_func}: {exc}")
+                        drift_status, preserved_output = "UNKNOWN", output
+
+                    if drift_status == "ALIGN":
+                        output = preserved_output
+                        DRIFTLLM._commit_aligned_read_extension(
+                            self,
+                            achieved_func,
+                            tool_args,
+                            extended_function_trajectory,
+                            extended_checklist,
+                            temp_achieved_trajectory,
+                        )
+                        continue
+                    if drift_status not in {"MISALIGN", "UNKNOWN"}:
+                        if self.logger:
+                            self.logger.info(
+                                f"DRIFT advisory returned malformed status for Read {achieved_func}: {drift_status}"
+                            )
+                    else:
+                        if self.logger:
+                            self.logger.info(
+                                f"DRIFT advisory {drift_status} for Read {achieved_func}; deferring to Runtime Read fallback"
+                            )
                     continue
 
                 enter_taer = False
@@ -1972,7 +2030,17 @@ Do not approve unrelated exploration or any new goal.
         """
         if self._taer_one_time_auth is not None and not self._taer_one_time_auth.get("used", True):
             auth = self._taer_one_time_auth
-            if json_tool_calls and len(json_tool_calls) == 1:
+            if json_tool_calls and "tool_calls" in auth:
+                expected_calls = auth.get("tool_calls") or []
+                actual_calls = []
+                for tc in json_tool_calls:
+                    tc_args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"].get("arguments", {})
+                    actual_calls.append({"tool_name": tc["function"]["name"], "tool_args": tc_args})
+                if actual_calls == expected_calls:
+                    self._taer_one_time_auth["used"] = True
+                    self.logger.info("One-time TAER read authorization consumed; skipping checklist rejection")
+                    return None, output
+            elif json_tool_calls and len(json_tool_calls) == 1:
                 tc = json_tool_calls[0]
                 tc_name = tc["function"]["name"]
                 tc_args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"].get("arguments", {})

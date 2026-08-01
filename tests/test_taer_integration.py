@@ -786,6 +786,190 @@ class TestTaerRouting(unittest.TestCase):
         self.assertEqual(llm.achieved_function_trajectory.count("get_webpage"), 1)
         self.assertEqual(llm._final_decision_owner, "TAER")
 
+    def test_off_plan_read_align_commits_trajectory_and_skips_checklist_reject(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        llm._run_original_drift_deviation_validation = lambda *args, **kwargs: DRIFTLLM._run_original_drift_deviation_validation(llm, *args, **kwargs)
+        llm.function_trajectory = ["send_email"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_email", "required parameters": {"recipients": ["alice@example.com"], "body": None}, "conditions": None},
+        ])
+        output = self._make_runtime_output("list_files", {})
+        messages = [{"role": "user", "content": "Email Alice the relevant files."}]
+
+        err, preserved = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["list_files"], output, messages[0]["content"], messages
+        )
+
+        self.assertIsNone(err)
+        self.assertIs(preserved, output)
+        self.assertEqual(llm.function_trajectory, ["list_files", "send_email"])
+        self.assertEqual([node["name"] for node in json.loads(llm.node_checklist)], ["list_files", "send_email"])
+        self.assertEqual(llm.achieved_function_trajectory, ["list_files"])
+        self.assertEqual(llm._final_decision_owner, "TAER")
+
+        err, out = DRIFTLLM.checklist_constraint_validation(
+            llm, self._make_json_tool_call("list_files", {}), output, messages[0]["content"], messages
+        )
+
+        self.assertIsNone(err)
+        self.assertIs(out, output)
+        self.assertEqual(output["tool_calls"], preserved["tool_calls"])
+
+    def test_aligned_multi_read_preserves_order_and_state(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        llm._run_original_drift_deviation_validation = lambda *args, **kwargs: DRIFTLLM._run_original_drift_deviation_validation(llm, *args, **kwargs)
+        llm.function_trajectory = ["send_email"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_email", "required parameters": {"recipients": ["alice@example.com"], "body": None}, "conditions": None},
+        ])
+        first = MagicMock()
+        first.id = "call_list_files"
+        first.function = "list_files"
+        first.args = {}
+        second = MagicMock()
+        second.id = "call_get_calendar_events"
+        second.function = "get_calendar_events"
+        second.args = {"date": "2026-08-01"}
+        output = {"role": "assistant", "content": "<function_thought></function_thought>", "tool_calls": [first, second]}
+        calls = [
+            *self._make_json_tool_call("list_files", {}),
+            *self._make_json_tool_call("get_calendar_events", {"date": "2026-08-01"}),
+        ]
+        messages = [{"role": "user", "content": "Email Alice the files and calendar details."}]
+
+        err, _ = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["list_files", "get_calendar_events"], output, messages[0]["content"], messages
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(llm.function_trajectory, ["list_files", "get_calendar_events", "send_email"])
+        self.assertEqual([node["name"] for node in json.loads(llm.node_checklist)], ["list_files", "get_calendar_events", "send_email"])
+        self.assertEqual(llm.achieved_function_trajectory, ["list_files", "get_calendar_events"])
+
+        err, out = DRIFTLLM.checklist_constraint_validation(llm, calls, output, messages[0]["content"], messages)
+
+        self.assertIsNone(err)
+        self.assertIs(out, output)
+
+    def test_read_advisory_misalign_or_unknown_does_not_commit_before_runtime_read(self):
+        from DRIFTLLM import DRIFTLLM
+
+        for status in ("MISALIGN", "UNKNOWN"):
+            llm = self._make_llm("on")
+            self._configure_runtime_read_tools(llm)
+            llm._run_original_drift_deviation_validation = MagicMock(return_value=(status, {}))
+            llm.function_trajectory = ["send_email"]
+            llm.achieved_function_trajectory = []
+            llm.node_checklist = json.dumps([
+                {"name": "send_email", "required parameters": {"recipients": ["alice@example.com"], "body": None}, "conditions": None},
+            ])
+            llm.client.llm_run.return_value = '{"necessary": true, "reason": "needed"}'
+            output = self._make_runtime_output("list_files", {})
+            messages = [{"role": "user", "content": "Email Alice the files."}]
+
+            err, _ = DRIFTLLM.trajectory_constraint_validation(
+                llm, ["list_files"], output, messages[0]["content"], messages
+            )
+
+            self.assertIsNone(err)
+            self.assertEqual(llm.function_trajectory, ["send_email"])
+            self.assertEqual([node["name"] for node in json.loads(llm.node_checklist)], ["send_email"])
+            self.assertEqual(llm.achieved_function_trajectory, [])
+
+            err, _ = DRIFTLLM.checklist_constraint_validation(
+                llm, self._make_json_tool_call("list_files", {}), output, messages[0]["content"], messages
+            )
+
+            self.assertIsNone(err)
+            self.assertEqual(llm.function_trajectory, ["send_email"])
+            self.assertEqual(llm.achieved_function_trajectory, ["list_files"])
+
+    def test_slack_runtime_read_approval_still_works_when_advisory_does_not_align(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        llm._run_original_drift_deviation_validation = MagicMock(return_value=("UNKNOWN", {}))
+        llm.function_trajectory = ["send_channel_message"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": None}, "conditions": None},
+        ])
+        llm.client.llm_run.return_value = '{"necessary": true, "reason": "get_webpage with url https://one.test is needed"}'
+        messages = [{"role": "user", "content": "Post a summary of https://one.test."}]
+        output = self._make_runtime_output("get_webpage", {"url": "https://one.test"})
+
+        err, output = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["get_webpage"], output, messages[0]["content"], messages
+        )
+        self.assertIsNone(err)
+        self.assertEqual(llm.achieved_function_trajectory, [])
+
+        err, _ = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            self._make_json_tool_call("get_webpage", {"url": "https://one.test"}),
+            output,
+            messages[0]["content"],
+            messages,
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(llm.function_trajectory, ["send_channel_message"])
+        self.assertEqual(llm.achieved_function_trajectory, ["get_webpage"])
+        self.assertEqual(llm._final_decision_owner, "TAER")
+
+    def test_planned_write_allow_path_unchanged(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        llm.function_trajectory = ["send_channel_message"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": "hello"}, "conditions": None},
+        ])
+        output = self._make_runtime_output("send_channel_message", {"channel": "general", "body": "hello"})
+
+        err, out = DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_channel_message"], output, "Post hello to general.", [{"role": "user", "content": "Post hello to general."}]
+        )
+
+        self.assertIsNone(err)
+        self.assertIs(out, output)
+        self.assertEqual(llm.achieved_function_trajectory, ["send_channel_message"])
+        llm._run_original_drift_deviation_validation.assert_not_called()
+
+    def test_aligned_read_extension_commits_exactly_once(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        llm._run_original_drift_deviation_validation = lambda *args, **kwargs: DRIFTLLM._run_original_drift_deviation_validation(llm, *args, **kwargs)
+        llm.function_trajectory = ["send_email"]
+        llm.achieved_function_trajectory = []
+        llm.node_checklist = json.dumps([{"name": "send_email", "required parameters": {}, "conditions": None}])
+        output = self._make_runtime_output("list_files", {})
+        calls = self._make_json_tool_call("list_files", {})
+        messages = [{"role": "user", "content": "Email Alice the files."}]
+
+        err, _ = DRIFTLLM.trajectory_constraint_validation(llm, ["list_files"], output, messages[0]["content"], messages)
+        self.assertIsNone(err)
+        err, _ = DRIFTLLM.checklist_constraint_validation(llm, calls, output, messages[0]["content"], messages)
+        self.assertIsNone(err)
+        err, _ = DRIFTLLM.checklist_constraint_validation(llm, calls, output, messages[0]["content"], messages)
+        self.assertIsNone(err)
+
+        self.assertEqual(llm.function_trajectory.count("list_files"), 1)
+        self.assertEqual(llm.achieved_function_trajectory.count("list_files"), 1)
+
     def test_runtime_read_extension_rejects_unrelated_read(self):
         from DRIFTLLM import DRIFTLLM
 
