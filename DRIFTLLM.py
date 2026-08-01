@@ -806,19 +806,27 @@ If message content is generated from task evidence, set faithful_task_result tru
 
     def _is_taerbackup_read_fallback_tool(self, tool_name):
         name = str(tool_name or "").lower()
-        return (
-            DRIFTLLM._is_side_effect_free_read_tool(self, tool_name)
-            and (
-                name.startswith(("list_", "search_"))
-                or "file" in name
-                or "calendar" in name
-            )
-        )
+        in_scope = name.startswith(("list_", "search_")) or "file" in name or "calendar" in name
+        if not in_scope:
+            return False
+        if not DRIFTLLM._tool_registered(self, tool_name):
+            return False
+        if self.tool_permissions.get(tool_name) != "Read":
+            return False
+        if self._is_action_tool(tool_name):
+            return False
+        side_effect = self.source_flow_contract_helper.get_side_effect(tool_name)
+        if side_effect is None:
+            return True
+        return str(side_effect).strip().lower() in {"none", "no", "false", "read", "read-only", "readonly"}
 
     def _allow_taerbackup_read_fallback(self, json_tool_calls, output, query, messages, node_judge_reason, original_rejection):
         if getattr(self.args, "taer_mode", "off") != "on":
             return False
         if "function name does not align" not in (node_judge_reason or "").lower():
+            return False
+        last_rejection = getattr(self, "_runtime_read_last_rejection", None)
+        if last_rejection not in {"not_side_effect_free_read", "not_single_call"}:
             return False
         if not json_tool_calls:
             return False
