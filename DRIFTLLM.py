@@ -207,15 +207,47 @@ class DRIFTLLM(PromptingLLM):
             indexes.append(index)
         return list(reversed(indexes))
 
-    def _wrap_function_error(self, error_message):
+    def _tool_call_error_messages(self, output, call_error_message, rejected_tool_name=None):
+        tool_calls = list((output or {}).get("tool_calls") or [])
+        if not tool_calls:
+            return []
+
+        messages = []
+        for tool_call in tool_calls:
+            tool_name = getattr(tool_call, "function", None)
+            tool_call_id = getattr(tool_call, "id", None)
+            if tool_name is None and isinstance(tool_call, dict):
+                fn = tool_call.get("function", {})
+                tool_name = fn.get("name") if isinstance(fn, dict) else getattr(fn, "name", None)
+                tool_call_id = tool_call.get("id")
+            if rejected_tool_name and tool_name != rejected_tool_name:
+                content = f"[CALL ERROR] Skipped {tool_name} because the tool-call batch was rejected."
+            else:
+                content = str(call_error_message)
+            messages.append({
+                "role": "tool",
+                "content": f"</function_error>\n{content}\n</function_error>",
+                "tool_call_id": tool_call_id or "",
+                "tool_call": tool_call,
+            })
+        return messages
+
+    def _wrap_function_error(self, error_message, output=None):
         if isinstance(error_message, str) and error_message in {"ALIGN", "MISALIGN", "UNKNOWN"}:
             return None
         if isinstance(error_message, dict):
             wrapped = dict(error_message)
         else:
             wrapped = {"role": "user", "content": str(error_message)}
+        rejected_tool_name = wrapped.pop("rejected_tool_name", None)
+        if wrapped.get("role") == "tool":
+            wrapped["content"] = f"</function_error>\n{wrapped['content']}\n</function_error>"
+            return [wrapped]
+        tool_errors = DRIFTLLM._tool_call_error_messages(self, output, wrapped.get("content", ""), rejected_tool_name)
+        if tool_errors:
+            return tool_errors
         wrapped["content"] = f"</function_error>\n{wrapped['content']}\n</function_error>"
-        return wrapped
+        return [wrapped]
 
     def _source_flow_post_action_audit(self, tool_name, tool_args, raw_output):
         if not self._is_action_tool(tool_name):
@@ -402,7 +434,6 @@ class DRIFTLLM(PromptingLLM):
         self.node_checklist = copy.deepcopy(snapshot["node_checklist"])
 
     def _source_flow_sanitize_rejected_output(self, output, call_error_message):
-        output["tool_calls"] = []
         content = output.get("content", "") or ""
         cleaned = re.sub(
             r"<function_call>.*?</function_call>",
@@ -1833,7 +1864,7 @@ If message content is generated from task evidence, set faithful_task_result tru
             return ("MISALIGN", output)
 
         self.logger.info("Trajectory does not align with original ones, sending request to user.")
-        align_error_message = {"role": "user", "content": f"[CALL ERROR] The function calling of {achieved_func} has been refused due to it does not align with original planned trajectory, please change to call other functions to complete original user query.\nRemember, do not stop working on the original user task to do other things.\nBelow is the specific Refusal Reason:\n {traj_judge_reason}.\nOriginal Planned Trajecotry:\n{self.function_trajectory}.\nAchieved Function Trajectory:\n{self.achieved_function_trajectory}.\nUser Query:\n{query}"}
+        align_error_message = {"role": "user", "rejected_tool_name": achieved_func, "content": f"[CALL ERROR] The function calling of {achieved_func} has been refused due to it does not align with original planned trajectory, please change to call other functions to complete original user query.\nRemember, do not stop working on the original user task to do other things.\nBelow is the specific Refusal Reason:\n {traj_judge_reason}.\nOriginal Planned Trajecotry:\n{self.function_trajectory}.\nAchieved Function Trajectory:\n{self.achieved_function_trajectory}.\nUser Query:\n{query}"}
 
         trajectory_user_answer = self.user_approval_request()
         if trajectory_user_answer:
@@ -2089,6 +2120,7 @@ If message content is generated from task evidence, set faithful_task_result tru
                         )
                         error_msg = {
                             "role": "user",
+                            "rejected_tool_name": achieved_func,
                             "content": (
                                 f"[CALL ERROR] TAER rejected {achieved_func}: introduces "
                                 "an unauthorized goal. Continue the original user task."
@@ -2116,7 +2148,7 @@ If message content is generated from task evidence, set faithful_task_result tru
                         else:
                             self._final_decision_owner = "TAER"
                             self.logger.info("Final decision: REJECT (owner=TAER)")
-                            return {"role": "user", "content": f"[CALL ERROR] TAER rejected {achieved_func}: ambiguous trajectory was not supported by DRIFT advisory."}, output
+                            return {"role": "user", "rejected_tool_name": achieved_func, "content": f"[CALL ERROR] TAER rejected {achieved_func}: ambiguous trajectory was not supported by DRIFT advisory."}, output
                         temp_achieved_trajectory.append(achieved_func)
                         continue
 
@@ -2136,7 +2168,7 @@ If message content is generated from task evidence, set faithful_task_result tru
                         if drift_advice != "ALIGN":
                             self._final_decision_owner = "TAER"
                             self.logger.info("Final decision: REJECT (owner=TAER)")
-                            return {"role": "user", "content": f"[CALL ERROR] TAER rejected {achieved_func}: parameter fallback was not supported by DRIFT advisory."}, output
+                            return {"role": "user", "rejected_tool_name": achieved_func, "content": f"[CALL ERROR] TAER rejected {achieved_func}: parameter fallback was not supported by DRIFT advisory."}, output
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: ALLOW (owner=TAER, drift_advice=ALIGN)")
                         temp_achieved_trajectory.append(achieved_func)
@@ -2149,6 +2181,7 @@ If message content is generated from task evidence, set faithful_task_result tru
                         )
                         error_msg = {
                             "role": "user",
+                            "rejected_tool_name": achieved_func,
                             "content": (
                                 f"[CALL ERROR] TAER rejected {achieved_func}: "
                                 f"{param_reason}. Continue the original user task."
@@ -2179,6 +2212,7 @@ If message content is generated from task evidence, set faithful_task_result tru
                         )
                         error_msg = {
                             "role": "user",
+                            "rejected_tool_name": achieved_func,
                             "content": (
                                 f"[CALL ERROR] TAER boundary guard blocked {achieved_func}: "
                                 f"{boundary.reason}. Continue the original user task."
@@ -2477,7 +2511,8 @@ If message content is generated from task evidence, set faithful_task_result tru
                 "role": "user",
                 "content": f"</function_error>\n{recovery_guard_decision.call_error_message}\n</function_error>",
             }
-            return query, runtime, env, [*messages, output, error_message], extra_args
+            error_messages = self._wrap_function_error(error_message, output)
+            return query, runtime, env, [*messages, output, *error_messages], extra_args
 
         if self.args.dynamic_validation:
             pre_validation_output = output
@@ -2487,9 +2522,10 @@ If message content is generated from task evidence, set faithful_task_result tru
                     self.logger.info("Validation returned invalid output; restoring pre-validation assistant output")
                 output = pre_validation_output
             if error_message:
-                error_message = self._wrap_function_error(error_message)
-                if error_message:
-                    return query, runtime, env, [*messages, output, error_message], extra_args
+                rejection_output = output if output.get("tool_calls") else pre_validation_output
+                error_messages = self._wrap_function_error(error_message, rejection_output)
+                if error_messages:
+                    return query, runtime, env, [*messages, rejection_output, *error_messages], extra_args
             
             pre_validation_output = output
             error_message, output = self.checklist_constraint_validation(json_tool_calls, output, query, messages)
@@ -2498,9 +2534,10 @@ If message content is generated from task evidence, set faithful_task_result tru
                     self.logger.info("Checklist validation returned invalid output; restoring pre-validation assistant output")
                 output = pre_validation_output
             if error_message:
-                error_message = self._wrap_function_error(error_message)
-                if error_message:
-                    return query, runtime, env, [*messages, output, error_message], extra_args
+                rejection_output = output if output.get("tool_calls") else pre_validation_output
+                error_messages = self._wrap_function_error(error_message, rejection_output)
+                if error_messages:
+                    return query, runtime, env, [*messages, rejection_output, *error_messages], extra_args
 
         source_flow_decision = self._source_flow_validate_tool_calls(output)
         if getattr(self.args, "taer_mode", "off") == "on" and source_flow_decision is not None:
@@ -2528,7 +2565,8 @@ If message content is generated from task evidence, set faithful_task_result tru
                     "role": "user",
                     "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
                 }
-                return query, runtime, env, [*messages, output, error_message], extra_args
+                error_messages = self._wrap_function_error(error_message, output)
+                return query, runtime, env, [*messages, output, *error_messages], extra_args
             if source_flow_decision.repair_required:
                 triage = getattr(source_flow_decision, "failure_triage", "")
                 if triage == "true_violation":
@@ -2540,7 +2578,8 @@ If message content is generated from task evidence, set faithful_task_result tru
                         "role": "user",
                         "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
                     }
-                    return query, runtime, env, [*messages, output, error_message], extra_args
+                    error_messages = self._wrap_function_error(error_message, output)
+                    return query, runtime, env, [*messages, output, *error_messages], extra_args
                 self._source_flow_sanitize_rejected_output(
                     output, source_flow_decision.call_error_message
                 )
@@ -2555,12 +2594,14 @@ If message content is generated from task evidence, set faithful_task_result tru
                         "role": "user",
                         "content": f"</function_error>\n{escalation.call_error_message}\n</function_error>",
                     }
-                    return query, runtime, env, [*messages, output, error_message], extra_args
+                    error_messages = self._wrap_function_error(error_message, output)
+                    return query, runtime, env, [*messages, output, *error_messages], extra_args
                 error_message = {
                     "role": "user",
                     "content": f"</function_error>\n{source_flow_decision.call_error_message}\n</function_error>",
                 }
-                return query, runtime, env, [*messages, output, error_message], extra_args
+                error_messages = self._wrap_function_error(error_message, output)
+                return query, runtime, env, [*messages, output, *error_messages], extra_args
             if getattr(source_flow_decision, "baseline_fallback", False):
                 if self.logger:
                     self.logger.info(

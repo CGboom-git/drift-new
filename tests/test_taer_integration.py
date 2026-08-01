@@ -289,6 +289,7 @@ class TestTaerRouting(unittest.TestCase):
 
     def _make_runtime_output(self, name, args):
         mock_tc = MagicMock()
+        mock_tc.id = f"call_{name}"
         mock_tc.function = name
         mock_tc.args = args
         return {
@@ -309,6 +310,7 @@ class TestTaerRouting(unittest.TestCase):
         if args is None:
             args = {"amount": 100}
         mock_tc = MagicMock()
+        mock_tc.id = f"call_{function_name}"
         mock_tc.function = function_name
         mock_tc.args = args
         return {
@@ -464,9 +466,58 @@ class TestTaerRouting(unittest.TestCase):
 
         wrapped = DRIFTLLM._wrap_function_error(llm, "blocked by TAER")
 
-        self.assertEqual(wrapped["role"], "user")
-        self.assertIn("blocked by TAER", wrapped["content"])
-        self.assertIn("</function_error>", wrapped["content"])
+        self.assertEqual(wrapped[0]["role"], "user")
+        self.assertIn("blocked by TAER", wrapped[0]["content"])
+        self.assertIn("</function_error>", wrapped[0]["content"])
+
+    def test_single_call_rejection_returns_tool_response(self):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        output = self._make_runtime_output("send_direct_message", {"recipient": "Alice", "body": "hi"})
+
+        wrapped = DRIFTLLM._wrap_function_error(llm, {"role": "user", "content": "blocked"}, output)
+
+        self.assertEqual(len(wrapped), 1)
+        self.assertEqual(wrapped[0]["role"], "tool")
+        self.assertEqual(wrapped[0]["tool_call_id"], "call_send_direct_message")
+        self.assertIn("blocked", wrapped[0]["content"])
+
+    def test_multi_call_rejection_returns_ordered_tool_responses(self):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        first = MagicMock()
+        first.id = "call_one"
+        first.function = "send_direct_message"
+        first.args = {"recipient": "Alice"}
+        second = MagicMock()
+        second.id = "call_two"
+        second.function = "read_channel_messages"
+        second.args = {"channel": "general"}
+        output = {"role": "assistant", "content": "", "tool_calls": [first, second]}
+
+        wrapped = DRIFTLLM._wrap_function_error(
+            llm,
+            {"role": "user", "rejected_tool_name": "send_direct_message", "content": "rejected first"},
+            output,
+        )
+
+        self.assertEqual([msg["tool_call_id"] for msg in wrapped], ["call_one", "call_two"])
+        self.assertIn("rejected first", wrapped[0]["content"])
+        self.assertIn("skipped", wrapped[1]["content"].lower())
+
+    def test_exception_path_protocol_valid_for_next_openai_request(self):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on")
+        llm._tool_call_to_str = lambda tool_call: DRIFTLLM._tool_call_to_str(llm, tool_call)
+        output = self._make_runtime_output("send_direct_message", {"recipient": "Alice", "body": "hi"})
+
+        wrapped = DRIFTLLM._wrap_function_error(llm, RuntimeError("boom"), output)
+        openai_messages = [DRIFTLLM._message_to_sharegpt(llm, output)] + [
+            DRIFTLLM._message_to_sharegpt(llm, msg) for msg in wrapped
+        ]
+
+        self.assertEqual(openai_messages[0]["tool_calls"][0]["id"], openai_messages[1]["tool_call_id"])
+        self.assertEqual(openai_messages[1]["role"], "observation")
 
     def test_advisory_result_is_not_wrapped_as_function_error(self):
         from DRIFTLLM import DRIFTLLM
@@ -520,7 +571,7 @@ class TestTaerRouting(unittest.TestCase):
         output = {"role": "assistant", "content": "<function_call>[]</function_call>", "tool_calls": []}
         llm._parse_model_output = MagicMock(return_value=output)
         llm._load_previous_calls = MagicMock(return_value=[])
-        llm._wrap_function_error = lambda error_message: DRIFTLLM._wrap_function_error(llm, error_message)
+        llm._wrap_function_error = lambda error_message, output=None: DRIFTLLM._wrap_function_error(llm, error_message, output)
         llm.trajectory_constraint_validation = MagicMock(return_value=("ALIGN", None))
         llm.checklist_constraint_validation = MagicMock(return_value=(None, output))
         llm._source_flow_validate_tool_calls = MagicMock(return_value=None)
