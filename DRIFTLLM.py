@@ -729,11 +729,15 @@ If message content is generated from task evidence, set faithful_task_result tru
             return "AMBIGUOUS", "LOW", False, f"taer_runtime_write_parse_failed: {exc}"
 
     def _allow_runtime_read_extension(self, json_tool_calls, query, messages, node_judge_reason):
+        self._runtime_read_last_rejection = None
         if getattr(self.args, "taer_mode", "off") != "on":
+            self._runtime_read_last_rejection = "taer_off"
             return False
         if "function name does not align" not in (node_judge_reason or "").lower():
+            self._runtime_read_last_rejection = "not_function_mismatch"
             return False
         if not json_tool_calls or len(json_tool_calls) != 1:
+            self._runtime_read_last_rejection = "not_single_call"
             return False
 
         tc = json_tool_calls[0]
@@ -745,8 +749,10 @@ If message content is generated from task evidence, set faithful_task_result tru
             tool_args = {}
 
         if not DRIFTLLM._is_side_effect_free_read_tool(self, tool_name):
+            self._runtime_read_last_rejection = "not_side_effect_free_read"
             return False
         if not DRIFTLLM._runtime_read_args_authorized(self, tool_args, query, messages):
+            self._runtime_read_last_rejection = "unauthorized_arguments"
             if self.logger:
                 self.logger.info(f"Runtime Read extension rejected for {tool_name}: unauthorized arguments")
             return False
@@ -757,16 +763,19 @@ If message content is generated from task evidence, set faithful_task_result tru
         node_state = self._runtime_read_extensions.setdefault(plan_node, {"count": 0, "calls": set()})
         call_key = DRIFTLLM._runtime_read_call_key(self, tool_name, tool_args)
         if call_key in node_state["calls"]:
+            self._runtime_read_last_rejection = "duplicate_call"
             if self.logger:
                 self.logger.info(f"Runtime Read extension rejected for {tool_name}: duplicate call")
             return False
         if node_state["count"] >= 2:
+            self._runtime_read_last_rejection = "node_limit"
             if self.logger:
                 self.logger.info(f"Runtime Read extension rejected for {tool_name}: node limit reached")
             return False
 
         necessary, reason = DRIFTLLM._taer_runtime_read_prerequisite(self, tool_name, tool_args, query, messages)
         if not necessary:
+            self._runtime_read_last_rejection = "not_necessary"
             if self.logger:
                 self.logger.info(f"Runtime Read extension rejected for {tool_name}: {reason}")
             return False
@@ -793,6 +802,112 @@ If message content is generated from task evidence, set faithful_task_result tru
         if self.logger:
             self.logger.info(f"RUNTIME_READ_EXTENSION allow {tool_name} args={tool_args} at plan_node={plan_node}: {reason}")
             self.logger.info("Final decision: ALLOW (owner=TAER, relation=RUNTIME_READ_EXTENSION)")
+        return True
+
+    def _is_taerbackup_read_fallback_tool(self, tool_name):
+        name = str(tool_name or "").lower()
+        return (
+            DRIFTLLM._is_side_effect_free_read_tool(self, tool_name)
+            and (
+                name.startswith(("list_", "search_"))
+                or "file" in name
+                or "calendar" in name
+            )
+        )
+
+    def _allow_taerbackup_read_fallback(self, json_tool_calls, output, query, messages, node_judge_reason, original_rejection):
+        if getattr(self.args, "taer_mode", "off") != "on":
+            return False
+        if "function name does not align" not in (node_judge_reason or "").lower():
+            return False
+        if not json_tool_calls:
+            return False
+
+        candidates = []
+        for tc in json_tool_calls:
+            tool_name = tc["function"]["name"]
+            tool_args = DRIFTLLM._runtime_tool_args_from_call(self, tc)
+            if not DRIFTLLM._is_taerbackup_read_fallback_tool(self, tool_name):
+                if self.logger:
+                    self.logger.info(f"TAERBACKUP_READ_FALLBACK skip {tool_name}: not backup Read fallback tool")
+                return False
+            candidates.append((tool_name, tool_args or {}))
+
+        latest_function_messages = messages[-1].get("content", "") if messages and messages[-1].get("role") == "tool" else "No Called Functions."
+        thought_match = re.search(r"<function_thought>(.*?)</function_thought>", output.get("content", "") or "", re.DOTALL)
+        thought_content = thought_match.group(1) if thought_match else ""
+        plan_node = DRIFTLLM._runtime_read_plan_node(self)
+        try:
+            extended_checklist = json.loads(self.node_checklist)
+        except Exception:
+            extended_checklist = []
+        if not isinstance(extended_checklist, list):
+            extended_checklist = []
+        extended_trajectory = list(self.function_trajectory)
+
+        advisory_results = []
+        for offset, (tool_name, tool_args) in enumerate(candidates):
+            candidate_trajectory = list(extended_trajectory)
+            candidate_checklist = copy.deepcopy(extended_checklist)
+            insert_at = min(plan_node + offset, len(candidate_trajectory))
+            candidate_trajectory.insert(insert_at, tool_name)
+            candidate_checklist.insert(insert_at, {"name": tool_name, "required parameters": tool_args, "conditions": None})
+            try:
+                advisory, _ = DRIFTLLM._run_original_drift_deviation_validation(
+                    self,
+                    tool_name,
+                    output,
+                    query,
+                    messages,
+                    candidate_trajectory,
+                    candidate_checklist,
+                    thought_content,
+                    latest_function_messages,
+                    advisory_only=True,
+                )
+            except Exception as exc:
+                advisory = f"EXCEPTION: {exc}"
+            advisory_results.append((tool_name, tool_args, advisory))
+            if advisory != "ALIGN":
+                if self.logger:
+                    self.logger.info(
+                        f"TAERBACKUP_READ_FALLBACK reject {tool_name} args={tool_args}: "
+                        f"original={node_judge_reason}; advisory={advisory}"
+                    )
+                return False
+            extended_trajectory = candidate_trajectory
+            extended_checklist = candidate_checklist
+
+        self.function_trajectory = extended_trajectory
+        self.node_checklist = json.dumps(extended_checklist)
+        for tool_name, _, _ in advisory_results:
+            self.achieved_function_trajectory.append(tool_name)
+        self._final_decision_owner = "TAER"
+        if self.source_label_store is not None and hasattr(self.source_label_store, "validation_trace"):
+            for tool_name, tool_args, advisory in advisory_results:
+                self.source_label_store.validation_trace.append(
+                    ValidationTraceEntry(
+                        step=len(self.achieved_function_trajectory),
+                        event="TAERBACKUP_READ_FALLBACK",
+                        source_ids=[],
+                        details={
+                            "tool_name": tool_name,
+                            "tool_args": tool_args,
+                            "original_rejection": original_rejection,
+                            "advisory_result": advisory,
+                            "final_owner": "TAER",
+                        },
+                        decision="allow",
+                        would_reject=False,
+                    )
+                )
+        if self.logger:
+            for tool_name, tool_args, advisory in advisory_results:
+                self.logger.info(
+                    f"TAERBACKUP_READ_FALLBACK allow {tool_name} args={tool_args}: "
+                    f"original={node_judge_reason}; advisory={advisory}; owner=TAER"
+                )
+            self.logger.info("Final decision: ALLOW (owner=TAER, relation=TAERBACKUP_READ_FALLBACK)")
         return True
 
     def _allow_runtime_write_extension(self, json_tool_calls, query, messages, node_judge_reason):
@@ -2304,6 +2419,13 @@ If message content is generated from task evidence, set faithful_task_result tru
             if is_function_mismatch and DRIFTLLM._allow_runtime_read_extension(
                 self,
                 json_tool_calls, query, messages, node_judge_reason
+            ):
+                return None, output
+
+            if is_function_mismatch and DRIFTLLM._allow_taerbackup_read_fallback(
+                self,
+                json_tool_calls, output, query, messages, node_judge_reason,
+                f"function absent from Checklist: {node_judge_reason}",
             ):
                 return None, output
 

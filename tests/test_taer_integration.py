@@ -243,7 +243,7 @@ class TestTaerRouting(unittest.TestCase):
         return llm
 
     def _configure_runtime_read_tools(self, llm):
-        read_tools = {"read_channel_messages", "get_webpage", "get_account"}
+        read_tools = {"read_channel_messages", "get_webpage", "get_account", "list_files", "search_files", "get_calendar_events"}
         action_tools = {"send_channel_message", "send_direct_message", "invite_user_to_channel", "delete_channel", "send_money", "custom_write"}
         llm._is_read_tool = lambda name: name in read_tools
         llm._is_action_tool = lambda name: name in action_tools
@@ -251,6 +251,9 @@ class TestTaerRouting(unittest.TestCase):
             "read_channel_messages": "Read",
             "get_webpage": "Read",
             "get_account": "Read",
+            "list_files": "Read",
+            "search_files": "Read",
+            "get_calendar_events": "Read",
             "send_channel_message": "Write",
             "send_direct_message": "Write",
             "invite_user_to_channel": "Write",
@@ -262,6 +265,9 @@ class TestTaerRouting(unittest.TestCase):
             {"name": "read_channel_messages"},
             {"name": "get_webpage"},
             {"name": "get_account"},
+            {"name": "list_files"},
+            {"name": "search_files"},
+            {"name": "get_calendar_events"},
             {"name": "send_channel_message"},
             {"name": "send_direct_message"},
             {"name": "invite_user_to_channel"},
@@ -820,6 +826,155 @@ class TestTaerRouting(unittest.TestCase):
             "RUNTIME_READ_EXTENSION allow get_webpage args={'url': 'https://one.test'}" in str(call.args[0])
             for call in llm.logger.info.call_args_list
         ))
+
+    def test_runtime_read_approval_does_not_invoke_taerbackup_fallback(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["send_channel_message"]
+        llm.node_checklist = json.dumps([
+            {"name": "send_channel_message", "required parameters": {"channel": "general", "body": None}, "conditions": None},
+        ])
+        llm.client.llm_run.return_value = '{"necessary": true, "reason": "needed"}'
+
+        with patch.object(DRIFTLLM, "_allow_taerbackup_read_fallback", wraps=DRIFTLLM._allow_taerbackup_read_fallback) as fallback:
+            err, _ = DRIFTLLM.checklist_constraint_validation(
+                llm,
+                self._make_json_tool_call("get_webpage", {"url": "https://one.test"}),
+                {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+                "Summarize https://one.test",
+                [{"role": "user", "content": "Summarize https://one.test"}],
+            )
+
+        self.assertIsNone(err)
+        fallback.assert_not_called()
+
+    def test_taerbackup_read_fallback_recovers_file_and_calendar_reads_on_align(self):
+        from DRIFTLLM import DRIFTLLM
+
+        for tool_name, args in [
+            ("list_files", {}),
+            ("search_files", {"query": "quarterly report"}),
+            ("get_calendar_events", {"date": "2026-08-01"}),
+        ]:
+            llm = self._make_llm("on")
+            self._configure_runtime_read_tools(llm)
+            self._force_function_name_mismatch(llm)
+            llm.function_trajectory = ["send_email"]
+            llm.node_checklist = json.dumps([
+                {"name": "send_email", "required parameters": {"recipients": ["alice@example.com"], "body": None}, "conditions": None},
+            ])
+            llm.client.llm_run.return_value = '{"necessary": false, "reason": "runtime read rejected"}'
+
+            err, _ = DRIFTLLM.checklist_constraint_validation(
+                llm,
+                self._make_json_tool_call(tool_name, args),
+                {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+                "Email Alice the relevant files and calendar details.",
+                [{"role": "user", "content": "Email Alice the relevant files and calendar details."}],
+            )
+
+            self.assertIsNone(err)
+            self.assertEqual(llm.achieved_function_trajectory, [tool_name])
+            self.assertEqual(json.loads(llm.node_checklist)[0]["name"], tool_name)
+            self.assertEqual(llm.function_trajectory[0], tool_name)
+            self.assertTrue(any(
+                "TAERBACKUP_READ_FALLBACK allow" in str(call.args[0])
+                for call in llm.logger.info.call_args_list
+            ))
+
+    def test_taerbackup_read_fallback_rejects_non_align_advisory_and_exceptions(self):
+        from DRIFTLLM import DRIFTLLM
+
+        for advisory in ["MISALIGN", "UNKNOWN", "GARBAGE"]:
+            llm = self._make_llm("on")
+            self._configure_runtime_read_tools(llm)
+            self._force_function_name_mismatch(llm)
+            llm.function_trajectory = ["send_email"]
+            llm.node_checklist = json.dumps([{"name": "send_email", "required parameters": {}, "conditions": None}])
+            llm.client.llm_run.return_value = '{"necessary": false, "reason": "runtime read rejected"}'
+            with patch.object(DRIFTLLM, "_run_original_drift_deviation_validation", return_value=(advisory, {})):
+                err, out = DRIFTLLM.checklist_constraint_validation(
+                    llm,
+                    self._make_json_tool_call("list_files", {}),
+                    {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+                    "Email Alice the files.",
+                    [{"role": "user", "content": "Email Alice the files."}],
+                )
+            self.assertIsNotNone(err)
+            self.assertEqual(out["tool_calls"], [])
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["send_email"]
+        llm.node_checklist = json.dumps([{"name": "send_email", "required parameters": {}, "conditions": None}])
+        llm.client.llm_run.return_value = '{"necessary": false, "reason": "runtime read rejected"}'
+        with patch.object(DRIFTLLM, "_run_original_drift_deviation_validation", side_effect=RuntimeError("boom")):
+            err, out = DRIFTLLM.checklist_constraint_validation(
+                llm,
+                self._make_json_tool_call("list_files", {}),
+                {"role": "assistant", "content": "", "tool_calls": [MagicMock()]},
+                "Email Alice the files.",
+                [{"role": "user", "content": "Email Alice the files."}],
+            )
+        self.assertIsNotNone(err)
+        self.assertEqual(out["tool_calls"], [])
+
+    def test_taerbackup_read_fallback_rejects_write_and_mixed_unsafe_batches(self):
+        from DRIFTLLM import DRIFTLLM
+
+        for calls in [
+            self._make_json_tool_call("send_direct_message", {"recipient": "alice@example.com", "body": "hi"}),
+            [
+                *self._make_json_tool_call("list_files", {}),
+                *self._make_json_tool_call("send_direct_message", {"recipient": "alice@example.com", "body": "hi"}),
+            ],
+        ]:
+            llm = self._make_llm("on")
+            self._configure_runtime_read_tools(llm)
+            self._force_function_name_mismatch(llm)
+            llm.function_trajectory = ["send_email"]
+            llm.node_checklist = json.dumps([{"name": "send_email", "required parameters": {}, "conditions": None}])
+            err, out = DRIFTLLM.checklist_constraint_validation(
+                llm,
+                calls,
+                {"role": "assistant", "content": "", "tool_calls": [MagicMock() for _ in calls]},
+                "Email Alice the files.",
+                [{"role": "user", "content": "Email Alice the files."}],
+            )
+            self.assertIsNotNone(err)
+            self.assertEqual(out["tool_calls"], [])
+
+    def test_taerbackup_read_fallback_batch_preserves_order_and_updates_once(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = self._make_llm("on")
+        self._configure_runtime_read_tools(llm)
+        self._force_function_name_mismatch(llm)
+        llm.function_trajectory = ["send_email"]
+        llm.node_checklist = json.dumps([{"name": "send_email", "required parameters": {}, "conditions": None}])
+        calls = [
+            *self._make_json_tool_call("list_files", {}),
+            *self._make_json_tool_call("search_files", {"query": "report"}),
+        ]
+
+        err, _ = DRIFTLLM.checklist_constraint_validation(
+            llm,
+            calls,
+            {"role": "assistant", "content": "", "tool_calls": [MagicMock(), MagicMock()]},
+            "Email Alice the report.",
+            [{"role": "user", "content": "Email Alice the report."}],
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(llm.achieved_function_trajectory, ["list_files", "search_files"])
+        self.assertEqual(llm.function_trajectory[:3], ["list_files", "search_files", "send_email"])
+        checklist = json.loads(llm.node_checklist)
+        self.assertEqual([node["name"] for node in checklist[:3]], ["list_files", "search_files", "send_email"])
+        self.assertEqual(len([node for node in checklist if node["name"] == "list_files"]), 1)
 
     def test_runtime_read_extension_rejects_unrelated_read(self):
         from DRIFTLLM import DRIFTLLM
