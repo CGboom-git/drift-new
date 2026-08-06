@@ -38,6 +38,7 @@ def parse_global_args():
     parser.add_argument("--jailbreak", action='store_true')
     parser.add_argument("--attack_type", type=str, default = None)
     parser.add_argument("--defense_type", type=str, default = None)
+    parser.add_argument("--taer_mode", type=str, default="off", choices=["on", "off"], help="Enable TAER-style trajectory recovery for ASB DRIFT.")
     parser.add_argument("--pot_backdoor", action='store_true')
     parser.add_argument("--pot_clean", action='store_true')
     parser.add_argument("--target", type=str, default = 'ResearcherProfileManager', help="pot backdoor target tool")

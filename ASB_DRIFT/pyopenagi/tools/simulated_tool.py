@@ -19,7 +19,7 @@ class SimulatedTool(BaseTool):
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": None,
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             }
         }
         return tool_call_format
@@ -40,7 +40,8 @@ class AttackerTool(BaseTool):
             "type": "function",
             "function": {
                 "name": f"{self.tool_name}",
-                "description": f"{self.tool_description}"
+                "description": f"{self.tool_description}",
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             }
         }
         return tool_call_format

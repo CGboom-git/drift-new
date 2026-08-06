@@ -19,6 +19,7 @@ MODEL_REGISTRY = {
     'gpt-4o': GPTLLM,
     'gpt-4o-2024-08-06': GPTLLM,
     'gpt-4o-mini': GPTLLM,
+    'gpt-4o-mini-2024-07-18': GPTLLM,
 
     # claude
     'claude-3-5-sonnet-20240620': ClaudeLLM,

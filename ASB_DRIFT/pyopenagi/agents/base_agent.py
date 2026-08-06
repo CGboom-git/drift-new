@@ -110,6 +110,15 @@ class BaseAgent:
             self.request_turnaround_times.extend(turnaround_times)
 
             print(f'workflow before check: {response.response_message}')
+            if isinstance(response.response_message, str) and (
+                "OpenAI " in response.response_message
+                or "Server connection error" in response.response_message
+                or "unexpected error" in response.response_message
+            ):
+                if hasattr(self, "api_failure_count"):
+                    self.api_failure_count += 1
+                if hasattr(self, "drift_agent"):
+                    self.drift_agent.log_event("api_failure", component="workflow_generation", attempt=i + 1, error=response.response_message)
             workflow = self.check_workflow(response.response_message)
             print(f'workflow after check: {workflow}')
 

@@ -17,12 +17,40 @@ from datetime import datetime
 import torch, csv
 import numpy as np
 import random,json,os
+import hashlib
 from openai import OpenAI
 
 # from pyopenagi.api_key import OPENAI_API_KEY
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings, AzureOpenAIEmbeddings
+
+
+class LocalHashEmbeddings:
+    def __init__(self, dimensions=1536):
+        self.dimensions = dimensions
+
+    def _embed(self, text):
+        vector = [0.0] * self.dimensions
+        for token in str(text).lower().split():
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            idx = int.from_bytes(digest[:4], "big") % self.dimensions
+            sign = 1.0 if digest[4] % 2 == 0 else -1.0
+            vector[idx] += sign
+        norm = sum(value * value for value in vector) ** 0.5 or 1.0
+        return [value / norm for value in vector]
+
+    def embed_documents(self, texts):
+        return [self._embed(text) for text in texts]
+
+    def embed_query(self, text):
+        return self._embed(text)
+
+
+def build_embedding_function():
+    if os.getenv("ASB_LOCAL_EMBEDDINGS") == "1":
+        return LocalHashEmbeddings()
+    return OpenAIEmbeddings(openai_api_key=os.getenv('OPENAI_API_KEY'))
 
 def clean_cache(root_directory):
     targets = {
@@ -150,7 +178,7 @@ def main():
         try:
             vector_db = Chroma(
                 persist_directory=args.database,
-                embedding_function=OpenAIEmbeddings(openai_api_key=os.getenv('OPENAI_API_KEY')),
+                embedding_function=build_embedding_function(),
             )
             print(f"The database {args.database} has been created.")
         except ValueError as e:
@@ -191,6 +219,9 @@ def main():
     memory_search_succ = 0
     refuse_cnt = 0
     orgin_succ = 0
+    api_failure_total = 0
+    actual_tool_execution_total = 0
+    completed_tasks = 0
 
 
     with open(args.res_file, mode='w', newline='') as file:
@@ -205,12 +236,27 @@ def main():
             # "Task",
             "Memory Found",
             "Aggressive",
+            "Workflow Failure",
+            "API Failure Count",
+            "Actual Tool Execution Count",
+            "Recovery Status",
             'messages'
         ])
 
 
     for r in as_completed(agent_tasks):
-        res = r.result()
+        try:
+            res = r.result()
+        except Exception as e:
+            workflow_failure += 1
+            api_failure_total += 1
+            print("**********************************")
+            print(args)
+            print(f"Agent task failed before result collection: {e}")
+            print("**********************************")
+            continue
+
+        completed_tasks += 1
         print("**********************************")
         print(args)
 
@@ -230,10 +276,18 @@ def main():
         else:
             print("Original task failed.")
 
-        # workflow_failure_flag = res['workflow_failure']
-        # if workflow_failure_flag:
-        #     workflow_failure += 1
-        #     print("Workflow generation failed.")
+        workflow_failure_flag = res['workflow_failure']
+        if workflow_failure_flag:
+            workflow_failure += 1
+            print("Workflow generation failed.")
+
+        api_failure_count = int(res.get("api_failure_count", 0) or 0)
+        actual_tool_execution_count = int(res.get("actual_tool_execution_count", 0) or 0)
+        api_failure_total += api_failure_count
+        actual_tool_execution_total += actual_tool_execution_count
+        print(f"API failure count: {api_failure_count}")
+        print(f"Actual tool execution count: {actual_tool_execution_count}")
+        print(f"Recovery status: {res.get('recovery_status', 'N/A')}")
 
         for message in res["messages"]:
             print(message)
@@ -289,25 +343,33 @@ def main():
                 # task.split(';')[0],
                 "N/A" if memory_found_flag is None else (1 if memory_found_flag else 0),
                 1 if res['agg'] == 'True' else 0,
+                1 if workflow_failure_flag else 0,
+                api_failure_count,
+                actual_tool_execution_count,
+                res.get("recovery_status", "N/A"),
                 res["messages"]
             ])
 
     # print(f"Results saved to {args.res_file}")
     print(f"Total number of attacks: {len(agent_tasks)}")
+    print(f"Total number of completed attacks: {completed_tasks}")
     print(f"Number of successful attacks: {attack_succ}")
     print(f'Number of workflow generation failures: {workflow_failure}')
+    print(f'Number of API failures: {api_failure_total}')
+    print(f'Actual tool execution count: {actual_tool_execution_total}')
     # print(f'Number of tool calling success: {tool_call_success}')
-    print(f"Attack success rate: {attack_succ/len(agent_tasks)}")
-    print(f"Attack success rate excluding workflow failure cases: {attack_succ/(len(agent_tasks)-workflow_failure)}")
+    print(f"Attack success rate: {attack_succ/len(agent_tasks) if len(agent_tasks) else 0.0}")
+    non_workflow_failures = len(agent_tasks)-workflow_failure
+    print(f"Attack success rate excluding workflow failure cases: {attack_succ/non_workflow_failures if non_workflow_failures else 0.0}")
     print(f'Number of original task success: {orgin_succ}')
-    print(f'Original task success rate: {orgin_succ/len(agent_tasks)}')
+    print(f'Original task success rate: {orgin_succ/len(agent_tasks) if len(agent_tasks) else 0.0}')
 
     print(f"Refuse judge success number: {refuse_cnt}")
-    print(f"Refuse judge success rate: {refuse_cnt/len(agent_tasks)}")
+    print(f"Refuse judge success rate: {refuse_cnt/len(agent_tasks) if len(agent_tasks) else 0.0}")
 
     if args.read_db:
         print(f"Memory search success number: {memory_search_succ}")
-        print(f"Memory search success rate: {memory_search_succ/len(agent_tasks)}")
+        print(f"Memory search success rate: {memory_search_succ/len(agent_tasks) if len(agent_tasks) else 0.0}")
 
 
     scheduler.stop()
