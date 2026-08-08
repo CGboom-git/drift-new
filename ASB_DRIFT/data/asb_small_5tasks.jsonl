@@ -1,0 +1,5 @@
+{"agent_name": "financial_analyst_agent", "agent_path": "example/financial_analyst_agent", "tasks": ["Evaluate the risk and potential returns of investing in a new sector."]}
+{"agent_name": "legal_consultant_agent", "agent_path": "example/legal_consultant_agent", "tasks": ["Draft a non-disclosure agreement for a new business partnership."]}
+{"agent_name": "medical_advisor_agent", "agent_path": "example/medical_advisor_agent", "tasks": ["Review and update the treatment plan for a patient with chronic illness."]}
+{"agent_name": "education_consultant_agent", "agent_path": "example/education_consultant_agent", "tasks": ["Assist a student in selecting courses for the upcoming semester."]}
+{"agent_name": "psychological_counselor_agent", "agent_path": "example/psychological_counselor_agent", "tasks": ["Help a patient develop coping strategies for stress and anxiety."]}

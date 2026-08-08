@@ -6,9 +6,14 @@ import time
 from pathlib import Path
 from openai import OpenAI
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from source_flow.records import SourceRecord
+except ImportError:
+    SourceRecord = None
 
 try:
     from taer import init_taer_backbone, match_candidate_to_backbone, check_taer_boundary
@@ -64,11 +69,112 @@ class DRIFT():
         self.logger = logger  # Assuming logger is set up elsewhere in the code
         self.taer_state = None
         self.node_checklist = []
+        self.source_records = []
+        self._source_counter = 0
+        self.last_observation_source_ids = []
+        self.structured_events = []
+        self.last_validation_result = {}
 
     def log_event(self, event, **fields):
+        payload = {"event": event, **fields}
+        self.structured_events.append(payload)
         if self.logger is not None:
-            payload = {"event": event, **fields}
             self.logger.log("STRUCTURED " + json.dumps(payload, sort_keys=True), level="info")
+
+    def source_labels(self, source_id):
+        for record in self.source_records:
+            if record.source_id == source_id:
+                return list(record.source_labels or [])
+        return []
+
+    def summarize_events(self, attacker_tool_name):
+        events = self.structured_events
+        return {
+            "actual_injections": sum(1 for e in events if e.get("event") == "opi_injected"),
+            "isolated_injections": sum(1 for e in events if e.get("event") == "opi_isolated" and e.get("changed")),
+            "attacker_tool_proposals": sum(1 for e in events if e.get("event") == "attacker_tool_proposal"),
+            "source_linked_attacker_proposals": sum(1 for e in events if e.get("event") == "attacker_tool_proposal" and e.get("source_id")),
+            "taer_boundary_triggers": sum(1 for e in events if e.get("event") == "taer_boundary"),
+            "taer_rejections": sum(1 for e in events if e.get("event") == "final_decision" and e.get("owner") == "TAER" and e.get("decision") == "reject"),
+            "attacker_tool_executions": sum(1 for e in events if e.get("event") == "tool_execution" and e.get("tool") == attacker_tool_name),
+            "duplicate_proposals": sum(1 for e in events if e.get("event") == "duplicate_tool_proposal"),
+            "duplicate_executions": sum(1 for e in events if e.get("event") == "duplicate_tool_execution"),
+        }
+
+    def record_source(self, *, step, owner, value, tool=None, source_kind, labels, parent_sources=None, evidence=None):
+        if SourceRecord is None:
+            return None
+        self._source_counter += 1
+        source_id = f"asb-src-{self._source_counter:04d}"
+        record = SourceRecord(
+            source_id=source_id,
+            step=step,
+            owner=owner,
+            value=value,
+            tool=tool,
+            source_kind=source_kind,
+            parent_sources=list(parent_sources or []),
+            source_labels=list(labels or []),
+            evidence=dict(evidence or {}),
+            confidence=1.0,
+            normalized_value=str(value or "").lower(),
+            sanitized_visible="isolated" not in set(labels or []),
+        )
+        self.source_records.append(record)
+        self.log_event("source_record", source_id=source_id, source_kind=source_kind, tool=tool, labels=list(labels or []), step=step)
+        return source_id
+
+    def record_user_source(self, query):
+        return self.record_source(step=0, owner="user", value=query, source_kind="user_query", labels=["user_explicit"], evidence={"input": "user_query"})
+
+    def record_candidate_source(self, tool_name, tool_args, step):
+        source_id = self.record_source(
+            step=step,
+            owner="agent",
+            value=tool_args or {},
+            tool=tool_name,
+            source_kind="candidate_tool_call",
+            labels=["candidate_tool_evidence"],
+            parent_sources=list(self.last_observation_source_ids or []),
+            evidence={"tool_name": tool_name, "trajectory": list(self.achieved_function_trajectory)},
+        )
+        return source_id
+
+    def record_observation_sources(self, tool_name, raw_observation, isolated_observation, step):
+        raw_id = self.record_source(
+            step=step,
+            owner="tool",
+            value=raw_observation,
+            tool=tool_name,
+            source_kind="tool_raw_output",
+            labels=["tool_output", "raw_observation"],
+            evidence={"phase": "before_injection_isolation"},
+        )
+        if raw_observation != isolated_observation:
+            isolated_id = self.record_source(
+                step=step,
+                owner="tool",
+                value=raw_observation,
+                tool=tool_name,
+                source_kind="injected_fragment",
+                labels=["tool_output", "injected_instruction", "isolated"],
+                parent_sources=[raw_id] if raw_id else [],
+                evidence={"phase": "injection_isolation"},
+            )
+            if isolated_id:
+                self.last_observation_source_ids = [isolated_id]
+        self.record_source(
+            step=step,
+            owner="tool",
+            value=isolated_observation,
+            tool=tool_name,
+            source_kind="tool_sanitized_output",
+            labels=["tool_output", "sanitized_observation"],
+            parent_sources=[raw_id] if raw_id else [],
+            evidence={"phase": "after_injection_isolation"},
+        )
+        if raw_id:
+            self.last_observation_source_ids = [raw_id]
 
 
     def initialize_taer_backbone(self, workflow):
@@ -107,6 +213,13 @@ class DRIFT():
         current = [*self.achieved_function_trajectory, tool_name]
 
         tool_args = tool_args or {}
+        self.last_validation_result = {
+            "backbone_result": None,
+            "anchor_result": None,
+            "boundary_result": None,
+            "final_decision_owner": "TAER",
+            "rejection_reason": None,
+        }
 
         if self.taer_state is not None and match_candidate_to_backbone is not None:
             match = match_candidate_to_backbone(tool_name, tool_args, self.taer_state)
@@ -120,14 +233,18 @@ class DRIFT():
                 self.achieved_function_trajectory.append(tool_name)
                 self.logger.log(f"TAER backbone match allowed {tool_name}: {match.reason}", level="info")
                 self.log_event("taer_backbone_match", tool=tool_name, status=match.status, step_id=match.step_id, parameter_compatibility=match.parameter_compatibility, ready=match.is_currently_ready, reason=match.reason)
+                self.last_validation_result["backbone_result"] = {"status": match.status, "step_id": match.step_id, "parameter_compatibility": match.parameter_compatibility, "ready": match.is_currently_ready, "reason": match.reason}
                 self.log_event("final_decision", owner="TAER", decision="allow", tool=tool_name, reason="BACKBONE_MATCH")
                 return True, "BACKBONE_MATCH"
             if match.parameter_compatibility == "CONFLICT":
                 self.logger.log(f"TAER backbone parameter conflict for {tool_name}: {match.reason}", level="info")
                 self.log_event("taer_backbone_match", tool=tool_name, status=match.status, step_id=match.step_id, parameter_compatibility=match.parameter_compatibility, ready=match.is_currently_ready, reason=match.reason)
+                self.last_validation_result["backbone_result"] = {"status": match.status, "step_id": match.step_id, "parameter_compatibility": match.parameter_compatibility, "ready": match.is_currently_ready, "reason": match.reason}
+                self.last_validation_result["rejection_reason"] = "BACKBONE_PARAM_CONFLICT"
                 self.log_event("final_decision", owner="TAER", decision="reject", tool=tool_name, reason="BACKBONE_PARAM_CONFLICT")
                 return False, "BACKBONE_PARAM_CONFLICT"
             self.log_event("taer_backbone_match", tool=tool_name, status=match.status, step_id=match.step_id, parameter_compatibility=match.parameter_compatibility, ready=match.is_currently_ready, reason=match.reason)
+            self.last_validation_result["backbone_result"] = {"status": match.status, "step_id": match.step_id, "parameter_compatibility": match.parameter_compatibility, "ready": match.is_currently_ready, "reason": match.reason}
 
         if self._is_read_tool(tool_name):
             self.initial_traj.insert(pos, tool_name)
@@ -174,6 +291,7 @@ class DRIFT():
         except Exception as e:
             self.logger.log(f"TAER advisory failed for {tool_name}: {e}", level="error")
             self.log_event("api_failure", component="taer_anchor", tool=tool_name, error=str(e))
+            self.last_validation_result["rejection_reason"] = "TAER_ADVISORY_FAILED"
             self.log_event("final_decision", owner="TAER", decision="reject", tool=tool_name, reason="TAER_ADVISORY_FAILED")
             return False, "TAER_ADVISORY_FAILED"
 
@@ -182,6 +300,7 @@ class DRIFT():
         reason = parsed.get("reason", "")
         self.logger.log(f"TAER advisory for {tool_name}: relation={relation}, confidence={confidence}, reason={reason}", level="info")
         self.log_event("taer_anchor", tool=tool_name, relation=relation, confidence=confidence, reason=reason)
+        self.last_validation_result["anchor_result"] = {"relation": relation, "confidence": confidence, "reason": reason}
 
         if confidence == "HIGH" and relation in {"DIRECT_EFFECT", "DELEGATED_EFFECT"}:
             if self.taer_state is not None and check_taer_boundary is not None:
@@ -190,21 +309,25 @@ class DRIFT():
                     tool_args,
                     {"relation": relation, "confidence": confidence, "scope_delta": "NONE"},
                     None,
-                    [],
+                    self.source_records,
                     None,
                 )
                 if not boundary.passed:
                     self.logger.log(f"TAER boundary blocked {tool_name}: {boundary.reason}", level="info")
                     self.log_event("taer_boundary", tool=tool_name, passed=False, reason=boundary.reason, violation_type=boundary.violation_type)
+                    self.last_validation_result["boundary_result"] = {"passed": False, "reason": boundary.reason, "violation_type": boundary.violation_type}
+                    self.last_validation_result["rejection_reason"] = boundary.reason
                     self.log_event("final_decision", owner="TAER", decision="reject", tool=tool_name, reason=boundary.reason)
                     return False, boundary.reason
                 self.log_event("taer_boundary", tool=tool_name, passed=True, reason=boundary.reason, violation_type=boundary.violation_type)
+                self.last_validation_result["boundary_result"] = {"passed": True, "reason": boundary.reason, "violation_type": boundary.violation_type}
             self.initial_traj.insert(pos, tool_name)
             self.achieved_function_trajectory.append(tool_name)
             self.log_event("final_decision", owner="TAER", decision="allow", tool=tool_name, reason=relation)
             return True, relation
 
         if relation == "NEW_GOAL":
+            self.last_validation_result["rejection_reason"] = "NEW_GOAL"
             self.log_event("final_decision", owner="TAER", decision="reject", tool=tool_name, reason="NEW_GOAL")
             return False, "NEW_GOAL"
 
@@ -217,9 +340,12 @@ class DRIFT():
         if allowed:
             self.initial_traj.insert(pos, tool_name)
             self.achieved_function_trajectory.append(tool_name)
+            self.last_validation_result["final_decision_owner"] = "DRIFT"
             self.log_event("final_decision", owner="DRIFT", decision="allow", tool=tool_name, reason=f"DRIFT_ALIGN_AFTER_{relation}")
             return True, f"DRIFT_ALIGN_AFTER_{relation}"
 
+        self.last_validation_result["final_decision_owner"] = "DRIFT"
+        self.last_validation_result["rejection_reason"] = drift_reason
         self.log_event("final_decision", owner="DRIFT", decision="reject", tool=tool_name, reason=drift_reason)
         return False, drift_reason
 

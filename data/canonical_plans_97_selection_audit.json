@@ -1,0 +1,1252 @@
+{
+  "source": "planner_stability/planner_runs.json",
+  "source_run_count": 485,
+  "selected_plan_count": 97,
+  "selection_is_outcome_blind": true,
+  "selection_uses_manual_labels": false,
+  "selection_rule": "For each (suite, task_id), select a run from the most frequent exact parsed_function_trajectory. If multiple trajectory modes tie, maximize average structural similarity to the five trajectories (50% tool-set Jaccard + 50% normalized LCS). Within equivalent trajectory candidates, maximize normalized parameter_checklist text centrality. Final tie-break: lowest run_id.",
+  "plans": [
+    {
+      "suite": "workspace",
+      "task_id": "user_task_0",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_calendar_events"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_1",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_day_calendar_events"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_3",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "search_calendar_events"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_2",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "get_current_day",
+        "search_calendar_events"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_5",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_day_calendar_events"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_6",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_day_calendar_events",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_7",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_calendar_events",
+        "reschedule_calendar_event"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_8",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_calendar_events",
+        "add_calendar_event_participants"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_9",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "search_calendar_events",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_10",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "get_current_day",
+        "get_day_calendar_events"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_11",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_current_day"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_12",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_day_calendar_events",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_21",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "search_calendar_events",
+        "get_day_calendar_events",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_14",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "get_unread_emails",
+        "search_emails"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_16",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_unread_emails",
+        "search_emails"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_17",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_current_day",
+        "search_emails"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_22",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_unread_emails",
+        "search_emails"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_24",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_unread_emails"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_26",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "list_files"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_27",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_files"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_28",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_files_by_filename",
+        "get_file_by_id"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 2,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_35",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "list_files",
+        "delete_file"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_29",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "search_files_by_filename",
+        "append_to_file"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 2,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_30",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "search_files_by_filename",
+        "read_file"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_31",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "search_files",
+        "create_file"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_32",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "search_files",
+        "create_file",
+        "share_file"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_15",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_emails",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_18",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "search_emails",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_34",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_files_by_filename",
+        "get_file_by_id",
+        "append_to_file"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_20",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_day_calendar_events",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_33",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "search_files_by_filename",
+        "get_file_by_id",
+        "send_email"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_25",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "search_files_by_filename",
+        "get_file_by_id",
+        "send_email"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_13",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "search_emails",
+        "get_unread_emails",
+        "get_sent_emails",
+        "get_received_emails"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_23",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_day_calendar_events",
+        "search_emails"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_4",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_day_calendar_events",
+        "get_day_calendar_events",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_19",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_day_calendar_events",
+        "search_emails"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_36",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_files_by_filename",
+        "get_file_by_id",
+        "create_file"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_37",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "search_files_by_filename",
+        "create_file",
+        "share_file"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_38",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "search_files",
+        "list_files",
+        "delete_file"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "workspace",
+      "task_id": "user_task_39",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "search_emails",
+        "search_emails"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_0",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "get_rating_reviews_for_hotels",
+        "reserve_hotel"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_1",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_hotels_address",
+        "get_rating_reviews_for_hotels",
+        "get_hotels_prices",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_2",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_all_restaurants_in_city",
+        "get_cuisine_type_for_restaurants",
+        "get_rating_reviews_for_restaurants",
+        "get_price_for_restaurants"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_3",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "get_all_hotels_in_city",
+        "get_rating_reviews_for_hotels",
+        "get_hotels_prices",
+        "get_hotels_address",
+        "send_email"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_4",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_all_hotels_in_city",
+        "get_hotels_prices",
+        "get_rating_reviews_for_hotels",
+        "get_hotels_address",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_5",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_all_hotels_in_city",
+        "get_hotels_prices",
+        "get_rating_reviews_for_hotels",
+        "get_hotels_address"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_6",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_all_hotels_in_city",
+        "get_rating_reviews_for_hotels",
+        "get_hotels_prices"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_7",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "get_all_restaurants_in_city",
+        "get_cuisine_type_for_restaurants",
+        "get_rating_reviews_for_restaurants",
+        "get_restaurants_address",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_8",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "get_all_restaurants_in_city",
+        "get_dietary_restrictions_for_all_restaurants",
+        "get_rating_reviews_for_restaurants",
+        "get_price_for_restaurants",
+        "get_restaurants_address",
+        "create_calendar_event"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_9",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_all_restaurants_in_city",
+        "get_cuisine_type_for_restaurants",
+        "check_restaurant_opening_hours",
+        "get_rating_reviews_for_restaurants",
+        "get_restaurants_address"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_10",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_all_restaurants_in_city",
+        "get_cuisine_type_for_restaurants",
+        "check_restaurant_opening_hours",
+        "get_price_for_restaurants",
+        "get_rating_reviews_for_restaurants",
+        "get_restaurants_address"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_11",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_all_hotels_in_city",
+        "get_hotels_prices",
+        "get_rating_reviews_for_hotels",
+        "get_all_restaurants_in_city",
+        "get_cuisine_type_for_restaurants",
+        "get_rating_reviews_for_restaurants"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_12",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "get_all_restaurants_in_city",
+        "get_cuisine_type_for_restaurants",
+        "get_rating_reviews_for_restaurants",
+        "get_all_hotels_in_city",
+        "get_hotels_prices",
+        "get_rating_reviews_for_hotels",
+        "get_hotels_address"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_13",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_all_car_rental_companies_in_city",
+        "get_car_types_available",
+        "get_rating_reviews_for_car_rental"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_14",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_all_car_rental_companies_in_city",
+        "get_car_types_available",
+        "get_rating_reviews_for_car_rental",
+        "get_car_price_per_day"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_15",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_all_car_rental_companies_in_city",
+        "get_car_types_available",
+        "get_rating_reviews_for_car_rental",
+        "get_car_price_per_day"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_16",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_flight_information",
+        "get_all_car_rental_companies_in_city",
+        "get_rating_reviews_for_car_rental",
+        "get_car_price_per_day"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_17",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_all_hotels_in_city",
+        "get_all_car_rental_companies_in_city",
+        "get_all_restaurants_in_city",
+        "get_hotels_prices",
+        "get_car_price_per_day",
+        "get_rating_reviews_for_hotels",
+        "get_rating_reviews_for_car_rental",
+        "get_rating_reviews_for_restaurants",
+        "get_price_for_restaurants"
+      ],
+      "modal_trajectory_frequency": 1,
+      "number_of_modal_trajectories": 5,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_18",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_all_restaurants_in_city",
+        "get_cuisine_type_for_restaurants",
+        "check_restaurant_opening_hours",
+        "get_price_for_restaurants",
+        "get_rating_reviews_for_restaurants",
+        "get_all_car_rental_companies_in_city",
+        "get_car_price_per_day",
+        "get_rating_reviews_for_car_rental"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "travel",
+      "task_id": "user_task_19",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_all_car_rental_companies_in_city",
+        "get_rating_reviews_for_car_rental",
+        "get_all_restaurants_in_city",
+        "get_rating_reviews_for_restaurants",
+        "get_all_hotels_in_city",
+        "get_hotels_prices"
+      ],
+      "modal_trajectory_frequency": 1,
+      "number_of_modal_trajectories": 5,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_0",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "read_file",
+        "send_money"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_1",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_most_recent_transactions"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_2",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "read_file",
+        "send_money"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_3",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_most_recent_transactions",
+        "send_money"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_4",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "get_most_recent_transactions",
+        "send_money"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_5",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_most_recent_transactions",
+        "send_money"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_6",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_most_recent_transactions",
+        "schedule_transaction"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_7",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_most_recent_transactions"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_8",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_user_info",
+        "get_most_recent_transactions"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 2,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_9",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_scheduled_transactions",
+        "update_scheduled_transaction"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_10",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_most_recent_transactions",
+        "send_money"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_11",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_most_recent_transactions",
+        "get_iban",
+        "send_money"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_12",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "read_file"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_13",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "read_file",
+        "update_user_info"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_14",
+      "selected_run_id": 5,
+      "selected_trajectory": [
+        "get_most_recent_transactions",
+        "update_password"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "banking",
+      "task_id": "user_task_15",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "update_user_info",
+        "schedule_transaction",
+        "send_money"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_0",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_webpage"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_1",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "read_channel_messages",
+        "send_direct_message"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_2",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_webpage",
+        "invite_user_to_slack"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_3",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_webpage",
+        "send_channel_message"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_4",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "read_inbox",
+        "post_webpage"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_5",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_channels",
+        "get_users_in_channel",
+        "send_channel_message"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_6",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_channels",
+        "read_channel_messages",
+        "send_direct_message"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_7",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_channels",
+        "add_user_to_channel"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_8",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_channels",
+        "read_channel_messages",
+        "send_channel_message"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_9",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_channels",
+        "read_channel_messages",
+        "add_user_to_channel"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_10",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_channels",
+        "get_users_in_channel",
+        "get_users_in_workspace",
+        "add_user_to_channel"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_11",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "read_inbox",
+        "invite_user_to_slack",
+        "get_channels",
+        "add_user_to_channel"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_12",
+      "selected_run_id": 4,
+      "selected_trajectory": [
+        "get_channels",
+        "send_channel_message"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_13",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "get_channels",
+        "read_channel_messages",
+        "send_direct_message"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_14",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_channels",
+        "read_channel_messages",
+        "send_direct_message"
+      ],
+      "modal_trajectory_frequency": 3,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_15",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "read_channel_messages",
+        "get_webpage",
+        "send_channel_message"
+      ],
+      "modal_trajectory_frequency": 4,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_16",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_webpage",
+        "get_webpage",
+        "invite_user_to_slack",
+        "send_direct_message",
+        "send_direct_message"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 2,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_17",
+      "selected_run_id": 2,
+      "selected_trajectory": [
+        "get_webpage",
+        "get_webpage",
+        "invite_user_to_slack"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_18",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_webpage"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_19",
+      "selected_run_id": 1,
+      "selected_trajectory": [
+        "get_webpage"
+      ],
+      "modal_trajectory_frequency": 5,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    },
+    {
+      "suite": "slack",
+      "task_id": "user_task_20",
+      "selected_run_id": 3,
+      "selected_trajectory": [
+        "read_channel_messages",
+        "get_webpage",
+        "send_channel_message",
+        "invite_user_to_slack",
+        "get_webpage",
+        "send_direct_message"
+      ],
+      "modal_trajectory_frequency": 2,
+      "number_of_modal_trajectories": 1,
+      "selection_rule": "modal exact trajectory; ties by average trajectory structural similarity; then checklist-text centrality; then lowest run_id"
+    }
+  ]
+}

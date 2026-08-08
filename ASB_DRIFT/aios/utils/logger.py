@@ -36,7 +36,8 @@ class BaseLogger:
 
     def log_to_console(self, content, level):
         # print(content)
-        click.secho(f"[{self.logger_name}] " + content, fg=self.level_color[level])
+        color = self.level_color.get(level, self.level_color.get("info", "white"))
+        click.secho(f"[{self.logger_name}] " + content, fg=color)
 
     def log_to_file(self, content, log_file):
         with open(log_file, "a") as w:
@@ -67,7 +68,8 @@ class AgentLogger(BaseLogger):
             "info": (248, 246, 227), # white
             "executing": (217, 237, 191), # green
             "suspending": (255, 235, 178), # yellow
-            "done": (122, 162, 227) # blue
+            "done": (122, 162, 227), # blue
+            "error": (255, 128, 128),
         }
 
     def load_log_file(self):
@@ -87,7 +89,8 @@ class LLMKernelLogger(BaseLogger):
             "warning": (246, 245, 242),
             "executing": (65, 176, 110), # green
             "suspending": (255, 201, 74), # yellow
-            "done": (122, 162, 227) # blue
+            "done": (122, 162, 227), # blue
+            "error": (255, 128, 128),
         }
 
     def log_to_console(self, content, level):

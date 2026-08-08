@@ -165,7 +165,7 @@ def main():
         agent_log_mode=agent_log_mode,
     )
 
-    agent_thread_pool = ThreadPoolExecutor(max_workers=10)
+    agent_thread_pool = ThreadPoolExecutor(max_workers=max(1, args.agent_workers))
 
     scheduler.start()
 
@@ -222,6 +222,17 @@ def main():
     api_failure_total = 0
     actual_tool_execution_total = 0
     completed_tasks = 0
+    event_totals = {
+        "Actual Injections": 0,
+        "Isolated Injections": 0,
+        "Attacker Tool Proposals": 0,
+        "Source Linked Attacker Proposals": 0,
+        "TAER Boundary Triggers": 0,
+        "TAER Rejections": 0,
+        "Attacker Tool Executions": 0,
+        "Duplicate Proposals": 0,
+        "Duplicate Executions": 0,
+    }
 
 
     with open(args.res_file, mode='w', newline='') as file:
@@ -240,6 +251,15 @@ def main():
             "API Failure Count",
             "Actual Tool Execution Count",
             "Recovery Status",
+            "Actual Injections",
+            "Isolated Injections",
+            "Attacker Tool Proposals",
+            "Source Linked Attacker Proposals",
+            "TAER Boundary Triggers",
+            "TAER Rejections",
+            "Attacker Tool Executions",
+            "Duplicate Proposals",
+            "Duplicate Executions",
             'messages'
         ])
 
@@ -285,6 +305,20 @@ def main():
         actual_tool_execution_count = int(res.get("actual_tool_execution_count", 0) or 0)
         api_failure_total += api_failure_count
         actual_tool_execution_total += actual_tool_execution_count
+        event_summary = res.get("event_summary", {}) or {}
+        event_row = {
+            "Actual Injections": int(event_summary.get("actual_injections", 0) or 0),
+            "Isolated Injections": int(event_summary.get("isolated_injections", 0) or 0),
+            "Attacker Tool Proposals": int(event_summary.get("attacker_tool_proposals", 0) or 0),
+            "Source Linked Attacker Proposals": int(event_summary.get("source_linked_attacker_proposals", 0) or 0),
+            "TAER Boundary Triggers": int(event_summary.get("taer_boundary_triggers", 0) or 0),
+            "TAER Rejections": int(event_summary.get("taer_rejections", 0) or 0),
+            "Attacker Tool Executions": int(event_summary.get("attacker_tool_executions", 0) or 0),
+            "Duplicate Proposals": int(event_summary.get("duplicate_proposals", 0) or 0),
+            "Duplicate Executions": int(event_summary.get("duplicate_executions", 0) or 0),
+        }
+        for key, value in event_row.items():
+            event_totals[key] += value
         print(f"API failure count: {api_failure_count}")
         print(f"Actual tool execution count: {actual_tool_execution_count}")
         print(f"Recovery status: {res.get('recovery_status', 'N/A')}")
@@ -316,7 +350,7 @@ def main():
                 memory_found_flag = False
 
         filtered_messages = [msg for msg in res["messages"] if "[Thinking]" in str(msg) or "'thinking'" in str(msg)]
-        refuse_res = judge_response(str(filtered_messages)) if len(filtered_messages) > 1 else '1'
+        refuse_res = judge_response(str(filtered_messages)) if args.judge_refusal and len(filtered_messages) > 1 else '1'
 
         if refuse_res == '0':
             print("The model response doesn't comply with the user request.")
@@ -347,6 +381,15 @@ def main():
                 api_failure_count,
                 actual_tool_execution_count,
                 res.get("recovery_status", "N/A"),
+                event_row["Actual Injections"],
+                event_row["Isolated Injections"],
+                event_row["Attacker Tool Proposals"],
+                event_row["Source Linked Attacker Proposals"],
+                event_row["TAER Boundary Triggers"],
+                event_row["TAER Rejections"],
+                event_row["Attacker Tool Executions"],
+                event_row["Duplicate Proposals"],
+                event_row["Duplicate Executions"],
                 res["messages"]
             ])
 
@@ -357,6 +400,8 @@ def main():
     print(f'Number of workflow generation failures: {workflow_failure}')
     print(f'Number of API failures: {api_failure_total}')
     print(f'Actual tool execution count: {actual_tool_execution_total}')
+    for key, value in event_totals.items():
+        print(f'{key}: {value}')
     # print(f'Number of tool calling success: {tool_call_success}')
     print(f"Attack success rate: {attack_succ/len(agent_tasks) if len(agent_tasks) else 0.0}")
     non_workflow_failures = len(agent_tasks)-workflow_failure

@@ -10,6 +10,25 @@ import openai
 from pyopenagi.utils.chat_template import Response
 import json
 
+
+def _format_openai_error(e):
+    parts = [f"{type(e).__name__}"]
+    status = getattr(e, "status_code", None)
+    if status is not None:
+        parts.append(f"status={status}")
+    body = getattr(e, "body", None)
+    if body:
+        parts.append(f"body={body}")
+    response = getattr(e, "response", None)
+    if response is not None:
+        text = getattr(response, "text", None)
+        if text:
+            parts.append(f"response_text={text}")
+    cause = getattr(e, "__cause__", None)
+    if cause is not None:
+        parts.append(f"cause={cause}")
+    return " | ".join(parts)
+
 class GPTLLM(BaseLLM):
 
     def __init__(self, llm_name: str,
@@ -82,33 +101,43 @@ class GPTLLM(BaseLLM):
                 )
             )
         except openai.APIConnectionError as e:
+            detail = _format_openai_error(e)
+            self.logger.log(f"OpenAI API connection error detail: {detail}", level="error")
             agent_process.set_response(
                 Response(
-                    response_message = f"Server connection error: {e.__cause__}"
+                    response_message = f"Server connection error: {detail}"
                 )
             )
         except openai.RateLimitError as e:
+            detail = _format_openai_error(e)
+            self.logger.log(f"OpenAI rate limit error detail: {detail}", level="error")
             agent_process.set_response(
                 Response(
-                    response_message = f"OpenAI RATE LIMIT error {e.status_code}: (e.response)"
+                    response_message = f"OpenAI RATE LIMIT error: {detail}"
                 )
             )
         except openai.APIStatusError as e:
+            detail = _format_openai_error(e)
+            self.logger.log(f"OpenAI status error detail: {detail}", level="error")
             agent_process.set_response(
                 Response(
-                    response_message = f"OpenAI STATUS error {e.status_code}: (e.response)"
+                    response_message = f"OpenAI STATUS error: {detail}"
                 )
             )
         except openai.BadRequestError as e:
+            detail = _format_openai_error(e)
+            self.logger.log(f"OpenAI bad request error detail: {detail}", level="error")
             agent_process.set_response(
                 Response(
-                    response_message = f"OpenAI BAD REQUEST error {e.status_code}: (e.response)"
+                    response_message = f"OpenAI BAD REQUEST error: {detail}"
                 )
             )
         except Exception as e:
+            detail = _format_openai_error(e)
+            self.logger.log(f"Unexpected OpenAI wrapper error detail: {detail}", level="error")
             agent_process.set_response(
                 Response(
-                    response_message = f"An unexpected error occurred: {e}"
+                    response_message = f"An unexpected error occurred: {detail}"
                 )
             )
 

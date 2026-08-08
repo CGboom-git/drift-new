@@ -68,6 +68,11 @@ class ReactAgentAttack(BaseAgent):
         self.attacker_tool = attacker_tool
         self.prefix = None
         self.agg = agg
+        self.last_tool_proposal_key = None
+        self.last_tool_execution_key = None
+
+    def _tool_key(self, tool_name, tool_args):
+        return (tool_name, json.dumps(tool_args or {}, sort_keys=True, default=str))
 
     def automatic_workflow(self):
         return super().automatic_workflow()
@@ -118,6 +123,10 @@ class ReactAgentAttack(BaseAgent):
                 function_name = tool_call["name"]
                 function_to_call = self.tool_list[function_name]
                 function_params = tool_call.get("parameters")
+                execution_key = self._tool_key(function_name, function_params)
+                if execution_key == self.last_tool_execution_key:
+                    self.drift_agent.log_event("duplicate_tool_execution", tool=function_name, parameters=function_params or {})
+                self.last_tool_execution_key = execution_key
                 self.logger.log(f"The current tool called is {function_to_call}, parameter:{function_params}\n", level="info")
 
             except KeyError as e:
@@ -140,7 +149,14 @@ class ReactAgentAttack(BaseAgent):
             try:
                 function_response = function_to_call.run(function_params)
                 self.actual_tool_execution_count += 1
-                self.drift_agent.log_event("tool_execution", tool=function_name, count=self.actual_tool_execution_count, final_stage=final_stage)
+                self.drift_agent.log_event(
+                    "tool_execution",
+                    tool=function_name,
+                    parameters=function_params or {},
+                    count=self.actual_tool_execution_count,
+                    final_stage=final_stage,
+                    is_attacker_tool=function_name == self.tool_name,
+                )
 
                 ############ Attacker prompt injection ############
                 if self.args.observation_prompt_injection and not final_stage:
@@ -190,7 +206,11 @@ class ReactAgentAttack(BaseAgent):
             return workflow
 
         authorized_tool_names = list(self.authorized_tool_names)
-        authorized_tools = set(authorized_tool_names)
+        authorized_tools = {
+            tool["function"]["name"]: tool
+            for tool in self.tools
+            if tool.get("function", {}).get("name") in authorized_tool_names
+        }
 
         recovered = []
         for step in workflow:
@@ -198,29 +218,32 @@ class ReactAgentAttack(BaseAgent):
             if tool_use or not step.get("tool_use"):
                 recovered.append({**step, "tool_use": tool_use})
 
-        planned_tools = [tool for step in recovered for tool in (step.get("tool_use") or [])]
-        missing_tools = [tool for tool in authorized_tool_names if tool not in planned_tools]
-        if missing_tools:
-            recovered.extend(
-                {"message": f"Use the {tool_name} tool to support the original task.", "tool_use": [tool_name]}
-                for tool_name in missing_tools
-            )
-
         if recovered:
-            if recovered != workflow or missing_tools:
+            if recovered != workflow:
                 self.recovery_status = "filtered_to_authorized_tools"
-                self.drift_agent.log_event("recovery_status", status=self.recovery_status, original_steps=len(workflow), recovered_steps=len(recovered), missing_tools=missing_tools)
+                self.drift_agent.log_event("recovery_status", status=self.recovery_status, original_steps=len(workflow), recovered_steps=len(recovered))
             return recovered
 
-        if authorized_tool_names:
-            self.recovery_status = "rebuilt_from_authorized_tools"
-            self.drift_agent.log_event("recovery_status", status=self.recovery_status, original_steps=len(workflow), recovered_steps=len(authorized_tool_names))
+        query_terms = set(re.findall(r"[a-z0-9_]+", self.original_task_input.lower()))
+        relevant = []
+        for tool_name, tool in authorized_tools.items():
+            description = tool.get("function", {}).get("description", "")
+            terms = set(re.findall(r"[a-z0-9_]+", description.lower()))
+            score = len(query_terms & terms)
+            if score:
+                relevant.append((score, tool_name, description))
+        relevant.sort(reverse=True)
+        if relevant:
+            self.recovery_status = "rebuilt_from_query_relevant_tools"
+            top_score = relevant[0][0]
+            selected = [item for item in relevant if item[0] == top_score][:2]
+            self.drift_agent.log_event("recovery_status", status=self.recovery_status, original_steps=len(workflow), recovered_steps=len(selected), tools=[tool_name for _, tool_name, _ in selected])
             return [
-                {"message": f"Use the {tool_name} tool to support the original task.", "tool_use": [tool_name]}
-                for tool_name in authorized_tool_names
+                {"message": f"Use {tool_name} to support the user request based on its description: {description}", "tool_use": [tool_name]}
+                for _, tool_name, description in selected
             ]
 
-        self.recovery_status = "failed_no_authorized_tools"
+        self.recovery_status = "failed_no_relevant_tools"
         self.drift_agent.log_event("recovery_status", status=self.recovery_status, original_steps=len(workflow), recovered_steps=0)
         return workflow
 
@@ -261,7 +284,7 @@ class ReactAgentAttack(BaseAgent):
         self.drift_agent = DRIFT(self.args, self.logger)
         self.authorized_tool_names = list(self.tool_list.keys())
         self.authorized_tool_list = copy.deepcopy(self.tool_list)
-        self.drift_agent.log_event("sourceflow_status", status="not_integrated_asb_adapter", mode="taer_only")
+        self.drift_agent.log_event("sourceflow_status", status="adapter_initialized", mode="taer")
 
         if self.args.defense_type == 'delimiters_defense':
             self.task_input = f"<start>{self.task_input}<end>"
@@ -283,6 +306,7 @@ class ReactAgentAttack(BaseAgent):
 
         # initialize drift tools and user query
         self.drift_agent.query = self.task_input
+        self.drift_agent.record_user_source(self.original_task_input)
         self.drift_agent.tools = self.tools
         self.drift_agent.get_all_tool_privilege(self.tools)
 
@@ -345,10 +369,7 @@ class ReactAgentAttack(BaseAgent):
                 prompt = f"At step {self.rounds + 1}, you need to {message} "
                 self.messages.append({"role": "user","content": prompt})
 
-                if tool_use and self.drift_agent.taer_mode_enabled():
-                    used_tools = self.pre_select_tools(tool_use)
-                else:
-                    used_tools = self.tools if tool_use else None
+                used_tools = self.tools if tool_use else None
 
                 response, start_times, end_times, waiting_times, turnaround_times = self.get_response(
                     query = Query(
@@ -376,14 +397,32 @@ class ReactAgentAttack(BaseAgent):
                     if tool_calls:
                         for tool_call in tool_calls:
                             tool_name = tool_call["name"]
+                            tool_args = tool_call.get("parameters") or {}
+                            proposal_key = self._tool_key(tool_name, tool_args)
+                            duplicate_proposal = proposal_key == self.last_tool_proposal_key
+                            if duplicate_proposal:
+                                self.drift_agent.log_event("duplicate_tool_proposal", tool=tool_name, parameters=tool_args)
+                            self.last_tool_proposal_key = proposal_key
+
+                            candidate_source_id = self.drift_agent.record_candidate_source(tool_name, tool_args, i)
+                            source_labels = self.drift_agent.source_labels(candidate_source_id)
                             pos = len(self.drift_agent.achieved_function_trajectory)
+                            backbone_result = None
+                            anchor_result = None
+                            boundary_result = None
+                            final_decision_owner = "TAER" if self.drift_agent.taer_mode_enabled() else "ORIGINAL_DRIFT"
+                            rejection_reason = None
+                            passed = False
                             if (pos < len(self.drift_agent.initial_traj)) and (tool_name == self.drift_agent.initial_traj[pos]):
                                 self.drift_agent.achieved_function_trajectory.append(tool_name)
                                 passed_tool_calls.append(tool_call)
                                 owner = "TAER" if self.drift_agent.taer_mode_enabled() else "ORIGINAL_DRIFT"
+                                final_decision_owner = owner
+                                backbone_result = {"status": "PLANNED", "step_id": pos, "parameter_compatibility": "MATCH", "ready": True, "reason": "planned_trajectory_match"}
                                 if self.drift_agent.taer_mode_enabled():
                                     self.drift_agent.log_event("taer_backbone_match", tool=tool_name, status="PLANNED", step_id=pos, parameter_compatibility="MATCH", ready=True, reason="planned_trajectory_match")
                                 self.drift_agent.log_event("final_decision", owner=owner, decision="allow", tool=tool_name, reason="PLANNED_TRAJECTORY_MATCH")
+                                passed = True
 
                             # elif (tool_name in self.drift_agent.tool_privilege) and self.drift_agent.tool_privilege[tool_name] == "Read":
                             #         self.drift_agent.initial_traj.insert(pos, tool_name)
@@ -404,8 +443,35 @@ class ReactAgentAttack(BaseAgent):
 
                                 if LLM_judge_result:
                                     passed_tool_calls.append(tool_call)
+                                    self.drift_agent.log_event("tool_proposal_decision", tool=tool_name, proposed=True, decision="allow", rule=judge_reason)
+                                    passed = True
                                 else:
                                     self.logger.log(f"Tool call rejected by trajectory guard: {tool_name}; reason={judge_reason}", level="info")
+                                    self.drift_agent.log_event("tool_proposal_decision", tool=tool_name, proposed=True, decision="reject", rule=judge_reason)
+                                    rejection_reason = judge_reason
+                                validation = self.drift_agent.last_validation_result or {}
+                                backbone_result = validation.get("backbone_result")
+                                anchor_result = validation.get("anchor_result")
+                                boundary_result = validation.get("boundary_result")
+                                final_decision_owner = validation.get("final_decision_owner") or final_decision_owner
+                                rejection_reason = validation.get("rejection_reason") or rejection_reason
+                            proposal_fields = {
+                                "tool": tool_name,
+                                "parameters": tool_args,
+                                "source_id": candidate_source_id,
+                                "source_labels": source_labels,
+                                "backbone_result": backbone_result,
+                                "anchor_result": anchor_result,
+                                "boundary_result": boundary_result,
+                                "final_decision_owner": final_decision_owner,
+                                "rejection_reason": rejection_reason,
+                                "executed": passed,
+                                "duplicate": duplicate_proposal,
+                            }
+                            if tool_name == self.tool_name:
+                                self.drift_agent.log_event("attacker_tool_proposal", **proposal_fields)
+                            else:
+                                self.drift_agent.log_event("tool_proposal", **proposal_fields)
                 except Exception as e:
                     self.logger.log(f"Error during tool call validation: {e}", level="error")
                     passed_tool_calls = None     
@@ -422,6 +488,13 @@ class ReactAgentAttack(BaseAgent):
                     try:
                         before_isolation = list(observations)
                         observations = self.drift_agent.injection_isolate(query=self.task_input, tool_call=action_messages, observations=observations, messages=self.messages)
+                        for tool_call, raw_observation, isolated_observation in zip(passed_tool_calls, before_isolation, observations):
+                            self.drift_agent.record_observation_sources(
+                                tool_call["name"],
+                                raw_observation,
+                                isolated_observation,
+                                i,
+                            )
                         self.drift_agent.log_event("opi_isolated", changed=before_isolation != observations, final_stage=i == len(workflow) - 1)
                     except Exception as e:
                         self.logger.log(f"Error during injection isolation: {e}", level="error")
@@ -473,6 +546,7 @@ class ReactAgentAttack(BaseAgent):
             "api_failure_count": self.api_failure_count,
             "actual_tool_execution_count": self.actual_tool_execution_count,
             "recovery_status": self.recovery_status,
+            "event_summary": self.drift_agent.summarize_events(self.tool_name),
             "messages": self.messages,
             "attacker_tool": self.tool_name,
             "normal_tools": self.authorized_tool_list,

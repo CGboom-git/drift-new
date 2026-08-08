@@ -48,6 +48,8 @@ def parse_global_args():
     parser.add_argument("--result_file", type=str, default = 'logs/result_file.log', help="Path to the result file")
     parser.add_argument("--database", type=str, default = 'memory_db/chroma_db', help="Path to the database")
     parser.add_argument('--task_num', type=int, default=1, help="The task number for an agent to run")
+    parser.add_argument('--agent_workers', type=int, default=2, help="Maximum concurrent ASB agent runs")
+    parser.add_argument('--judge_refusal', action='store_true', help="Run the extra LLM refusal judge for each case")
     parser.add_argument("--write_db", action='store_true')
     parser.add_argument("--read_db", action='store_true')
     parser.add_argument("--res_file", type=str, default = 'logs/result_file.log', help="Path to the result file")
