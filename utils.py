@@ -64,6 +64,19 @@ def get_args(description='DRIFT', argv=None):
         default="",
         help="Tag appended to output directory name for experiment tracking.",
     )
+    parser.add_argument(
+        "--planner_mode",
+        type=str,
+        choices=["normal", "replay"],
+        default="normal",
+        help="Planner mode: normal uses the LLM planner, replay loads exact canonical planner outputs.",
+    )
+    parser.add_argument(
+        "--fixed_plan_file",
+        type=str,
+        default="data/canonical_plans_97.json",
+        help="Canonical replay file used only when --planner_mode replay is set.",
+    )
 
     # Environment
     parser.add_argument('--seed', type=int, default=98, help='Random Seed.')

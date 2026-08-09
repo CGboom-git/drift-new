@@ -54,7 +54,7 @@ def main(args, suite_type):
 
     # if attacker is not None:
     #     save_dir = os.path.join(output_dir, attacker)
-    
+
     # else:
     #     save_dir = os.path.join(output_dir, "user_task")
 
@@ -62,7 +62,7 @@ def main(args, suite_type):
 
     if not os.path.exists(save_dir):
         os.makedirs(save_dir, exist_ok=True)
-    
+
     logger_path = os.path.join(save_dir, "log.txt")
     logger = get_logger(logger_path)
     logger.info(f"Log File is saved at: {logger_path}")
@@ -181,13 +181,15 @@ def main(args, suite_type):
                 task_injections = attack.attack(user_task, injection_task)
 
                 start_time = time.time()
+                llm.fixed_plan_suite = suite_type
+                llm.fixed_plan_task_id = f"user_task_{user_task_idx}"
                 utility, security, messages = task_suite.run_task_with_pipeline(tools_pipeline, user_task, injection_task, task_injections)
                 end_time = time.time()
                 utility_result.append(utility)
                 security_result.append(security)
                 source_flow_log_path = save_source_flow_log(args, llm, result_file_path, logger)
                 with open(result_file_path, "w") as f:
-                    result_payload = {"suite_name": suite_type, "pipeline_name": f"{args.model}", "user_task_id": f"user_task_{user_task_idx}", "injection_task_id": f"injection_task_{injection_task_idx}", "attack_type": f"{attacker}", "build_constraints": args.build_constraints, "injection_isolation": args.injection_isolation, "dynamic_validation": args.dynamic_validation, "adaptive_attack": args.adaptive_attack, "tool_permission": llm.tool_permissions, "initial_trajectory": llm.initial_function_trajectory, "initial_checklist": llm.initial_node_checklist, "conversations": messages, "benchmark_version": args.benchmark_version, "utility": utility, "security": security, "total_tokens": llm.client.total_tokens - pre_total_tokens, "duration": end_time - start_time}
+                    result_payload = {"suite_name": suite_type, "pipeline_name": f"{args.model}", "user_task_id": f"user_task_{user_task_idx}", "injection_task_id": f"injection_task_{injection_task_idx}", "attack_type": f"{attacker}", "build_constraints": args.build_constraints, "injection_isolation": args.injection_isolation, "dynamic_validation": args.dynamic_validation, "adaptive_attack": args.adaptive_attack, "planner_mode": args.planner_mode, "fixed_plan_file": args.fixed_plan_file, "tool_permission": llm.tool_permissions, "initial_trajectory": llm.initial_function_trajectory, "initial_checklist": llm.initial_node_checklist, "conversations": messages, "benchmark_version": args.benchmark_version, "utility": utility, "security": security, "total_tokens": llm.client.total_tokens - pre_total_tokens, "duration": end_time - start_time}
                     if source_flow_log_path is not None:
                         result_payload["source_flow_validation"] = args.source_flow_validation
                         result_payload["source_flow_log_path"] = source_flow_log_path
@@ -203,7 +205,7 @@ def main(args, suite_type):
             match = re.fullmatch(r'user_task_(\d+)', user_task_name)
             user_task_idx = int(match.group(1))
             pre_total_tokens = llm.client.total_tokens
-            
+
             result_file_path = Path(save_dir) / f"user_task_{user_task_idx}" / "none" / f"none.json"
             result_file_path.parent.mkdir(parents=True, exist_ok=True)
             if not args.force_rerun and os.path.exists(result_file_path):
@@ -222,13 +224,15 @@ def main(args, suite_type):
 
 
             start_time = time.time()
+            llm.fixed_plan_suite = suite_type
+            llm.fixed_plan_task_id = f"user_task_{user_task_idx}"
             utility, security, messages = task_suite.run_task_with_pipeline(tools_pipeline, user_task, injection_task=None, injections={})
             end_time = time.time()
             utility_result.append(utility)
             security_result.append(security)
             source_flow_log_path = save_source_flow_log(args, llm, result_file_path, logger)
             with open(result_file_path, "w") as f:
-                result_payload = {"suite_name": suite_type, "pipeline_name": f"{args.model}", "user_task_id": f"user_task_{user_task_idx}", "injection_task_id": None, "attack_type": None, "build_constraints": args.build_constraints, "injection_isolation": args.injection_isolation, "dynamic_validation": args.dynamic_validation, "adaptive_attack": args.adaptive_attack, "tool_permission": llm.tool_permissions, "initial_trajectory": llm.initial_function_trajectory, "initial_checklist": llm.initial_node_checklist, "conversations": messages, "benchmark_version": args.benchmark_version, "utility": utility, "security": security, "total_tokens": llm.client.total_tokens - pre_total_tokens, "duration": end_time - start_time}
+                result_payload = {"suite_name": suite_type, "pipeline_name": f"{args.model}", "user_task_id": f"user_task_{user_task_idx}", "injection_task_id": None, "attack_type": None, "build_constraints": args.build_constraints, "injection_isolation": args.injection_isolation, "dynamic_validation": args.dynamic_validation, "adaptive_attack": args.adaptive_attack, "planner_mode": args.planner_mode, "fixed_plan_file": args.fixed_plan_file, "tool_permission": llm.tool_permissions, "initial_trajectory": llm.initial_function_trajectory, "initial_checklist": llm.initial_node_checklist, "conversations": messages, "benchmark_version": args.benchmark_version, "utility": utility, "security": security, "total_tokens": llm.client.total_tokens - pre_total_tokens, "duration": end_time - start_time}
                 if source_flow_log_path is not None:
                     result_payload["source_flow_validation"] = args.source_flow_validation
                     result_payload["source_flow_log_path"] = source_flow_log_path
