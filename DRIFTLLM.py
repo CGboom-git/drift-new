@@ -263,18 +263,30 @@ class DRIFTLLM(PromptingLLM):
         tool_calls = list((output or {}).get("tool_calls") or [])
         if not tool_calls:
             return []
-        content = str(error_message)
+        if isinstance(error_message, dict):
+            content = str(error_message.get("content", error_message))
+            rejected_tool_name = error_message.get("rejected_tool_name")
+        else:
+            content = str(error_message)
+            rejected_tool_name = None
         messages = []
         for tool_call in tool_calls:
             tool_call_id = getattr(tool_call, "id", None)
+            tool_name = getattr(tool_call, "function", None)
             if tool_call_id is None and isinstance(tool_call, dict):
                 tool_call_id = tool_call.get("id")
+                fn = tool_call.get("function", {})
+                tool_name = fn.get("name") if isinstance(fn, dict) else getattr(fn, "name", None)
+            if rejected_tool_name and tool_name != rejected_tool_name:
+                tool_content = f"Skipped {tool_name} because the tool-call batch was rejected."
+            else:
+                tool_content = content
             messages.append({
                 "role": "tool",
-                "content": f"</function_error>\n{content}\n</function_error>",
+                "content": f"</function_error>\n{tool_content}\n</function_error>",
                 "tool_call_id": tool_call_id or "",
                 "tool_call": tool_call,
-                "error": content,
+                "error": tool_content,
             })
         return messages
 
@@ -282,7 +294,7 @@ class DRIFTLLM(PromptingLLM):
         if isinstance(error_message, str) and error_message in {"ALIGN", "MISALIGN", "UNKNOWN"}:
             return None
         if output is not None:
-            tool_messages = self._tool_call_error_messages(output, error_message)
+            tool_messages = DRIFTLLM._tool_call_error_messages(self, output, error_message)
             if tool_messages:
                 return tool_messages
         if isinstance(error_message, dict):
@@ -290,7 +302,7 @@ class DRIFTLLM(PromptingLLM):
         else:
             wrapped = {"role": "user", "content": str(error_message)}
         wrapped["content"] = f"</function_error>\n{wrapped['content']}\n</function_error>"
-        return wrapped
+        return [wrapped]
 
     def _append_function_error(self, messages, output, error_message):
         if error_message is None:
@@ -537,7 +549,7 @@ class DRIFTLLM(PromptingLLM):
             return False
         side_effect = self.source_flow_contract_helper.get_side_effect(tool_name)
         if side_effect is None:
-            return True
+            return False
         return str(side_effect).strip().lower() in {"", "none", "no", "false", "read", "read-only", "readonly"}
 
     def _runtime_read_plan_node(self):
@@ -581,6 +593,59 @@ class DRIFTLLM(PromptingLLM):
         for message in messages or []:
             if message.get("role") == "tool":
                 authorized_texts.append(str(message.get("content", "")).lower())
+        return all(any(value in text for text in authorized_texts) for value in scalar_values)
+
+    def _authorized_repeated_read(self, tool_name, tool_args, query, messages):
+        if not DRIFTLLM._is_read_tool(self, tool_name):
+            return False
+        if DRIFTLLM._is_action_tool(self, tool_name):
+            return False
+        if tool_name not in self.function_trajectory:
+            return False
+        try:
+            checklist = json.loads(self.node_checklist)
+        except Exception:
+            return False
+        plan_nodes = [node for node in checklist if isinstance(node, dict) and node.get("name") == tool_name]
+        if not plan_nodes:
+            return False
+
+        authorized_texts = [str(query or "").lower()]
+        dependency_tools = set()
+        for node in plan_nodes:
+            required_params = str(node.get("required parameters", ""))
+            conditions = str(node.get("conditions", ""))
+            authorized_texts.append(required_params.lower())
+            authorized_texts.append(conditions.lower())
+            dependency_tools.update(re.findall(r"[A-Za-z_]\w*", conditions))
+
+        for message in messages or []:
+            if message.get("role") != "tool":
+                continue
+            tool_call = message.get("tool_call", {})
+            source_tool = None
+            if isinstance(tool_call, dict):
+                source_tool = tool_call.get("function") if isinstance(tool_call.get("function"), str) else tool_call.get("name")
+            if source_tool in dependency_tools:
+                authorized_texts.append(str(message.get("content", "")).lower())
+
+        scalar_values = []
+
+        def collect(value):
+            if value is None:
+                return
+            if isinstance(value, dict):
+                for child in value.values():
+                    collect(child)
+            elif isinstance(value, (list, tuple, set)):
+                for child in value:
+                    collect(child)
+            else:
+                text = str(value).strip().lower()
+                if text:
+                    scalar_values.append(text)
+
+        collect(tool_args or {})
         return all(any(value in text for text in authorized_texts) for value in scalar_values)
 
     def _taer_runtime_read_prerequisite(self, tool_name, tool_args, query, messages):
@@ -1713,6 +1778,10 @@ Do not approve unrelated exploration or any new goal.
         align_error_message = None
         temp_achieved_trajectory = []
         for func_ids, achieved_func in enumerate(self.achieved_function_trajectory + to_call_function):
+            if func_ids < len(self.achieved_function_trajectory):
+                temp_achieved_trajectory.append(achieved_func)
+                continue
+
             if (func_ids < len(self.function_trajectory)) and (achieved_func == self.function_trajectory[func_ids]):
                 temp_achieved_trajectory.append(achieved_func)
                 # In-plan: explicit final owner
@@ -1757,11 +1826,59 @@ Do not approve unrelated exploration or any new goal.
 
                 taer_mode = getattr(self.args, "taer_mode", "off")
 
+                if taer_mode == "on" and DRIFTLLM._authorized_repeated_read(
+                    self, achieved_func, tool_args, query, messages
+                ):
+                    self.achieved_function_trajectory.append(achieved_func)
+                    temp_achieved_trajectory.append(achieved_func)
+                    self._final_decision_owner = "TAER"
+                    if self.logger:
+                        self.logger.info(
+                            f"AUTHORIZED_REPEATED_READ allow {achieved_func}: "
+                            "original plan/checklist and authorized provenance matched"
+                        )
+                        self.logger.info("Final decision: ALLOW (owner=TAER, relation=AUTHORIZED_REPEATED_READ)")
+                    continue
+
                 if taer_mode == "on" and DRIFTLLM._is_side_effect_free_read_tool(self, achieved_func):
                     self.logger.info(
-                        f"TAER runtime Read candidate {achieved_func}; deferring final decision to checklist"
+                        f"TAER runtime Read candidate {achieved_func}; entering TAER runtime-read guard"
                     )
-                    continue
+                    runtime_read_call = [{"function": {"name": achieved_func, "arguments": json.dumps(tool_args)}}]
+                    if DRIFTLLM._allow_runtime_read_extension(
+                        self, runtime_read_call, query, messages,
+                        "The function name does not align with checklist."
+                    ):
+                        temp_achieved_trajectory.append(achieved_func)
+                        continue
+                    self._source_flow_sanitize_rejected_output(
+                        output,
+                        f"[CALL ERROR] TAER rejected {achieved_func}: runtime read was not supported by the current task.",
+                    )
+                    self._final_decision_owner = "TAER"
+                    self.logger.info("Final decision: REJECT (owner=TAER, relation=RUNTIME_READ_EXTENSION)")
+                    return {
+                        "role": "user",
+                        "content": (
+                            f"[CALL ERROR] TAER rejected {achieved_func}: runtime read was not supported by "
+                            "the current task. Continue the original user task."
+                        ),
+                    }, output
+
+                if taer_mode == "on" and DRIFTLLM._is_read_tool(self, achieved_func):
+                    self._source_flow_sanitize_rejected_output(
+                        output,
+                        f"[CALL ERROR] TAER rejected {achieved_func}: read tool side-effect metadata is missing or unsafe.",
+                    )
+                    self._final_decision_owner = "TAER"
+                    self.logger.info("Final decision: REJECT (owner=TAER, relation=RUNTIME_READ_EXTENSION)")
+                    return {
+                        "role": "user",
+                        "content": (
+                            f"[CALL ERROR] TAER rejected {achieved_func}: read tool side-effect metadata is missing "
+                            "or unsafe. Continue the original user task."
+                        ),
+                    }, output
 
                 enter_taer = False
                 if taer_mode == "on" and self.taer_state is not None:
@@ -2074,6 +2191,13 @@ Do not approve unrelated exploration or any new goal.
                 self,
                 json_tool_calls, query, messages, node_judge_reason
             ):
+                return None, output
+
+            if is_function_mismatch and getattr(self.args, "taer_mode", "off") == "on":
+                self.logger.info(
+                    "TAER ON checklist function-name mismatch recorded as evidence only; "
+                    "TAER final decision path remains authoritative."
+                )
                 return None, output
 
             if self.source_flow_validation_enabled() and not is_function_mismatch:
