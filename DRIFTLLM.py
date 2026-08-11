@@ -1855,7 +1855,7 @@ Do not approve unrelated exploration or any new goal.
                     self.source_label_store.mark_raw_output_sanitized_visible(
                         source_flow_context["tool_name"],
                         source_flow_context["step"],
-                        False,
+                        True,
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
                 log_isolation_shadow(
