@@ -46,6 +46,7 @@ class DRIFTLLM(PromptingLLM):
         self._final_decision_owner = ""  # "TAER" or "ORIGINAL_DRIFT" per validation round
         self._user_explicit_entities = set()  # user-authorized entities from query
         self._runtime_read_extensions = {}  # {plan_node: {"count": int, "calls": set}}
+        self._shadow_delegation_persistence = self._reset_shadow_delegation_persistence()
 
     def source_flow_enabled(self):
         return bool(
@@ -71,6 +72,95 @@ class DRIFTLLM(PromptingLLM):
         self._source_flow_recovery_state = self._source_flow_reset_recovery()
         self._source_flow_clear_bad_flow_counts()
         self._source_flow_validated_args_cache = {}
+        self._shadow_delegation_persistence = self._reset_shadow_delegation_persistence()
+
+    def _reset_shadow_delegation_persistence(self):
+        return {
+            "source": None,
+            "task_items": [],
+            "evidence_id": None,
+            "first_seen_step": None,
+        }
+
+    def _shadow_delegation_live_snapshot(self):
+        anchor_records = [
+            r for r in self.source_label_store.records
+            if "delegated_task_source" in r.source_labels and not r.tool
+        ]
+        delegated_records = [
+            r for r in self.source_label_store.records
+            if "delegated_task_source" in r.source_labels
+            and r.tool and r.sanitized_visible is not False and r.value
+        ]
+
+        source = None
+        evidence_id = None
+        if anchor_records:
+            anchor = anchor_records[-1]
+            source = anchor.evidence.get("delegated_anchor_value") if anchor.evidence else None
+            if source is None:
+                source = anchor.value
+            evidence_id = anchor.source_id
+
+        task_items = []
+        item_evidence_id = None
+        if delegated_records:
+            delegated = delegated_records[-1]
+            task_items = self._parse_delegated_task_items(str(delegated.value))
+            item_evidence_id = delegated.source_id
+
+        return {
+            "present": bool(anchor_records or task_items),
+            "source": str(source)[:160] if source is not None else None,
+            "task_items": task_items,
+            "item_count": len(task_items),
+            "evidence_id": item_evidence_id or evidence_id,
+        }
+
+    def _shadow_delegation_update(self, live_snapshot, step):
+        if not live_snapshot.get("source") or not live_snapshot.get("task_items"):
+            return
+
+        shadow = self._shadow_delegation_persistence
+        if shadow["source"] and shadow["source"] != live_snapshot["source"]:
+            self.logger.info(
+                "[DELEGATION_SHADOW] warning=source_overwrite_attempt "
+                f"shadow_source={shadow['source']} live_source={live_snapshot['source']}"
+            )
+            return
+
+        if not shadow["source"]:
+            shadow["source"] = live_snapshot["source"]
+            shadow["task_items"] = list(live_snapshot["task_items"])
+            shadow["evidence_id"] = live_snapshot.get("evidence_id")
+            shadow["first_seen_step"] = step
+
+    def _log_delegation_shadow_diagnostic(self, candidate_tool, relation=None, confidence=None):
+        live = self._shadow_delegation_live_snapshot()
+        self._shadow_delegation_update(live, self._source_flow_tool_step([]))
+        shadow = self._shadow_delegation_persistence
+        shadow_present = bool(shadow["source"] and shadow["task_items"])
+        recovery_candidate = live.get("item_count", 0) == 0 and shadow_present
+        if recovery_candidate:
+            self.logger.info(
+                "[DELEGATION_SHADOW] event=DELEGATION_SHADOW_GAP "
+                f"candidate_tool={candidate_tool} live_source={live.get('source')} "
+                f"shadow_source={shadow['source']} shadow_item_count={len(shadow['task_items'])}"
+            )
+        self.logger.info(
+            "[DELEGATION_SHADOW] "
+            f"candidate_tool={candidate_tool} "
+            f"delegation_live_present={live.get('present')} "
+            f"delegation_live_source={live.get('source')} "
+            f"delegation_live_item_count={live.get('item_count', 0)} "
+            f"delegation_live_evidence_id={live.get('evidence_id')} "
+            f"delegation_shadow_present={shadow_present} "
+            f"delegation_shadow_source={shadow['source']} "
+            f"delegation_shadow_item_count={len(shadow['task_items'])} "
+            f"delegation_shadow_evidence_id={shadow['evidence_id']} "
+            f"delegation_shadow_recovery_candidate={recovery_candidate} "
+            f"taer_relation={relation} taer_confidence={confidence}"
+        )
 
     def _source_flow_tool_name(self, tool_message):
         tool_call = tool_message.get("tool_call")
@@ -1813,6 +1903,7 @@ Do not approve unrelated exploration or any new goal.
                         f"TAER backbone match: {match_result.status} ready={match_result.is_currently_ready} "
                         f"compat={match_result.parameter_compatibility}; entering anchor analyzer"
                     )
+                    self._log_delegation_shadow_diagnostic(achieved_func)
 
                     anchor_context = json.dumps({
                         "user_query": query[:500],
@@ -1855,6 +1946,7 @@ Do not approve unrelated exploration or any new goal.
                     self.logger.info(f"TAER anchor raw: {relation} for {achieved_func}")
 
                     confidence = anchor_result.get("confidence", "LOW")
+                    self._log_delegation_shadow_diagnostic(achieved_func, relation, confidence)
                     if confidence != "HIGH":
                         self.logger.info(
                             f"TAER confidence='{confidence}' (not HIGH) → AMBIGUOUS → fallback"
