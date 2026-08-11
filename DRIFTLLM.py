@@ -135,8 +135,157 @@ class DRIFTLLM(PromptingLLM):
             shadow["evidence_id"] = live_snapshot.get("evidence_id")
             shadow["first_seen_step"] = step
 
+    def _shadow_preview_value(self, value, limit=360):
+        preview = " ".join(str(value).split())
+        if len(preview) > limit:
+            return preview[:limit] + "..."
+        return preview
+
+    def _shadow_parser_stage_counts(self, content):
+        numbered = re.findall(
+            r"(?:\d+[\.\)]\s*|[-*]\s+)(.+?)(?=\n\d+[\.\)]|\n[-*]\s|\n\n|\Z)",
+            content,
+            re.DOTALL,
+        )
+        numbered_items = [m.strip() for m in numbered if len(m.strip()) > 10]
+        sentences = re.split(r'[.;]\s+(?=[A-Z])', content)
+        sentence_candidates = [s.strip() for s in sentences if len(s.strip()) > 15]
+        sentence_verb_matches = [
+            s for s in sentence_candidates
+            if any(
+                verb in s.lower()
+                for verb in ["summarize", "send", "find", "post", "create", "get", "read", "check", "share", "invite"]
+            )
+        ]
+        production_items = self._parse_delegated_task_items(content)
+        return {
+            "numbered_match_count": len(numbered_items),
+            "numbered_match_preview": self._shadow_preview_value(numbered_items[0]) if numbered_items else None,
+            "sentence_candidate_count": len(sentence_candidates),
+            "sentence_verb_match_count": len(sentence_verb_matches),
+            "production_parsed_item_count": len(production_items),
+            "production_parsed_item_preview": self._shadow_preview_value(production_items[0]) if production_items else None,
+        }
+
+    def _shadow_child_counts(self, source_id):
+        children = [r for r in self.source_label_store.records if source_id in (r.parent_sources or [])]
+        counts = {
+            "child_total_count": len(children),
+            "structured_child_count": 0,
+            "regex_child_count": 0,
+            "sanitized_child_count": 0,
+            "injected_fragment_child_count": 0,
+            "other_child_count": 0,
+        }
+        structured_samples = []
+        for child in children:
+            kind = child.source_kind or ""
+            labels = child.source_labels or []
+            if kind == "structured_field":
+                counts["structured_child_count"] += 1
+                if len(structured_samples) < 8:
+                    field_path = child.evidence.get("field_path") if child.evidence else None
+                    structured_samples.append({
+                        "source_id": child.source_id,
+                        "field_path": field_path,
+                        "value_type": type(child.value).__name__,
+                        "value_preview": self._shadow_preview_value(child.value, 220),
+                        "source_labels": labels,
+                        "sanitized_visible": child.sanitized_visible,
+                    })
+            elif "regex_entity" in kind or "regex" in labels:
+                counts["regex_child_count"] += 1
+            elif "sanitized" in kind:
+                counts["sanitized_child_count"] += 1
+            elif kind == "injected_fragment":
+                counts["injected_fragment_child_count"] += 1
+            else:
+                counts["other_child_count"] += 1
+        return counts, structured_samples
+
+    def _shadow_audit_delegated_extraction(self, candidate_tool):
+        delegated_records = [
+            r for r in self.source_label_store.records
+            if "delegated_task_source" in r.source_labels
+            and r.tool and r.sanitized_visible is not False and r.value
+        ]
+        anchor_records = [
+            r for r in self.source_label_store.records
+            if "delegated_task_source" in r.source_labels and not r.tool
+        ]
+        if not anchor_records or not delegated_records:
+            return
+
+        selected = delegated_records[-1]
+        self.logger.info(
+            "[DELEGATION_EXTRACTION_SHADOW] "
+            f"event=DELEGATION_RECORD_ORDER candidate_tool={candidate_tool} "
+            f"delegated_record_count={len(delegated_records)}"
+        )
+
+        for idx, record in enumerate(delegated_records):
+            parser_counts = self._shadow_parser_stage_counts(str(record.value))
+            child_counts, _ = self._shadow_child_counts(record.source_id)
+            self.logger.info(
+                "[DELEGATION_EXTRACTION_SHADOW] "
+                f"event=DELEGATED_RECORD index={idx} "
+                f"production_selected_record={record.source_id == selected.source_id} "
+                f"source_id={record.source_id} tool={record.tool} step={record.step} "
+                f"source_kind={record.source_kind} sanitized_visible={record.sanitized_visible} "
+                f"value_python_type={type(record.value).__name__} value_length={len(str(record.value))} "
+                f"production_parser_item_count={parser_counts['production_parsed_item_count']} "
+                f"structured_child_count={child_counts['structured_child_count']} "
+                f"value_preview={self._shadow_preview_value(record.value)}"
+            )
+
+        parser_counts = self._shadow_parser_stage_counts(str(selected.value))
+        child_counts, structured_samples = self._shadow_child_counts(selected.source_id)
+        if parser_counts["production_parsed_item_count"] > 0:
+            classification = "RAW_PARSE_SUCCESS"
+        elif child_counts["structured_child_count"] > 0:
+            classification = "RAW_PARSE_EMPTY_STRUCTURED_CHILDREN_PRESENT"
+        else:
+            classification = "RAW_PARSE_EMPTY_NO_STRUCTURED_CHILDREN"
+        if len(delegated_records) > 1:
+            classification += "+MULTIPLE_DELEGATED_RECORDS"
+
+        self.logger.info(
+            "[DELEGATION_EXTRACTION_SHADOW] "
+            f"event=DELEGATION_EXTRACTION_AUDIT candidate_tool={candidate_tool} "
+            f"selected_source_id={selected.source_id} selected_tool={selected.tool} "
+            f"selected_step={selected.step} selected_source_kind={selected.source_kind} "
+            f"selected_sanitized_visible={selected.sanitized_visible} "
+            f"selected_source_labels={selected.source_labels} "
+            f"selected_value_type={type(selected.value).__name__} "
+            f"selected_value_length={len(str(selected.value))} "
+            f"selected_value_preview={self._shadow_preview_value(selected.value)} "
+            f"numbered_match_count={parser_counts['numbered_match_count']} "
+            f"numbered_match_preview={parser_counts['numbered_match_preview']} "
+            f"sentence_candidate_count={parser_counts['sentence_candidate_count']} "
+            f"sentence_verb_match_count={parser_counts['sentence_verb_match_count']} "
+            f"production_parsed_item_count={parser_counts['production_parsed_item_count']} "
+            f"production_parsed_item_preview={parser_counts['production_parsed_item_preview']} "
+            f"child_total_count={child_counts['child_total_count']} "
+            f"structured_child_count={child_counts['structured_child_count']} "
+            f"regex_child_count={child_counts['regex_child_count']} "
+            f"sanitized_child_count={child_counts['sanitized_child_count']} "
+            f"injected_fragment_child_count={child_counts['injected_fragment_child_count']} "
+            f"other_child_count={child_counts['other_child_count']} "
+            f"classification={classification}"
+        )
+        for sample in structured_samples:
+            self.logger.info(
+                "[DELEGATION_EXTRACTION_SHADOW] "
+                f"event=STRUCTURED_CHILD_SAMPLE parent_source_id={selected.source_id} "
+                f"child_source_id={sample['source_id']} field_path={sample['field_path']} "
+                f"value_python_type={sample['value_type']} "
+                f"value_preview={sample['value_preview']} "
+                f"source_labels={sample['source_labels']} sanitized_visible={sample['sanitized_visible']}"
+            )
+
     def _log_delegation_shadow_diagnostic(self, candidate_tool, relation=None, confidence=None):
         live = self._shadow_delegation_live_snapshot()
+        self._shadow_audit_delegated_extraction(candidate_tool)
         self._shadow_delegation_update(live, self._source_flow_tool_step([]))
         shadow = self._shadow_delegation_persistence
         shadow_present = bool(shadow["source"] and shadow["task_items"])
