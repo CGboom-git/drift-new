@@ -1165,6 +1165,53 @@ Do not approve unrelated exploration or any new goal.
             )]
         return items[:5]
 
+    def _build_taer_delegation_context(self):
+        anchor_records = [
+            r for r in self.source_label_store.records
+            if "delegated_task_source" in r.source_labels and not r.tool
+        ]
+        delegated_records = [
+            r for r in self.source_label_store.records
+            if "delegated_task_source" in r.source_labels
+            and r.tool and r.sanitized_visible is not False and r.value
+        ]
+
+        if not anchor_records and not delegated_records:
+            return "NONE", {"present": False, "source": None, "item_count": 0}
+
+        designated_sources = []
+        for record in anchor_records:
+            value = record.evidence.get("delegated_anchor_value") if record.evidence else None
+            if value is None:
+                value = record.value
+            if value is not None:
+                designated_sources.append(str(value)[:160])
+
+        task_items = []
+        if delegated_records:
+            task_items = self._parse_delegated_task_items(str(delegated_records[-1].value))
+
+        lines = ["delegation_detected: true"]
+        if designated_sources:
+            lines.append("designated_source: " + "; ".join(designated_sources[:3]))
+        else:
+            lines.append("designated_source: explicit delegated source detected; exact source unavailable")
+        lines.append("evidence_origin: user-explicit delegation detector")
+        if task_items:
+            lines.append("delegated_task_items:")
+            for item in task_items[:5]:
+                compact = " ".join(str(item).split())[:220]
+                lines.append(f"- {compact}")
+        else:
+            lines.append("delegated_task_items: not available in current TAER context")
+
+        summary = {
+            "present": True,
+            "source": designated_sources[0] if designated_sources else None,
+            "item_count": len(task_items),
+        }
+        return "\n".join(lines), summary
+
     def alignment_judge(self, query, last_function_messages, thought_content, function_trajectory, current_function_trajectory, conversations, delegated_task_context=""):
         """Judge whether if the deviated function call aligns with the original user query intent.
         """
@@ -1814,6 +1861,17 @@ Do not approve unrelated exploration or any new goal.
                         f"compat={match_result.parameter_compatibility}; entering anchor analyzer"
                     )
 
+                    delegation_context, delegation_summary = self._build_taer_delegation_context()
+                    self.logger.info(
+                        "TAER delegation_context_present=%s source=%s item_count=%s candidate_tool=%s"
+                        % (
+                            delegation_summary["present"],
+                            delegation_summary["source"],
+                            delegation_summary["item_count"],
+                            achieved_func,
+                        )
+                    )
+
                     anchor_context = json.dumps({
                         "user_query": query[:500],
                         "backbone_steps": [
@@ -1832,6 +1890,7 @@ Do not approve unrelated exploration or any new goal.
                         },
                         "achieved_trajectory": self.achieved_function_trajectory,
                         "latest_thought": thought_content[:300],
+                        "delegation_context": delegation_context,
                     })
 
                     anchor_raw = self.client.llm_run(TAER_ANCHOR_PROMPT, anchor_context)
@@ -1855,6 +1914,10 @@ Do not approve unrelated exploration or any new goal.
                     self.logger.info(f"TAER anchor raw: {relation} for {achieved_func}")
 
                     confidence = anchor_result.get("confidence", "LOW")
+                    self.logger.info(
+                        f"TAER delegation decision candidate_tool={achieved_func} "
+                        f"relation={relation} confidence={confidence}"
+                    )
                     if confidence != "HIGH":
                         self.logger.info(
                             f"TAER confidence='{confidence}' (not HIGH) → AMBIGUOUS → fallback"
