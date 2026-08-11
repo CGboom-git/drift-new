@@ -1741,6 +1741,59 @@ Do not approve unrelated exploration or any new goal.
             self.logger.info(f"Returned Messages: {returned_message}")
             self.logger.info(f"Detected Instructions: {replace_list}")
 
+            def isolation_shadow_snapshot():
+                if not (source_flow_context and self.source_flow_enabled()):
+                    return {}
+                raw_source_id = source_flow_context.get("raw_source_id")
+                raw_record = self._shadow_record_by_id(raw_source_id)
+                children = [
+                    r for r in self.source_label_store.records
+                    if raw_source_id in (r.parent_sources or [])
+                ]
+                sanitized_children = [
+                    r for r in children
+                    if r.source_kind == "tool_sanitized_output"
+                ]
+                return {
+                    "raw_source_id": raw_source_id,
+                    "raw_source_kind": getattr(raw_record, "source_kind", None),
+                    "raw_source_labels": getattr(raw_record, "source_labels", None),
+                    "raw_parent_sources": getattr(raw_record, "parent_sources", None),
+                    "raw_sanitized_visible": getattr(raw_record, "sanitized_visible", None),
+                    "child_ids": [r.source_id for r in children],
+                    "child_kinds": [r.source_kind for r in children],
+                    "child_labels": [r.source_labels for r in children],
+                    "sanitized_child_ids": [r.source_id for r in sanitized_children],
+                }
+
+            def log_isolation_shadow(event, replace_list_count, replaced_count, before, after):
+                if not (source_flow_context and self.source_flow_enabled()):
+                    return
+                before_sanitized = set(before.get("sanitized_child_ids") or [])
+                after_sanitized = set(after.get("sanitized_child_ids") or [])
+                created_sanitized = [sid for sid in (after.get("sanitized_child_ids") or []) if sid not in before_sanitized]
+                self.logger.info(
+                    "[ISOLATION_STATE_SHADOW] "
+                    f"event={event} tool_name={source_flow_context.get('tool_name')} "
+                    f"step={source_flow_context.get('step')} tool_call_id={source_flow_context.get('tool_call_id')} "
+                    f"replace_list_count={replace_list_count} replaced_count={replaced_count} "
+                    f"raw_source_id={after.get('raw_source_id')} "
+                    f"raw_source_kind={after.get('raw_source_kind')} "
+                    f"raw_sanitized_visible_before={before.get('raw_sanitized_visible')} "
+                    f"raw_sanitized_visible_after={after.get('raw_sanitized_visible')} "
+                    f"tool_sanitized_child_created={bool(created_sanitized)} "
+                    f"created_sanitized_child_ids={created_sanitized} "
+                    f"raw_source_labels={after.get('raw_source_labels')} "
+                    f"raw_parent_sources={after.get('raw_parent_sources')} "
+                    f"child_ids_before={before.get('child_ids')} "
+                    f"child_ids_after={after.get('child_ids')} "
+                    f"child_kinds_after={after.get('child_kinds')} "
+                    f"child_labels_after={after.get('child_labels')} "
+                    f"sanitized_child_ids_after={after.get('sanitized_child_ids')}"
+                )
+
+            isolation_before = isolation_shadow_snapshot()
+
             if len(replace_list) == 0:
                 if source_flow_context and self.source_flow_enabled():
                     self.source_label_store.mark_raw_output_sanitized_visible(
@@ -1756,6 +1809,13 @@ Do not approve unrelated exploration or any new goal.
                         source_flow_context["step"],
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
+                log_isolation_shadow(
+                    "NO_DETECTED_INSTRUCTION_ITEMS",
+                    len(replace_list),
+                    0,
+                    isolation_before,
+                    isolation_shadow_snapshot(),
+                )
                 return True, messages, openai_messages
 
             # Injection Isolation Module
@@ -1798,6 +1858,13 @@ Do not approve unrelated exploration or any new goal.
                         False,
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
+                log_isolation_shadow(
+                    "REPLACE_LIST_UNMATCHED",
+                    len(replace_list),
+                    replaced_count,
+                    isolation_before,
+                    isolation_shadow_snapshot(),
+                )
                 return True, messages, openai_messages
 
             else:
@@ -1817,6 +1884,13 @@ Do not approve unrelated exploration or any new goal.
                         source_flow_context["step"],
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
+                log_isolation_shadow(
+                    "REPLACED_AND_SANITIZED",
+                    len(replace_list),
+                    replaced_count,
+                    isolation_before,
+                    isolation_shadow_snapshot(),
+                )
                 return True, messages, openai_messages
 
         else:
