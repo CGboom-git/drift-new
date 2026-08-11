@@ -141,6 +141,36 @@ class DRIFTLLM(PromptingLLM):
             return preview[:limit] + "..."
         return preview
 
+    def _shadow_record_by_id(self, source_id):
+        for record in self.source_label_store.records:
+            if record.source_id == source_id:
+                return record
+        return None
+
+    def _shadow_trace_tool_output_delegation(
+        self, tool_name, tool_args, tool_output, raw_source_id, raw_created, step
+    ):
+        output_anchor_match = self.source_label_store.has_delegation_anchor(tool_output)
+        arg_matches = []
+        for key, value in (tool_args or {}).items():
+            if self.source_label_store.has_delegation_anchor(value):
+                arg_matches.append(str(key))
+
+        raw_record = self._shadow_record_by_id(raw_source_id)
+        raw_delegated = bool(raw_record and "delegated_task_source" in (raw_record.source_labels or []))
+        self.logger.info(
+            "[DELEGATION_TOOL_OUTPUT_SHADOW] "
+            f"event=TOOL_OUTPUT_RECORDED tool_name={tool_name} step={step} "
+            f"raw_source_id={raw_source_id} raw_created={raw_created} "
+            f"args_anchor_match_keys={arg_matches} output_anchor_match={output_anchor_match} "
+            f"raw_delegated_task_source={raw_delegated} "
+            f"raw_sanitized_visible={getattr(raw_record, 'sanitized_visible', None)} "
+            f"raw_source_labels={getattr(raw_record, 'source_labels', None)} "
+            f"raw_parent_sources={getattr(raw_record, 'parent_sources', None)} "
+            f"args_preview={self._shadow_preview_value(tool_args, 260)} "
+            f"output_preview={self._shadow_preview_value(tool_output, 360)}"
+        )
+
     def _shadow_parser_stage_counts(self, content):
         numbered = re.findall(
             r"(?:\d+[\.\)]\s*|[-*]\s+)(.+?)(?=\n\d+[\.\)]|\n[-*]\s|\n\n|\Z)",
@@ -423,6 +453,10 @@ class DRIFTLLM(PromptingLLM):
                 tool_message.get("content"),
                 step,
             )
+
+        self._shadow_trace_tool_output_delegation(
+            tool_name, tool_args, tool_message.get("content"), raw_source_id, raw_created, step
+        )
 
         self._source_flow_post_action_audit(
             tool_name, tool_args, tool_message.get("content")
