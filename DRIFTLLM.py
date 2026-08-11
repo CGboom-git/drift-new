@@ -203,6 +203,45 @@ class DRIFTLLM(PromptingLLM):
                 counts["other_child_count"] += 1
         return counts, structured_samples
 
+    def _shadow_audit_delegation_sanitization(self, record, candidate_tool):
+        sanitized_children = [
+            r for r in self.source_label_store.records
+            if r.source_kind == "tool_sanitized_output"
+            and record.source_id in (r.parent_sources or [])
+        ]
+        raw_delegated = "delegated_task_source" in (record.source_labels or [])
+        self.logger.info(
+            "[DELEGATION_SANITIZATION_SHADOW] "
+            f"event=RAW_DELEGATED_RECORD candidate_tool={candidate_tool} "
+            f"raw_source_id={record.source_id} raw_tool={record.tool} raw_step={record.step} "
+            f"raw_source_kind={record.source_kind} raw_delegated_task_source={raw_delegated} "
+            f"raw_sanitized_visible={record.sanitized_visible} "
+            f"raw_source_labels={record.source_labels} raw_parent_sources={record.parent_sources} "
+            f"sanitized_child_count={len(sanitized_children)}"
+        )
+        if not sanitized_children:
+            self.logger.info(
+                "[DELEGATION_SANITIZATION_SHADOW] "
+                f"event=NO_DIRECT_SANITIZED_CHILD candidate_tool={candidate_tool} "
+                f"raw_source_id={record.source_id}"
+            )
+            return
+        for child in sanitized_children:
+            child_delegated = "delegated_task_source" in (child.source_labels or [])
+            provenance_loss = raw_delegated and not child_delegated and child.sanitized_visible is True
+            self.logger.info(
+                "[DELEGATION_SANITIZATION_SHADOW] "
+                f"event=SANITIZED_CHILD candidate_tool={candidate_tool} "
+                f"raw_source_id={record.source_id} sanitized_source_id={child.source_id} "
+                f"sanitized_tool={child.tool} sanitized_step={child.step} "
+                f"sanitized_source_kind={child.source_kind} "
+                f"sanitized_delegated_task_source={child_delegated} "
+                f"sanitized_visible={child.sanitized_visible} "
+                f"sanitized_source_labels={child.source_labels} "
+                f"sanitized_parent_sources={child.parent_sources} "
+                f"delegation_provenance_loss_after_sanitization={provenance_loss}"
+            )
+
     def _shadow_audit_delegated_extraction(self, candidate_tool):
         delegated_records = [
             r for r in self.source_label_store.records
@@ -224,6 +263,7 @@ class DRIFTLLM(PromptingLLM):
         )
 
         for idx, record in enumerate(delegated_records):
+            self._shadow_audit_delegation_sanitization(record, candidate_tool)
             parser_counts = self._shadow_parser_stage_counts(str(record.value))
             child_counts, _ = self._shadow_child_counts(record.source_id)
             self.logger.info(
