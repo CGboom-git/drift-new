@@ -1798,6 +1798,97 @@ Do not approve unrelated exploration or any new goal.
                     f"sanitized_child_ids_after={after.get('sanitized_child_ids')}"
                 )
 
+            def shadow_normalize_with_map(value, mode):
+                text = str(value if value is not None else "")
+                chars = []
+                index_map = []
+                pending_space = False
+                quote_chars = {"'", '"', "`"}
+                punctuation = set(".,;:!?()[]{}<>|*/=+-_")
+                for index, char in enumerate(text):
+                    mapped = char
+                    if mode in {"whitespace_backslash", "quote_escape", "punctuation_case", "structured"}:
+                        if char == "\\":
+                            pending_space = True
+                            continue
+                    if mode in {"quote_escape", "structured"} and char in quote_chars:
+                        mapped = "'"
+                    if mode in {"punctuation_case", "structured"}:
+                        mapped = mapped.lower()
+                    if mode == "structured":
+                        if not mapped.isalnum():
+                            pending_space = True
+                            continue
+                    elif mode == "punctuation_case" and mapped in punctuation:
+                        pending_space = True
+                        continue
+                    if mapped.isspace():
+                        pending_space = True
+                        continue
+                    if pending_space and chars:
+                        chars.append(" ")
+                        index_map.append(index)
+                    pending_space = False
+                    chars.append(mapped)
+                    index_map.append(index)
+                return "".join(chars).strip(), index_map
+
+            def shadow_find_normalized_matches(content, item, mode):
+                haystack, haystack_map = shadow_normalize_with_map(content, mode)
+                needle, _ = shadow_normalize_with_map(item, mode)
+                if not needle:
+                    return needle, []
+                matches = []
+                start = 0
+                while True:
+                    index = haystack.find(needle, start)
+                    if index < 0:
+                        break
+                    end = index + len(needle)
+                    if index < len(haystack_map) and end - 1 < len(haystack_map):
+                        matches.append((haystack_map[index], haystack_map[end - 1] + 1))
+                    start = index + 1
+                return needle, matches
+
+            def shadow_classify_unmatched_item(content, item):
+                probes = [
+                    ("whitespace/backslash formatting", "whitespace_backslash"),
+                    ("quote/escape formatting", "quote_escape"),
+                    ("punctuation/case variation", "punctuation_case"),
+                    ("serialization/structured-output formatting", "structured"),
+                ]
+                first_nonunique = None
+                for category, mode in probes:
+                    normalized_item, matches = shadow_find_normalized_matches(content, item, mode)
+                    if len(matches) == 1:
+                        return category, normalized_item, True, matches[0], len(matches)
+                    if matches and first_nonunique is None:
+                        first_nonunique = (category, normalized_item, matches)
+                if first_nonunique:
+                    category, normalized_item, matches = first_nonunique
+                    return category, normalized_item, False, matches[0], len(matches)
+                return "detector text not actually present", "", False, None, 0
+
+            def log_replacement_failure_shadow(content, items):
+                if not (source_flow_context and self.source_flow_enabled()):
+                    return
+                for index, item in enumerate(items):
+                    category, normalized_item, unique, span, match_count = shadow_classify_unmatched_item(content, item)
+                    span_preview = None
+                    if span:
+                        span_preview = self._shadow_preview_value(str(content)[span[0]:span[1]], 260)
+                    self.logger.info(
+                        "[ISOLATION_REPLACEMENT_SHADOW] "
+                        f"event=REPLACE_LIST_UNMATCHED_ITEM tool_name={source_flow_context.get('tool_name')} "
+                        f"step={source_flow_context.get('step')} tool_call_id={source_flow_context.get('tool_call_id')} "
+                        f"raw_source_id={source_flow_context.get('raw_source_id')} item_index={index} "
+                        f"failure_category={category} normalized_match_unique={unique} "
+                        f"normalized_match_count={match_count} normalized_match_span={span} "
+                        f"normalized_item_preview={self._shadow_preview_value(normalized_item, 220)} "
+                        f"detector_item_preview={self._shadow_preview_value(item, 260)} "
+                        f"span_preview={span_preview}"
+                    )
+
             isolation_before = isolation_shadow_snapshot()
 
             if len(replace_list) == 0:
@@ -1877,6 +1968,7 @@ Do not approve unrelated exploration or any new goal.
                     security_visible=False,
                     isolation_status="unmatched",
                 )
+                log_replacement_failure_shadow(returned_message, replace_list)
                 return True, messages, openai_messages
 
             else:
