@@ -1766,7 +1766,10 @@ Do not approve unrelated exploration or any new goal.
                     "sanitized_child_ids": [r.source_id for r in sanitized_children],
                 }
 
-            def log_isolation_shadow(event, replace_list_count, replaced_count, before, after):
+            def log_isolation_shadow(
+                event, replace_list_count, replaced_count, before, after,
+                runtime_visible=None, security_visible=None, isolation_status=None,
+            ):
                 if not (source_flow_context and self.source_flow_enabled()):
                     return
                 before_sanitized = set(before.get("sanitized_child_ids") or [])
@@ -1779,6 +1782,9 @@ Do not approve unrelated exploration or any new goal.
                     f"replace_list_count={replace_list_count} replaced_count={replaced_count} "
                     f"raw_source_id={after.get('raw_source_id')} "
                     f"raw_source_kind={after.get('raw_source_kind')} "
+                    f"runtime_visible={runtime_visible} "
+                    f"security_visible={security_visible} "
+                    f"isolation_status={isolation_status} "
                     f"raw_sanitized_visible_before={before.get('raw_sanitized_visible')} "
                     f"raw_sanitized_visible_after={after.get('raw_sanitized_visible')} "
                     f"tool_sanitized_child_created={bool(created_sanitized)} "
@@ -1815,6 +1821,9 @@ Do not approve unrelated exploration or any new goal.
                     0,
                     isolation_before,
                     isolation_shadow_snapshot(),
+                    runtime_visible=True,
+                    security_visible=True,
+                    isolation_status="clean",
                 )
                 return True, messages, openai_messages
 
@@ -1855,7 +1864,7 @@ Do not approve unrelated exploration or any new goal.
                     self.source_label_store.mark_raw_output_sanitized_visible(
                         source_flow_context["tool_name"],
                         source_flow_context["step"],
-                        True,
+                        False,
                         tool_call_id=source_flow_context["tool_call_id"],
                     )
                 log_isolation_shadow(
@@ -1864,6 +1873,9 @@ Do not approve unrelated exploration or any new goal.
                     replaced_count,
                     isolation_before,
                     isolation_shadow_snapshot(),
+                    runtime_visible=True,
+                    security_visible=False,
+                    isolation_status="unmatched",
                 )
                 return True, messages, openai_messages
 
@@ -1890,6 +1902,9 @@ Do not approve unrelated exploration or any new goal.
                     replaced_count,
                     isolation_before,
                     isolation_shadow_snapshot(),
+                    runtime_visible=True,
+                    security_visible=False,
+                    isolation_status="sanitized",
                 )
                 return True, messages, openai_messages
 
