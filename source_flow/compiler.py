@@ -176,11 +176,21 @@ class FlowExpectationCompiler:
 
     def _placeholder(self, required_value: Any, raw_text: str) -> str | None:
         value_text = self._stringify(required_value)
+        if value_text and self._looks_like_runtime_placeholder(value_text):
+            return None
         if value_text and self.PLACEHOLDER_RE.search(value_text):
             return value_text
         if raw_text and self.PLACEHOLDER_RE.search(raw_text) and not self._is_explicit_constant(required_value):
             return value_text or raw_text
         return None
+
+    def _looks_like_runtime_placeholder(self, value: str) -> bool:
+        return bool(re.search(
+            r"\b(?:result|value|output|email|recipient|participant|file[_ ]?id|"
+            r"url|id)\s+(?:of|from|returned\s+by|resolved\s+from)\s+[A-Za-z_]\w*",
+            value,
+            re.IGNORECASE,
+        ))
 
     def _is_explicit_constant(self, value: Any) -> bool:
         if value is None:

@@ -994,10 +994,19 @@ Do not approve unrelated exploration or any new goal.
         tool_call_match = tool_call_pattern.search(message)
 
         # Extract the function call content
-        tool_call_content = tool_call_match.group(1).strip() if tool_call_match else "[]"
+        tool_call_content = (
+            tool_call_match.group(1).strip()
+            if tool_call_match
+            else (message.strip() if message.strip().startswith(("{", "[")) else "[]")
+        )
 
         outside_content = message
         try:
+            json_calls = self._parse_json_style_tool_calls(tool_call_content)
+            if json_calls:
+                tool_calls = json_calls
+            else:
+                tool_calls = None
             def fix_function_calls(s):
                 inner = s.strip()[1:-1]
                 items = [item.strip() for item in inner.split(',')]
@@ -1020,7 +1029,8 @@ Do not approve unrelated exploration or any new goal.
                         fixed_items.append(item)
                 return f"[{', '.join(fixed_items)}]"
             
-            tool_calls = parse_tool_calls_from_python_function(fix_function_calls(tool_call_content))
+            if tool_calls is None:
+                tool_calls = parse_tool_calls_from_python_function(fix_function_calls(tool_call_content))
         except IndexError as e:
             raise InvalidModelOutputError(f"Empty AST body: {e}")
         
@@ -1041,6 +1051,34 @@ Do not approve unrelated exploration or any new goal.
 
         return_answer = f"<function_thought>{thought_content}</function_thought>\n\n<function_call>{tool_call_content}</function_call>\n\n<final_answer>{output_content}</final_answer>"
         return {"role": "assistant", "content": return_answer, "tool_calls": tool_calls}
+
+    def _parse_json_style_tool_calls(self, content):
+        """Normalize GPT-4o JSON function calls into AgentDojo FunctionCall objects."""
+        if not content or not content.lstrip().startswith(("{", "[")):
+            return []
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            return []
+        items = parsed if isinstance(parsed, list) else [parsed]
+        normalized = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            function = item.get("function") if isinstance(item.get("function"), dict) else item
+            name = function.get("name")
+            args = function.get("parameters", function.get("arguments", {}))
+            if not name:
+                continue
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    continue
+            if not isinstance(args, dict):
+                continue
+            normalized.append(FunctionCall(id=item.get("id"), function=name, args=args))
+        return normalized
 
     def _tool_call_to_str(self, tool_call: FunctionCall):
         if tool_call.id is None:
@@ -1401,6 +1439,32 @@ Do not approve unrelated exploration or any new goal.
             if not (set(authority_value_variants(target_value)) & normalized_entities):
                 return False
         return True
+
+    def _action_has_delegated_source_support(self, tool_name, tool_args):
+        """Require clean delegated provenance before downgrading TAER NEW_GOAL."""
+        if not self.source_flow_enabled() or not self.source_label_store:
+            return False
+        delegated = [
+            record for record in self.source_label_store.records
+            if "delegated_task_source" in set(record.source_labels or [])
+            and "injected_instruction" not in set(record.source_labels or [])
+        ]
+        if not delegated:
+            return False
+        specs = self.source_flow_compiler.spec_map(self.node_checklist, tool_name, tool_args)
+        evidence = self.source_flow_resolver.resolve_args(
+            tool_name, tool_args, specs, self.source_label_store,
+            self.source_flow_contract_helper,
+        )
+        meaningful = [item for item in evidence.values() if item.value not in (None, "", [])]
+        return bool(meaningful) and all(
+            "injected_instruction" not in set(item.source_labels or [])
+            and (
+                "delegated_task_source" in set(item.source_labels or [])
+                or item.derived_from_authorized_source
+            )
+            for item in meaningful
+        )
 
     def injection_isolate(self, detected_instructions, messages, openai_messages, source_flow_context=None):
         """Isolate the injection contents in the memory flow.
@@ -1867,9 +1931,12 @@ Do not approve unrelated exploration or any new goal.
                         relation = "AMBIGUOUS"
 
                     if confidence == "HIGH" and relation == "NEW_GOAL":
-                        if self._action_targets_authorized(tool_args, self._user_explicit_entities):
+                        if (
+                            self._action_targets_authorized(tool_args, self._user_explicit_entities)
+                            or self._action_has_delegated_source_support(achieved_func, tool_args)
+                        ):
                             self.logger.info(
-                                f"TAER NEW_GOAL target explicitly authorized by raw query; downgrading NEW_GOAL to AMBIGUOUS for {achieved_func}"
+                                f"TAER NEW_GOAL has trusted authorization evidence; downgrading NEW_GOAL to AMBIGUOUS for {achieved_func}"
                             )
                             relation = "AMBIGUOUS"
 

@@ -69,10 +69,13 @@ Below is the initialized function trajectory plan:
 {initial_trajectory}
 And the corresponding Function Parameter Checklist:
 {node_checklist}.
-In this checklist, Note: None indicates value uncertainty.
+        In this checklist, Note: None indicates value uncertainty.
+        Runtime-derived values must be represented as null with their source tool in conditions,
+        never as natural-language literals such as "result of search_files_by_filename".
 Also provided is the function trajectory that has been executed:
 {achieved_trajectory}
-You should strictly adhere to the initialized trajectory and meet the function checklist as much as possible. Only deviate from it if strictly following the plan would fail to complete the user's original query.
+        You should strictly adhere to the initialized trajectory and meet the function checklist as much as possible. Only deviate from it if strictly following the plan would fail to complete the user's original query.
+        get_unread_emails changes mailbox read state. Prefer search_emails for generic lookup; use get_unread_emails only when unread messages are explicitly requested.
 Remember the Original User Query:
 {query}
 
