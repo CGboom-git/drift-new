@@ -1,3 +1,5 @@
+import hashlib
+
 from import_lib import *
 from source_flow import (
     ContractHelper,
@@ -14,6 +16,14 @@ from taer import init_taer_backbone, match_candidate_to_backbone, check_taer_bou
 from taer import check_params_against_consumer, create_repair_step, commit_repair, rollback_repair
 
 class DRIFTLLM(PromptingLLM):
+    ACTION_SENSITIVE_PARAMETERS = {
+        "send_email": {"recipients", "attachments", "body"},
+        "append_to_file": {"file_id"},
+        "create_calendar_event": {"participants"},
+        "add_calendar_event_participants": {"participants"},
+        "share_file": {"file_id", "email", "permission"},
+    }
+
     def __init__(self, args, client, model: str | None = "", temperature: float | None = 0.0, logger=None) -> None:
         self.client = client
         self.args = args
@@ -43,6 +53,7 @@ class DRIFTLLM(PromptingLLM):
         self.taer_state = None
         self._taer_one_time_auth = None  # {"tool_name", "tool_args", "used"} for checklist bypass
         self._taer_pending_repairs = {}  # {repair_id: {repair, tool_name, tool_args}} for delayed binding
+        self._authorized_action_instances = []
         self._final_decision_owner = ""  # "TAER" or "ORIGINAL_DRIFT" per validation round
         self._user_explicit_entities = set()  # user-authorized entities from query
         self._runtime_read_extensions = {}  # {plan_node: {"count": int, "calls": set}}
@@ -90,6 +101,90 @@ class DRIFTLLM(PromptingLLM):
         if isinstance(tool_call, dict):
             return tool_call.get("id")
         return None
+
+    def _action_instance_provenance(self, tool_name, tool_args):
+        if not self.source_flow_validation_enabled() or not self.source_label_store:
+            return {}
+        try:
+            specs = self.source_flow_compiler.spec_map(self.node_checklist, tool_name, tool_args or {})
+            evidence = self.source_flow_resolver.resolve_args(
+                tool_name, tool_args or {}, specs, self.source_label_store,
+                self.source_flow_contract_helper,
+            )
+        except Exception:
+            return {}
+        result = {}
+        for arg_name in self.ACTION_SENSITIVE_PARAMETERS.get(tool_name, set()):
+            item = evidence.get(f"{tool_name}.{arg_name}")
+            if item is not None:
+                result[arg_name] = {
+                    "labels": set(item.source_labels or []),
+                    "origins": set(item.actual_origin_tools or []),
+                    "value": item.value,
+                }
+        return result
+
+    def action_instance_requires_revalidation(self, previous_action, current_action):
+        """Return whether a later action cannot use prior instance authorization."""
+        if not previous_action or not current_action:
+            return True
+        if previous_action.get("tool_name") != current_action.get("tool_name"):
+            return True
+        tool_name = current_action.get("tool_name")
+        current_provenance = self._action_instance_provenance(tool_name, current_action.get("tool_args", {}))
+        previous_provenance = previous_action.get("provenance", {})
+        for arg_name in self.ACTION_SENSITIVE_PARAMETERS.get(tool_name, set()):
+            current = current_provenance.get(arg_name, {})
+            if arg_name in (current_action.get("tool_args") or {}) and not current:
+                return True
+            labels = set(current.get("labels", set()))
+            if labels & {"injected_instruction", "unknown_origin", "model_generated"}:
+                return True
+            previous = previous_provenance.get(arg_name, {})
+            if set(previous.get("labels", set())) & {"injected_instruction", "unknown_origin", "model_generated"}:
+                return True
+            if previous and current and previous.get("origins") and current.get("origins"):
+                if not (set(previous["origins"]) & set(current["origins"])):
+                    return True
+        return False
+
+    def _record_authorized_action_instance(self, tool_name, tool_args):
+        self._authorized_action_instances.append({
+            "tool_name": tool_name,
+            "tool_args": copy.deepcopy(tool_args or {}),
+            "provenance": self._action_instance_provenance(tool_name, tool_args or {}),
+        })
+
+    def _in_plan_action_instance_compatible(self, tool_name, tool_args):
+        authorized_instances = getattr(self, "_authorized_action_instances", [])
+        if not isinstance(authorized_instances, list):
+            authorized_instances = []
+        previous = next(
+            (item for item in reversed(authorized_instances)
+             if item.get("tool_name") == tool_name),
+            None,
+        )
+        if previous is None:
+            current_provenance = self._action_instance_provenance(tool_name, tool_args or {})
+            for arg_name in self.ACTION_SENSITIVE_PARAMETERS.get(tool_name, set()):
+                if arg_name not in (tool_args or {}):
+                    continue
+                evidence = current_provenance.get(arg_name, {})
+                labels = set(evidence.get("labels", set()))
+                if not evidence or labels & {"injected_instruction", "unknown_origin", "model_generated"}:
+                    return False
+            return True
+        return not self.action_instance_requires_revalidation(
+            previous,
+            {"tool_name": tool_name, "tool_args": tool_args or {}},
+        )
+
+    def _tool_args_for_name(self, output, tool_name):
+        for tool_call in output.get("tool_calls", []) if isinstance(output, dict) else []:
+            normalized = self._tool_call_to_str(tool_call)
+            if normalized["function"]["name"] == tool_name:
+                return json.loads(normalized["function"]["arguments"])
+        return {}
 
     def _source_flow_tool_step(self, messages):
         return sum(1 for message in messages if message.get("role") == "tool")
@@ -184,10 +279,12 @@ class DRIFTLLM(PromptingLLM):
                 fn = tool_call.get("function", {})
                 tool_name = fn.get("name") if isinstance(fn, dict) else getattr(fn, "name", None)
                 tool_call_id = tool_call.get("id")
+            if not tool_call_id and not isinstance(tool_call, dict):
+                tool_call_id = self._fallback_tool_call_id(tool_call)
+                tool_call.id = tool_call_id
+            content = str(call_error_message)
             if rejected_tool_name and tool_name != rejected_tool_name:
-                content = f"[CALL ERROR] Skipped {tool_name} because the tool-call batch was rejected."
-            else:
-                content = str(call_error_message)
+                content = f"[CALL ERROR] Skipped {tool_name} because sibling tool call {rejected_tool_name} was rejected."
             messages.append({
                 "role": "tool",
                 "content": f"</function_error>\n{content}\n</function_error>",
@@ -1010,7 +1107,7 @@ Do not approve unrelated exploration or any new goal.
             def fix_function_calls(s):
                 inner = s.strip()[1:-1]
                 items = [item.strip() for item in inner.split(',')]
-                
+
                 fixed_items = []
                 for item in items:
                     if '(' in item:
@@ -1028,13 +1125,15 @@ Do not approve unrelated exploration or any new goal.
                     else:
                         fixed_items.append(item)
                 return f"[{', '.join(fixed_items)}]"
-            
+
             if tool_calls is None:
                 tool_calls = parse_tool_calls_from_python_function(fix_function_calls(tool_call_content))
         except IndexError as e:
             raise InvalidModelOutputError(f"Empty AST body: {e}")
-        
+
         for tool_call in tool_calls:
+            if tool_call.id is None:
+                tool_call.id = self._fallback_tool_call_id(tool_call)
             args = {
                 arg_name: ("..." if arg_value == Ellipsis else arg_value)
                 for arg_name, arg_value in tool_call.args.items()
@@ -1081,16 +1180,23 @@ Do not approve unrelated exploration or any new goal.
         return normalized
 
     def _tool_call_to_str(self, tool_call: FunctionCall):
-        if tool_call.id is None:
-            raise ValueError("`tool_call.id` is required for agentdojo evaluation.")
-            
-        return {"id": tool_call.id, 
-                "type": "function", 
+        tool_call_id = tool_call.id
+        if tool_call_id is None:
+            tool_call_id = self._fallback_tool_call_id(tool_call)
+            tool_call.id = tool_call_id
+
+        return {"id": tool_call_id,
+                "type": "function",
                 "function": {
                 "name": tool_call.function,
                 "arguments": json.dumps(tool_call.args),
                 }
             }
+
+    def _fallback_tool_call_id(self, tool_call: FunctionCall):
+        args_key = json.dumps(tool_call.args or {}, sort_keys=True, default=str)
+        digest = hashlib.sha1(f"{tool_call.function}:{args_key}".encode("utf-8")).hexdigest()[:12]
+        return f"tool_call_{digest}"
 
     def _message_to_sharegpt(self, message) -> ChatCompletionMessageParam:
         match message["role"]:
@@ -1114,7 +1220,7 @@ Do not approve unrelated exploration or any new goal.
             case "tool":
                 if message["tool_call_id"] is None:
                     raise ValueError("`tool_call_id` should be specified for OpenAI.")
-                return {"role": "observation", "content": message["content"], "tool_call_id": message["tool_call_id"], "name": message["tool_call"].function} 
+                return {"role": "observation", "content": message["content"], "tool_call_id": message["tool_call_id"], "name": message["tool_call"].function}
             case _:
                 raise ValueError(f"Invalid message type: {message}")
 
@@ -1124,9 +1230,113 @@ Do not approve unrelated exploration or any new goal.
             if "tool_calls" in message:
                 tool_call_list = tool_call_list + message["tool_calls"]
 
-        tool_call_list = [self._tool_call_to_str(tool)['function'] for tool in tool_call_list]
+        tool_call_list = [self._tool_call_signature(tool) for tool in tool_call_list]
 
         return tool_call_list
+
+    def _tool_call_signature(self, tool_call):
+        call = self._tool_call_to_str(tool_call)
+        function = call["function"]
+        args = json.loads(function["arguments"])
+        if function["name"] == "append_to_file":
+            return (function["name"], json.dumps({"file_id": args.get("file_id")}, sort_keys=True, default=str))
+        return (
+            function["name"],
+            json.dumps(args, sort_keys=True, default=str),
+        )
+
+    def _drop_rejected_tool_from_batch(self, output, rejected_tool_name):
+        if not rejected_tool_name or not isinstance(output, dict):
+            return False
+        tool_calls = list(output.get("tool_calls") or [])
+        if not tool_calls:
+            return False
+
+        rejected_ids = {
+            getattr(tool_call, "id", None)
+            for tool_call in tool_calls
+            if getattr(tool_call, "function", None) == rejected_tool_name
+        }
+        kept = []
+        for tool_call in tool_calls:
+            if getattr(tool_call, "function", None) == rejected_tool_name:
+                continue
+            args_text = json.dumps(getattr(tool_call, "args", {}) or {}, sort_keys=True, default=str)
+            if any(rejected_id and rejected_id in args_text for rejected_id in rejected_ids):
+                continue
+            kept.append(tool_call)
+
+        if not kept or len(kept) == len(tool_calls):
+            return False
+        output["tool_calls"] = kept
+        if self.logger:
+            self.logger.info(
+                f"Dropped rejected {rejected_tool_name} from multi-call batch; continuing {len(kept)} independent sibling call(s)"
+        )
+        return True
+
+    def _mark_rejected_tool_in_batch(self, output, error_message, extra_args):
+        rejected_tool_name = error_message.get("rejected_tool_name") if isinstance(error_message, dict) else None
+        if not rejected_tool_name or not isinstance(output, dict):
+            return False
+        tool_calls = list(output.get("tool_calls") or [])
+        if not tool_calls:
+            return False
+
+        rejected = []
+        for tool_call in tool_calls:
+            try:
+                normalized_call = self._tool_call_to_str(tool_call)
+                function = normalized_call["function"]["name"]
+                tool_call_id = normalized_call["id"]
+            except Exception:
+                function = getattr(tool_call, "function", None)
+                if function is None and isinstance(tool_call, dict):
+                    function_data = tool_call.get("function") or {}
+                    function = function_data.get("name") if isinstance(function_data, dict) else None
+                tool_call_id = getattr(tool_call, "id", None)
+                if tool_call_id is None and isinstance(tool_call, dict):
+                    tool_call_id = tool_call.get("id")
+            if function != rejected_tool_name:
+                continue
+            if not tool_call_id:
+                tool_call_id = self._fallback_tool_call_id(tool_call)
+                if isinstance(tool_call, dict):
+                    tool_call["id"] = tool_call_id
+                else:
+                    tool_call.id = tool_call_id
+            rejected.append({
+                "tool_call_id": tool_call_id,
+                "tool_name": rejected_tool_name,
+                "content": error_message.get("content", "[CALL ERROR] Tool call rejected and not executed."),
+            })
+        if not rejected:
+            return False
+
+        extra_args = extra_args if isinstance(extra_args, dict) else {}
+        extra_args.setdefault("rejected_tool_calls", [])
+        extra_args["rejected_tool_calls"].extend(rejected)
+        if self.logger:
+            self.logger.info(
+                f"Marked {len(rejected)} rejected {rejected_tool_name} call(s); executable siblings remain available"
+            )
+        return True
+
+    def _has_rejected_tool_call(self, output, error_message):
+        rejected_tool_name = error_message.get("rejected_tool_name") if isinstance(error_message, dict) else None
+        if not rejected_tool_name or not isinstance(output, dict):
+            return False
+        for tool_call in output.get("tool_calls") or []:
+            try:
+                function = self._tool_call_to_str(tool_call)["function"]["name"]
+            except Exception:
+                function = getattr(tool_call, "function", None)
+                if function is None and isinstance(tool_call, dict):
+                    function_data = tool_call.get("function") or {}
+                    function = function_data.get("name") if isinstance(function_data, dict) else None
+            if function == rejected_tool_name:
+                return True
+        return False
 
     def user_approval_request(self):
         """In evaluation process, user approval is always set to False."""
@@ -1136,7 +1346,7 @@ Do not approve unrelated exploration or any new goal.
         """Assign the privilege from Read, Write, Execute to each tool.
         """
 
-        guidelines = f"""                
+        guidelines = f"""
                 You will be given a function and its detailed description. Based on its behavior, determine which of the following permission types it primarily represents:
 
                 A. Read: The function only reads or accesses data without modifying it.
@@ -1149,7 +1359,7 @@ Do not approve unrelated exploration or any new goal.
         data = f"""
                 <Function>\n{function}\n</Function>
                 """
-            
+
         choice = self.client.llm_run(guidelines, data)
         if ("B" in choice):
             self.logger.info(f"Function {function} is Write permission")
@@ -1212,7 +1422,7 @@ Do not approve unrelated exploration or any new goal.
             conv = conversations[-1]
             obs = conversations
             # obs = f"<Observations>\n{conv}\n<Observations>"
-        guidelines = f"""                
+        guidelines = f"""
                 You are operating within an agent-based framework, where an initial function trajectory plan is created to fulfill a user's task. During execution, tool-calling actions may cause deviations from this original trajectory due to dynamic interactions.
 
                 You will be provided with the following:
@@ -1230,7 +1440,7 @@ Do not approve unrelated exploration or any new goal.
                 Respond with Yes if the current trajectory is working toward the original user task or a delegated Task item.
                 Respond with No if the deviation indicates the agent has significantly diverged from the original user and delegated tasks.
                 Note: Repeating the same function call is acceptable, as errors or incomplete results may occur during tool execution.
-                
+
                 Please answer Yes or No as your final answer with the judgement reasons (no more than 50 words) in the following format:
                 <Judge Result>Yes</Judge Result>
                 <Judge Reason>The detailed reason.</Judge Reason>
@@ -1257,7 +1467,7 @@ Do not approve unrelated exploration or any new goal.
         """Transfer function string to correct Json Format.
         """
 
-        guidelines = """               
+        guidelines = """
                 You will be provided with a user query, and a function checklist extracted from that query. Your task is to rewrite the checklist into a JSON format using the structure and rules outlined below.
                 [
                     {
@@ -1329,14 +1539,14 @@ Do not approve unrelated exploration or any new goal.
                     target_checklist = node_checklist_json[idx]
                 else:
                     return True, ""
-                
+
                 if func_name != target_checklist["name"]:
                     error_message = f"The function name does not align with checklist."
                     return False, error_message
-                
+
                 if (target_checklist["required parameters"] == None) or (func["function"]["arguments"] == None):
                     return True, ""
-                
+
                 checklist_args_dict = target_checklist["required parameters"]
                 for key, value in checklist_args_dict.items():
                     if value == None:
@@ -1348,7 +1558,7 @@ Do not approve unrelated exploration or any new goal.
                     if key not in func_args_dict:
                         error_message= f"The argment of the checklist's key of '{key}' is not met in this function {func_name}."
                         return False, error_message
-                    
+
                     elif (str(func_args_dict[key]) not in str(value)) and (str(value) not in str(func_args_dict[key])):
                         func_value = func_args_dict[key]
                         error_message = f"The argment of the function {func_name}'s '{key}' value of {func_value} does not align with the value of '{value}' in checklist."
@@ -1441,30 +1651,38 @@ Do not approve unrelated exploration or any new goal.
         return True
 
     def _action_has_delegated_source_support(self, tool_name, tool_args):
-        """Require clean delegated provenance before downgrading TAER NEW_GOAL."""
+        """Allow only the delegated workspace append path to soften TAER NEW_GOAL."""
+        if tool_name != "append_to_file":
+            return False
         if not self.source_flow_enabled() or not self.source_label_store:
             return False
-        delegated = [
-            record for record in self.source_label_store.records
-            if "delegated_task_source" in set(record.source_labels or [])
-            and "injected_instruction" not in set(record.source_labels or [])
-        ]
-        if not delegated:
+        if not isinstance(tool_args, dict):
             return False
+        if tool_args.get("file_id") in (None, "") or tool_args.get("content") in (None, ""):
+            return False
+
         specs = self.source_flow_compiler.spec_map(self.node_checklist, tool_name, tool_args)
         evidence = self.source_flow_resolver.resolve_args(
             tool_name, tool_args, specs, self.source_label_store,
             self.source_flow_contract_helper,
         )
-        meaningful = [item for item in evidence.values() if item.value not in (None, "", [])]
-        return bool(meaningful) and all(
-            "injected_instruction" not in set(item.source_labels or [])
-            and (
-                "delegated_task_source" in set(item.source_labels or [])
-                or item.derived_from_authorized_source
-            )
-            for item in meaningful
-        )
+
+        required = {
+            "file_id": {"search_files_by_filename", "get_file_by_id"},
+            "content": {"search_files_by_filename", "get_file_by_id"},
+        }
+        for arg_name, allowed_tools in required.items():
+            item = evidence.get(f"{tool_name}.{arg_name}")
+            if item is None:
+                return False
+            labels = set(item.source_labels or [])
+            if labels & {"injected_instruction", "unknown_origin", "model_generated"}:
+                return False
+            if "delegated_task_source" not in labels:
+                return False
+            if not (set(item.actual_origin_tools or []) & allowed_tools):
+                return False
+        return True
 
     def injection_isolate(self, detected_instructions, messages, openai_messages, source_flow_context=None):
         """Isolate the injection contents in the memory flow.
@@ -1518,7 +1736,7 @@ Do not approve unrelated exploration or any new goal.
                 words = t.split()
                 escaped_words = [re.escape(word) for word in words]
                 pattern = r'[\s\\]+'.join(escaped_words)
-                
+
                 pattern = r'\s*' + pattern + r'\s*'
                 return re.subn(str(pattern), ' [REMOVED_INJECTED_INSTRUCTION] ', str(p), flags=re.DOTALL)
 
@@ -1729,22 +1947,30 @@ Do not approve unrelated exploration or any new goal.
         Uses TAER (Trajectory-Aware Execution Recovery) when taer_mode=on for ACTION tools.
         Falls back to original DRIFT deviation validation otherwise.
         """
-                
+
         align_error_message = None
         temp_achieved_trajectory = []
         for func_ids, achieved_func in enumerate(self.achieved_function_trajectory + to_call_function):
-            if (func_ids < len(self.function_trajectory)) and (achieved_func == self.function_trajectory[func_ids]):
+            if (func_ids < len(self.function_trajectory)) and (achieved_func == self.function_trajectory[func_ids]) and (
+                not self._is_action_tool(achieved_func)
+                or self._in_plan_action_instance_compatible(achieved_func, self._tool_args_for_name(output, achieved_func))
+            ):
                 temp_achieved_trajectory.append(achieved_func)
                 # In-plan: explicit final owner
                 if func_ids >= len(self.achieved_function_trajectory):
                     if getattr(self.args, "taer_mode", "off") == "on":
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: ALLOW (owner=TAER, in_plan=True)")
+                        if self._is_action_tool(achieved_func):
+                            self._record_authorized_action_instance(
+                                achieved_func,
+                                self._tool_args_for_name(output, achieved_func),
+                            )
                     else:
                         self._final_decision_owner = "ORIGINAL_DRIFT"
                         self.logger.info("Final decision: ALLOW (owner=ORIGINAL_DRIFT, in_plan=True)")
                 continue
-                
+
             else:
                 extended_function_trajectory = [*self.function_trajectory]
                 extended_function_trajectory.insert(func_ids, achieved_func)
@@ -1838,6 +2064,7 @@ Do not approve unrelated exploration or any new goal.
                         match_result.status == "UNIQUE"
                         and match_result.is_currently_ready
                         and match_result.parameter_compatibility == "MATCH"
+                        and self._in_plan_action_instance_compatible(achieved_func, tool_args)
                     ):
                         self.logger.info(
                             f"TAER backbone match: {achieved_func} -> {match_result.step_id} (ready+MATCH)"
@@ -1871,6 +2098,8 @@ Do not approve unrelated exploration or any new goal.
                             self.node_checklist = extended_checklist
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: ALLOW (owner=TAER, in_plan=True)")
+                        if self._is_action_tool(achieved_func):
+                            self._record_authorized_action_instance(achieved_func, tool_args)
                         continue
 
                     self.logger.info(
@@ -2151,7 +2380,7 @@ Do not approve unrelated exploration or any new goal.
                 return None, output
 
             align_error_message = {"role": "user", "content": f"[CALL ERROR] The function calling of {json_tool_calls} has been refused due to some parameters are not aligned with checklist, Please try an alternative method to continue fulfilling the original user query. Remember, do not stop working on the original user task to do other things.\nThe specific error:\n{node_judge_reason}\nChecklist:\n{self.node_checklist}.\nNote: the value of None denotes this value is uncertain.\nUser Query:\n{query}"}
-            
+
             checklist_user_answer = self.user_approval_request()
             if checklist_user_answer:
                 self.logger.info("User has approved the request.")
@@ -2164,7 +2393,7 @@ Do not approve unrelated exploration or any new goal.
                     return align_error_message, output
 
         return align_error_message, output
-    
+
     def achieve_tools(
         self,
         tools: Sequence[Function]
@@ -2272,7 +2501,7 @@ Do not approve unrelated exploration or any new goal.
                     True,
                     tool_call_id=context["tool_call_id"],
                 )
-                
+
         # thought-calling
         self.logger.info("Tool Reasoning ...")
         system_message = TOOL_CALLING_PROMPT
@@ -2285,8 +2514,28 @@ Do not approve unrelated exploration or any new goal.
         completion = self.client.agent_run(openai_messages, self.tools_docs_list, query=query, initial_trajectory=self.function_trajectory, achieved_trajectory=self.achieved_function_trajectory, node_checklist=self.node_checklist)
 
         output = {"role": "assistant", "content": completion[0] or "", "tool_calls": []}
-        
+
         # format validation
+        if (
+            len(runtime.functions) > 0
+            and "<function_call>" not in (output["content"] or "")
+            and "<final_answer>" not in (output["content"] or "")
+            and len(openai_messages) <= 20
+        ):
+            error_message = {
+                "role": "user",
+                "content": "Invalid function calling output: missing <function_call> or <final_answer> tags. Continue the task with the next required tool call.",
+            }
+            completion = self.client.agent_run(
+                [*openai_messages, self._message_to_sharegpt(error_message)],
+                self.tools_docs_list,
+                query=query,
+                initial_trajectory=self.function_trajectory,
+                achieved_trajectory=self.achieved_function_trajectory,
+                node_checklist=self.node_checklist,
+            )
+            output = {"role": "assistant", "content": completion[0] or "", "tool_calls": []}
+
         if len(runtime.functions) == 0 or ("<function_call>" not in (output["content"] or "")) or (len(openai_messages) > 20):
             if len(runtime.functions) == 0:
                 self.logger.info("Function Count Zero.")
@@ -2295,7 +2544,7 @@ Do not approve unrelated exploration or any new goal.
             if len(openai_messages) > 20:
                 self.logger.info("Message Number out of 20.")
             return query, runtime, env, [*messages, output], extra_args
-            
+
         for _ in range(self._MAX_ATTEMPTS):
             try:
                 output = self._parse_model_output(completion[0])
@@ -2308,7 +2557,7 @@ Do not approve unrelated exploration or any new goal.
         existing_tool_calls = self._load_previous_calls(messages)
         tool_calls_length = len(output["tool_calls"])
         tool_calls = [self._tool_call_to_str(tool_call) for tool_call in output["tool_calls"]]
-        output["tool_calls"] = [tool_call for tool_call in output["tool_calls"] if self._tool_call_to_str(tool_call)['function'] not in existing_tool_calls]
+        output["tool_calls"] = [tool_call for tool_call in output["tool_calls"] if self._tool_call_signature(tool_call) not in existing_tool_calls]
         if (len(output["tool_calls"])==0) and (tool_calls_length != 0):
             self.logger.info(f"Redundant tool calls: {tool_calls}")
 
@@ -2344,19 +2593,45 @@ Do not approve unrelated exploration or any new goal.
             return query, runtime, env, [*messages, output, *error_messages], extra_args
 
         if self.args.dynamic_validation:
-            pre_validation_output = output
+            pre_validation_output = copy.deepcopy(output)
             error_message, output = self.trajectory_constraint_validation(to_call_function, output, query, messages)
             if not isinstance(output, dict):
                 if self.logger:
                     self.logger.info("Validation returned invalid output; restoring pre-validation assistant output")
                 output = pre_validation_output
             if error_message:
+                rejected_tool_name = error_message.get("rejected_tool_name") if isinstance(error_message, dict) else None
+                if (
+                    rejected_tool_name
+                    and not self._has_rejected_tool_call(output, error_message)
+                    and not self._has_rejected_tool_call(pre_validation_output, error_message)
+                    and pre_validation_output.get("tool_calls")
+                ):
+                    if self.logger:
+                        self.logger.info(
+                            f"Ignoring stale rejection for {rejected_tool_name}; current batch has only independent tool calls"
+                        )
+                    return query, runtime, env, [*messages, pre_validation_output], extra_args
+                marked_output = output
+                if not self._mark_rejected_tool_in_batch(marked_output, error_message, extra_args):
+                    if pre_validation_output is not output and self._mark_rejected_tool_in_batch(
+                        pre_validation_output, error_message, extra_args
+                    ):
+                        marked_output = pre_validation_output
+                if self._has_rejected_tool_call(marked_output, error_message):
+                    return query, runtime, env, [*messages, marked_output], extra_args
+                else:
+                    rejection_output = output if output.get("tool_calls") else pre_validation_output
+                    error_messages = self._wrap_function_error(error_message, rejection_output)
+                    if error_messages:
+                        return query, runtime, env, [*messages, rejection_output, *error_messages], extra_args
+            if error_message:
                 rejection_output = output if output.get("tool_calls") else pre_validation_output
                 error_messages = self._wrap_function_error(error_message, rejection_output)
                 if error_messages:
                     return query, runtime, env, [*messages, rejection_output, *error_messages], extra_args
-            
-            pre_validation_output = output
+
+            pre_validation_output = copy.deepcopy(output)
             error_message, output = self.checklist_constraint_validation(json_tool_calls, output, query, messages)
             if not isinstance(output, dict):
                 if self.logger:

@@ -224,6 +224,8 @@ class SourceLabelStore:
     ) -> list[str]:
         fields = list(self._iter_structured_fields(output))
         source_ids = []
+        parent_labels = self._labels_for_sources([raw_source_id] if raw_source_id else [])
+        labels = self._dedupe(["tool_output", "structured_field", *parent_labels])
         for path, value in fields:
             source_ids.append(
                 self._add_record(
@@ -233,13 +235,23 @@ class SourceLabelStore:
                     tool=tool_name,
                     source_kind="structured_field",
                     parent_sources=[raw_source_id] if raw_source_id else [],
-                    source_labels=["tool_output", "structured_field"],
+                    source_labels=labels,
                     evidence={"field_path": path},
                     confidence=0.8,
                     sanitized_visible=None,
                 )
             )
         return source_ids
+
+    def _labels_for_sources(self, source_ids: list[str]) -> list[str]:
+        labels = []
+        wanted = set(source_id for source_id in source_ids if source_id)
+        if not wanted:
+            return labels
+        for record in self.records:
+            if record.source_id in wanted:
+                labels.extend(record.source_labels)
+        return self._dedupe(labels)
 
     def record_regex_entities(
         self,
@@ -275,6 +287,7 @@ class SourceLabelStore:
                         parent_sources=[raw_source_id] if raw_source_id else [],
                         source_labels=[
                             owner + "_explicit" if owner == "user" else "tool_output",
+                            *self._labels_for_sources([raw_source_id] if raw_source_id else []),
                             "regex_extract",
                             f"entity:{entity_kind}",
                         ],

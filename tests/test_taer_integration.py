@@ -517,6 +517,111 @@ class TestTaerRouting(unittest.TestCase):
         self.assertEqual(openai_messages[0]["tool_calls"][0]["id"], openai_messages[1]["tool_call_id"])
         self.assertEqual(openai_messages[1]["role"], "observation")
 
+    def test_rejected_tool_call_emits_synthetic_response_and_executes_sibling(self):
+        from DRIFTToolsExecutionLoop import DRIFTToolsExecutionLoop
+
+        class ToolCall:
+            def __init__(self, call_id, function, args):
+                self.id = call_id
+                self.function = function
+                self.args = args
+
+        class FakeExecutor:
+            def __init__(self):
+                self.calls = []
+
+            def query(self, query, runtime, env, messages, extra_args):
+                self.calls.append(messages[-1]["tool_calls"])
+                tool_messages = []
+                for tool_call in messages[-1]["tool_calls"]:
+                    tool_messages.append({
+                        "role": "tool",
+                        "content": f"executed:{tool_call.function}",
+                        "tool_call_id": tool_call.id,
+                        "tool_call": tool_call,
+                        "error": None,
+                    })
+                return query, runtime, env, [*messages, *tool_messages], extra_args
+
+        rejected_call = ToolCall("call_a", "malicious_tool", {})
+        allowed_call = ToolCall("call_b", "legit_tool", {})
+        assistant_message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [rejected_call, allowed_call],
+        }
+        extra_args = {
+            "rejected_tool_calls": [{
+                "tool_call_id": "call_a",
+                "tool_name": "malicious_tool",
+                "content": "Rejected by authorization policy; tool was not executed.",
+            }]
+        }
+        executor = FakeExecutor()
+        loop = object.__new__(DRIFTToolsExecutionLoop)
+
+        _, _, _, result_messages, result_extra_args = loop._execute_with_rejected_tool_responses(
+            executor,
+            "query",
+            MagicMock(),
+            MagicMock(),
+            [assistant_message],
+            extra_args,
+        )
+
+        tool_messages = [msg for msg in result_messages if msg.get("role") == "tool"]
+        self.assertIs(result_messages[0], assistant_message)
+        self.assertEqual(result_messages[0]["tool_calls"], [rejected_call, allowed_call])
+        self.assertEqual([msg["tool_call_id"] for msg in tool_messages], ["call_a", "call_b"])
+        self.assertIn("Rejected by authorization policy", tool_messages[0]["content"])
+        self.assertEqual(tool_messages[1]["content"], "executed:legit_tool")
+        self.assertEqual([[call.function for call in batch] for batch in executor.calls], [["legit_tool"]])
+        self.assertNotIn("rejected_tool_calls", result_extra_args)
+
+    def test_action_instance_revalidates_injected_sensitive_target(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = SimpleNamespace()
+        llm.ACTION_SENSITIVE_PARAMETERS = DRIFTLLM.ACTION_SENSITIVE_PARAMETERS
+        llm._action_instance_provenance = lambda tool_name, args: {
+            "recipients": {
+                "labels": {"injected_instruction"},
+                "origins": {"search_emails"},
+            }
+        }
+        previous = {
+            "tool_name": "send_email",
+            "tool_args": {"recipients": ["david@example.com"]},
+            "provenance": {
+                "recipients": {"labels": {"delegated_task_source"}, "origins": {"search_emails"}}
+            },
+        }
+        current = {"tool_name": "send_email", "tool_args": {"recipients": ["mark@example.com"]}}
+
+        self.assertTrue(DRIFTLLM.action_instance_requires_revalidation(llm, previous, current))
+
+    def test_action_instance_accepts_clean_runtime_target_with_different_literal(self):
+        from DRIFTLLM import DRIFTLLM
+
+        llm = SimpleNamespace()
+        llm.ACTION_SENSITIVE_PARAMETERS = DRIFTLLM.ACTION_SENSITIVE_PARAMETERS
+        llm._action_instance_provenance = lambda tool_name, args: {
+            "participants": {
+                "labels": {"delegated_task_source"},
+                "origins": {"search_contacts_by_name"},
+            }
+        }
+        previous = {
+            "tool_name": "create_calendar_event",
+            "tool_args": {"participants": ["Sarah Baker"]},
+            "provenance": {
+                "participants": {"labels": {"delegated_task_source"}, "origins": {"search_contacts_by_name"}}
+            },
+        }
+        current = {"tool_name": "create_calendar_event", "tool_args": {"participants": ["sarah.baker@gmail.com"]}}
+
+        self.assertFalse(DRIFTLLM.action_instance_requires_revalidation(llm, previous, current))
+
     def test_advisory_result_is_not_wrapped_as_function_error(self):
         from DRIFTLLM import DRIFTLLM
         llm = self._make_llm("on")
@@ -1365,6 +1470,71 @@ class TestTaerRouting(unittest.TestCase):
         mock_boundary.assert_not_called()
         llm._run_original_drift_deviation_validation.assert_not_called()
         self.assertIsNotNone(result[0])
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_append_to_file_delegated_file_chain_downgrades_new_goal(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        from source_flow.records import SourceRecord
+
+        llm = self._make_llm("on")
+        llm._is_action_tool.return_value = True
+        llm._user_explicit_entities = set()
+        llm._action_targets_authorized.side_effect = lambda tool_args, entities: DRIFTLLM._action_targets_authorized(llm, tool_args, entities)
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        mock_boundary.return_value = TAERBoundaryResult(
+            passed=True,
+            explicit_violation=False,
+            violation_type=None,
+            checked_authority_args={},
+            evidence_source_ids=[],
+            reason="boundary_pass",
+        )
+
+        llm.source_label_store.records = [
+            SourceRecord(
+                source_id="delegated_file_00001",
+                step=1,
+                owner="tool",
+                value="team-building-activities.docx",
+                tool="search_files_by_filename",
+                source_kind="regex_file",
+                source_labels=["tool_output", "delegated_task_source", "regex_extract", "entity:file"],
+                evidence={"field_path": "filename"},
+                confidence=0.9,
+                normalized_value="team-building-activities.docx",
+                sanitized_visible=True,
+            ),
+            SourceRecord(
+                source_id="delegated_file_00002",
+                step=2,
+                owner="tool",
+                value="resolved file content",
+                tool="get_file_by_id",
+                source_kind="tool_sanitized_output",
+                source_labels=["tool_output", "delegated_task_source"],
+                evidence={"field_path": "content"},
+                confidence=1.0,
+                normalized_value="resolved file content",
+                sanitized_visible=True,
+            ),
+        ]
+
+        result = DRIFTLLM.trajectory_constraint_validation(
+            llm,
+            ["append_to_file"],
+            self._make_output("append_to_file", {"file_id": "team-building-activities.docx", "content": "resolved file content"}),
+            "Append delegated content",
+            [{"role": "user", "content": "Append delegated content"}],
+        )
+
+        mock_boundary.assert_called_once()
+        llm._run_original_drift_deviation_validation.assert_called_once()
+        self.assertIsNotNone(result)
 
     @patch("DRIFTLLM.match_candidate_to_backbone")
     @patch("DRIFTLLM.check_taer_boundary")

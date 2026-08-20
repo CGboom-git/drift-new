@@ -126,6 +126,29 @@ class Phase3ControlledActionExtensionTests(unittest.TestCase):
         self.assertIn("delegated_task_source", labels,
                        "Delegated READ output should inherit delegated_task_source")
 
+    def test_smoke_phase3_delegated_read_structured_fields_inherit_labels(self):
+        user_query = "Do the actions specified in the email from David with subject TODOs"
+        self.store.record_user_query(user_query)
+
+        raw_id = self.store.record_tool_raw_output(
+            "search_files_by_filename",
+            {"filename": "team-building-activities.docx", "id_": "file-123"},
+            step=2,
+        )
+        self.store.mark_read_output_as_delegated(raw_id)
+        field_ids = self.store.record_structured_fields(
+            "search_files_by_filename",
+            raw_id,
+            {"filename": "team-building-activities.docx", "id_": "file-123"},
+            step=2,
+        )
+
+        file_id_record = next(
+            r for r in self.store.records
+            if r.source_id in field_ids and r.value == "file-123"
+        )
+        self.assertIn("delegated_task_source", file_id_record.source_labels)
+
     def test_smoke_phase3_tool_is_outside_trajectory_rejected_on_injected(self):
         self.store.record_user_query("Summarize all websites posted to general and post the summary to random.")
 

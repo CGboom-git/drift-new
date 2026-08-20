@@ -125,12 +125,15 @@ class SinkEvidenceResolver:
             if selection_value_in_output:
                 matched = [r for r in read_outputs if normalized in r.normalized_value or r.normalized_value in normalized]
                 dt = "boolean_intent_extraction" if isinstance(value, bool) else "selection_from_read_result"
+                labels = ["tool_output", "selection_from_read_result"]
+                for r in matched:
+                    labels.extend(getattr(r, "source_labels", []) or [])
                 return SinkEvidence(
                     sink=sink,
                     value=value,
                     matched_sources=[r.source_id for r in matched],
                     actual_origin_tools=list(set(r.tool for r in matched if r.tool)),
-                    source_labels=["tool_output", "selection_from_read_result"],
+                    source_labels=self._dedupe(labels),
                     evidence=[{"source_id": r.source_id, "source_kind": r.source_kind} for r in matched[:3]],
                     confidence=0.5,
                     resolution_status="selection_from_read_result",
@@ -157,6 +160,9 @@ class SinkEvidenceResolver:
                     0.45,
                     extra_labels=["llm_synthesis"],
                 )
+            synth_result = self._try_constrained_synthesis(sink, value, records)
+            if synth_result is not None:
+                return synth_result
             return SinkEvidence(
                 sink=sink,
                 value=value,
@@ -435,11 +441,14 @@ class SinkEvidenceResolver:
         ]
         if clean_records:
             parent_ids = [r.source_id for r in clean_records[:5]]
+            labels = ["tool_output", "derived", "constrained_synthesis"]
+            for r in clean_records:
+                labels.extend(getattr(r, "source_labels", []) or [])
             return SinkEvidence(
                 sink=sink, value=value,
                 matched_sources=parent_ids,
                 actual_origin_tools=list(set(r.tool for r in clean_records if r.tool)),
-                source_labels=["tool_output", "derived", "constrained_synthesis"],
+                source_labels=self._dedupe(labels),
                 confidence=0.3,
                 resolution_status="derived_constrained_synthesis",
                 derivation_type="constrained_synthesis",

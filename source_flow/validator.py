@@ -536,6 +536,9 @@ class FlowAwareValidator:
                 if evidence.derivation_type == "absence_default":
                     valid_args[arg_name] = value
                     continue
+                if self._is_delegated_append_file_selection(tool_name, arg_name, evidence):
+                    valid_args[arg_name] = value
+                    continue
                 if not self._is_derived_allowed_for_role(evidence.derivation_type, sink_role):
                     issue = self._blocked(sink, "derivation_not_allowed_for_sink_role",
                         spec, evidence, tool_name, arg_name, tool_type, sink_role, deny_marks)
@@ -638,6 +641,19 @@ class FlowAwareValidator:
             failure_triage="",
             baseline_fallback=False,
         )
+
+    def _is_delegated_append_file_selection(self, tool_name: str, arg_name: str, evidence: SinkEvidence) -> bool:
+        if tool_name != "append_to_file" or arg_name != "file_id":
+            return False
+        labels = set(evidence.source_labels or [])
+        if labels & self.INJECTED_LABELS or labels & self.UNKNOWN_LABELS:
+            return False
+        if "delegated_task_source" not in labels:
+            return False
+        if evidence.derivation_type != "selection_from_read_result":
+            return False
+        allowed_tools = {"search_files_by_filename", "get_file_by_id"}
+        return bool(set(evidence.actual_origin_tools or []) & allowed_tools)
 
     def _tool_type(
         self,
