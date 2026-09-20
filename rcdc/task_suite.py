@@ -74,6 +74,12 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             # DRIFT calls this after its initial secure planner builds the
             # trajectory/checklist and TAER backbone, before any tool result.
             def freeze_anchor(initial_trajectory, initial_checklist, backbone, planner_complete):
+                existing = getattr(llm, '_rcvr_task_anchor', None)
+                if existing is not None:
+                    events.append({'event': 'task_anchor_reuse_rejected',
+                                   'reason': 'anchor_already_frozen',
+                                   'anchor_id': existing.anchor_id})
+                    return existing
                 if not planner_complete:
                     events.append({'event': 'task_anchor_incomplete',
                                    'reason': 'secure_planner_missing_or_misaligned_checklist',
