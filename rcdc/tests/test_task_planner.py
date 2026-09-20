@@ -55,6 +55,21 @@ class PlannerAnchorTests(unittest.TestCase):
         with self.assertRaises(dataclasses.FrozenInstanceError):
             self.anchor.user_task = 'changed'
 
+    def test_structured_planner_relation_compiles_to_existing_witness_rule(self):
+        anchor = freeze_from_secure_plan('suite/user_task_x', 'Apply the requested effect to object-17.',
+            ['lookup_record', 'commit_effect'], json.dumps([
+                {'name': 'lookup_record', 'required parameters': {'limit': 100}, 'conditions': {}},
+                {'name': 'commit_effect', 'required parameters': {'target': 'object-17'}, 'conditions': {
+                    'value': {'source_tool': 'lookup_record', 'request': {'limit': 100},
+                              'predicates': [{'field': 'target', 'value_from_parameter': 'target'}],
+                              'value_field': 'value', 'identity_field': 'id'}}},
+            ]), self.backbone, CONTRACTS)
+        action = json.loads(anchor.actions)[1]
+        self.assertEqual(action['binding_rules'][0]['source_tool'], 'lookup_record')
+        self.assertEqual(action['binding_rules'][0]['predicates'][0]['value'], 'object-17')
+        spec = compile_anchor_spec(anchor, 'commit_effect', CONTRACTS)
+        self.assertEqual(json.loads(spec.binding_rules)[0]['value_field'], 'value')
+
 
 if __name__ == '__main__':
     unittest.main()

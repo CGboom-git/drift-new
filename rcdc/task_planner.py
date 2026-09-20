@@ -49,8 +49,72 @@ def _source_tools(condition):
     if isinstance(condition, (list, tuple)):
         return [item for item in condition if isinstance(item, str) and item]
     if isinstance(condition, dict):
+        declared = condition.get("source_tool", condition.get("source_tools"))
+        if isinstance(declared, str) and declared:
+            return [declared]
+        if isinstance(declared, (list, tuple)):
+            return [item for item in declared if isinstance(item, str) and item]
         return [str(value) for value in condition.values() if isinstance(value, str) and value]
     return []
+
+
+def _binding_rule(parameter, condition, fixed_values, contracts):
+    """Compile a planner-declared record relation without consulting runtime data.
+
+    A plain ``"parameter": "read_tool"`` condition remains SourceFlow
+    provenance metadata.  A structured condition can additionally specify the
+    record selection and field relation that the stock RCDC witness validator
+    already understands.  This is a schema, rather than a task-family rule.
+    """
+    if not isinstance(condition, dict):
+        return None
+    source_tool = condition.get("source_tool")
+    if not isinstance(source_tool, str) or not source_tool:
+        return None
+    if not str(contracts.get("tools", {}).get(source_tool, {}).get("tool_type", "")).startswith("READ"):
+        return None
+    request = condition.get("request", {})
+    predicates = condition.get("predicates", [])
+    value_field = condition.get("value_field")
+    identity_field = condition.get("identity_field", "")
+    if (not isinstance(request, dict) or not isinstance(predicates, list)
+            or not isinstance(value_field, str) or not value_field
+            or not isinstance(identity_field, str)):
+        return None
+    normalized_predicates = []
+    for predicate in predicates:
+        if not isinstance(predicate, dict):
+            return None
+        field = predicate.get("field")
+        operator = predicate.get("operator", "equals")
+        if not isinstance(field, str) or operator not in {"equals", "prefix", "date"}:
+            return None
+        if "value_from_parameter" in predicate:
+            reference = predicate["value_from_parameter"]
+            if not isinstance(reference, str) or reference not in fixed_values:
+                return None
+            value = fixed_values[reference]
+        elif "value" in predicate:
+            value = predicate["value"]
+        else:
+            return None
+        normalized_predicates.append({"field": field, "value": value, "operator": operator})
+    comparison = condition.get("comparison", "exact")
+    if comparison not in {"exact", "number", "set_of_strings"}:
+        return None
+    rule = {
+        "parameter": parameter, "source_tool": source_tool, "request": request,
+        "predicates": normalized_predicates, "value_field": value_field,
+        "identity_field": identity_field, "rule_id": condition.get("rule_id", "R3"),
+        "comparison": comparison, "relation_type": "unique_object_field",
+        "authority_basis": "secure_planner_relation_plus_sourceflow_contract",
+    }
+    if condition.get("selection") == "max":
+        selection_field = condition.get("selection_field")
+        if not isinstance(selection_field, str) or not selection_field:
+            return None
+        rule.update(selection="max", selection_field=selection_field)
+    return rule
 
 
 def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_checklist,
@@ -65,18 +129,22 @@ def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_chec
     for index, tool in enumerate(trajectory):
         node = checklist[index] if index < len(checklist) and isinstance(checklist[index], dict) else {}
         step = steps.get(ordered_ids[index]) if index < len(ordered_ids) else None
-        required = getattr(step, "required_parameters", None) if step else node.get("required parameters", {})
-        conditions = getattr(step, "conditions", None) if step else node.get("conditions", {})
+        # The normalized initial checklist is the immutable planner artifact.
+        # TAER's backbone supplies only the stable consumer-step identity and
+        # is a fallback for older snapshots that did not retain a node.
+        required = node.get("required parameters", getattr(step, "required_parameters", {}))
+        conditions = node.get("conditions", getattr(step, "conditions", {}))
         required = required if isinstance(required, dict) else {}
         conditions = conditions if isinstance(conditions, dict) else {}
         contract_args = contracts.get("tools", {}).get(tool, {}).get("args", {})
-        fixed_constraints, origin_rules = [], []
+        fixed_constraints, origin_rules, binding_rules = [], [], []
         for parameter, value in required.items():
             if parameter not in contract_args or value is None:
                 continue
             fixed_constraints.append({"parameter": parameter, "kind": "equals", "value": value,
                                       "comparison": "exact",
                                       "authority_basis": "secure_planner_user_requirement"})
+        fixed_values = {rule["parameter"]: rule["value"] for rule in fixed_constraints}
         for parameter, condition in conditions.items():
             if parameter not in contract_args:
                 continue
@@ -86,8 +154,11 @@ def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_chec
                 origin_rules.append({"parameter": parameter, "source_tools": sources,
                                      "sink_role": contract_args[parameter].get("sink_role", "unknown"),
                                      "authority_basis": "secure_planner_condition_plus_sourceflow_contract"})
+                rule = _binding_rule(parameter, condition, fixed_values, contracts)
+                if rule is not None:
+                    binding_rules.append(rule)
         actions.append({"tool": tool, "consumer_step_id": getattr(step, "step_id", None),
-                        "fixed_constraints": fixed_constraints, "binding_rules": [],
+                        "fixed_constraints": fixed_constraints, "binding_rules": binding_rules,
                         "origin_rules": origin_rules})
 
     return TaskAnchor.create(task_id, user_task, actions, {
