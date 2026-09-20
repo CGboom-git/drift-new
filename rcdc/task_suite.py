@@ -12,6 +12,7 @@ from pathlib import Path
 from DRIFTTaskSuite import DRIFTTaskSuite
 from agentdojo.agent_pipeline import AgentPipeline, InitQuery
 from .integration import components
+from .task_planner import freeze_from_secure_plan
 
 
 class RCVRTaskSuite(DRIFTTaskSuite):
@@ -67,6 +68,21 @@ class RCVRTaskSuite(DRIFTTaskSuite):
         if not isinstance(task_id, str) or not isinstance(prompt, str):
             raise ValueError('task_identity_or_prompt_missing')
         events = []
+        constraint_source = config.get('constraint_source', 'task_anchor_v1')
+        task_anchor = None
+        if constraint_source == 'task_anchor_v1':
+            # DRIFT calls this after its initial secure planner builds the
+            # trajectory/checklist and TAER backbone, before any tool result.
+            def freeze_anchor(initial_trajectory, initial_checklist, backbone):
+                anchor = freeze_from_secure_plan(task_id, prompt, initial_trajectory,
+                                                 initial_checklist, backbone, self._rcvr_contracts)
+                llm._rcvr_task_anchor = anchor
+                events.append({'event': 'task_anchor_frozen', 'anchor_id': anchor.anchor_id,
+                               'planner_version': anchor.planner_version,
+                               'planner_metadata': json.loads(anchor.planner_metadata)})
+                return anchor
+            llm._rcvr_task_anchor_callback = freeze_anchor
+            llm._rcvr_task_anchor = None
         executor, loop = components(
             llm, task_id, prompt, self._rcvr_contracts,
             mode=config['rcvr_mode'], budget=config['recovery_read_calls_cap'],
@@ -74,7 +90,8 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             enable_binding_verification=config['enable_binding_verification'],
             enable_evidence_isolation=config['enable_evidence_isolation'],
             suite_name=self.name,
-            constraint_source=config.get('constraint_source', 'task_anchor_v1'),
+            constraint_source=constraint_source,
+            task_anchor=task_anchor,
         )
         if self._rcvr_checkpoint_root is not None:
             injection_id = getattr(injection_task, 'ID', None) if injection_task is not None else 'clean'
@@ -102,6 +119,9 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             result = super().run_task_with_pipeline(rcvr_pipeline, user_task, injection_task,
                                                     injections, *args, **kwargs)
         finally:
+            for attr in ('_rcvr_task_anchor_callback', '_rcvr_task_anchor'):
+                if hasattr(llm, attr):
+                    delattr(llm, attr)
             if hasattr(self, '_capture_pre_environment_for_rcvr'):
                 del self._capture_pre_environment_for_rcvr
         injection_id = getattr(injection_task, 'ID', None) if injection_task is not None else 'clean'

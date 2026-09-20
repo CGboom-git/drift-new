@@ -1,64 +1,60 @@
+import dataclasses
 import json
 import unittest
 from types import SimpleNamespace
 
 from rcdc.constraint_spec import compile_anchor_spec
-from rcdc.task_planner import TaskAnchor, create_anchor, planner_prompt, validate_actions
+from rcdc.task_planner import freeze_from_secure_plan
 
 
-CONTRACTS = {
-    'tools': {
-        'send_money': {'tool_type': 'WRITE', 'args': {'recipient': {'sink_role': 'target'}, 'amount': {'sink_role': 'target'}}},
-        'get_most_recent_transactions': {'tool_type': 'READ', 'args': {'n': {'sink_role': 'control'}}},
-        'delete_file': {'tool_type': 'WRITE', 'args': {'file_id': {'sink_role': 'target'}}},
-    }
-}
+CONTRACTS = {'tools': {
+    'get_most_recent_transactions': {'tool_type': 'READ', 'args': {'n': {'sink_role': 'control'}}},
+    'send_money': {'tool_type': 'WRITE', 'args': {
+        'recipient': {'sink_role': 'target'}, 'amount': {'sink_role': 'target'},
+        'subject': {'sink_role': 'content'}, 'date': {'sink_role': 'control'}}},
+}}
 
 
-class PlannerTests(unittest.TestCase):
-    def test_prompt_contains_only_task_and_contract_snapshot(self):
-        system, prompt = planner_prompt('banking/user_task_4', 'Refund AB12.', CONTRACTS)
-        self.assertIn('ORIGINAL_USER_TASK', prompt)
-        self.assertIn('TOOL_CONTRACTS', prompt)
-        self.assertNotIn('runtime', prompt.lower())
-        self.assertIn('trusted task planner', system)
+class PlannerAnchorTests(unittest.TestCase):
+    def setUp(self):
+        self.backbone = SimpleNamespace(initialized=True, backbone_order=['s000', 's001'], backbone_steps={
+            's000': SimpleNamespace(step_id='s000', required_parameters={'n': 100}, conditions={}),
+            's001': SimpleNamespace(step_id='s001', required_parameters={'recipient': 'GB29'},
+                                    conditions={'amount': 'get_most_recent_transactions',
+                                                'subject': 'get_most_recent_transactions'}),
+        })
+        self.anchor = freeze_from_secure_plan('banking/user_task_4', 'Please refund GB29.',
+            ['get_most_recent_transactions', 'send_money'], json.dumps([
+                {'name': 'get_most_recent_transactions', 'required parameters': {'n': 100}, 'conditions': {}},
+                {'name': 'send_money', 'required parameters': {'recipient': 'GB29'},
+                 'conditions': {'amount': 'get_most_recent_transactions', 'subject': 'get_most_recent_transactions'}},
+            ]), self.backbone, CONTRACTS)
 
-    def test_contract_validation_drops_unknown_tools_and_arguments(self):
-        raw = {'actions': [
-            {'tool': 'unknown', 'fixed_constraints': [{'parameter': 'x', 'value': 1}]},
-            {'tool': 'send_money', 'fixed_constraints': [
-                {'parameter': 'recipient', 'value': 'AB12'}, {'parameter': 'attacker', 'value': 'x'}],
-             'binding_rules': [
-                {'parameter': 'amount', 'source_tool': 'get_most_recent_transactions', 'request': {'n': 100},
-                 'predicates': [{'field': 'sender', 'value': 'AB12'}], 'value_field': 'amount', 'identity_field': 'id'},
-                {'parameter': 'amount', 'source_tool': 'send_money', 'request': {}, 'predicates': []}]},
-        ]}
-        actions = validate_actions(raw, CONTRACTS)
-        self.assertEqual(len(actions), 1)
-        self.assertEqual(actions[0]['fixed_constraints'][0]['parameter'], 'recipient')
-        self.assertEqual(len(actions[0]['binding_rules']), 1)
+    def test_anchor_is_deterministic_secure_planner_snapshot(self):
+        again = freeze_from_secure_plan('banking/user_task_4', 'Please refund GB29.',
+            ['get_most_recent_transactions', 'send_money'], json.dumps([
+                {'name': 'get_most_recent_transactions', 'required parameters': {'n': 100}, 'conditions': {}},
+                {'name': 'send_money', 'required parameters': {'recipient': 'GB29'},
+                 'conditions': {'amount': 'get_most_recent_transactions', 'subject': 'get_most_recent_transactions'}},
+            ]), self.backbone, CONTRACTS)
+        self.assertEqual(self.anchor.anchor_id, again.anchor_id)
+        self.assertEqual(json.loads(self.anchor.planner_metadata)['source'],
+                         'drift_secure_planner_and_sourceflow_contract')
+        self.assertFalse(json.loads(self.anchor.planner_metadata)['runtime_observations_in_anchor'])
 
-    def test_anchor_compilation_cannot_be_changed_by_candidate_data(self):
-        anchor = TaskAnchor.create('t', 'Refund AB12.', [{
-            'tool': 'send_money', 'fixed_constraints': [{'parameter': 'recipient', 'kind': 'equals', 'value': 'AB12',
-                                                          'comparison': 'exact', 'authority_basis': 'task_anchor_user_requirement'}],
-            'binding_rules': [],
-        }])
-        spec = compile_anchor_spec(anchor, 'send_money', CONTRACTS)
-        self.assertIn('AB12', spec.fixed_constraints)
-        self.assertNotIn('EVIL', spec.fixed_constraints)
-        with self.assertRaises(Exception):
-            anchor.user_task = 'changed'
-        self.assertIsNone(compile_anchor_spec(anchor, 'delete_file', CONTRACTS))
+    def test_anchor_integrates_fixed_and_sourceflow_origin_semantics(self):
+        action = json.loads(self.anchor.actions)[1]
+        self.assertEqual(action['fixed_constraints'][0]['value'], 'GB29')
+        self.assertEqual({r['parameter'] for r in action['origin_rules']}, {'amount', 'subject'})
+        self.assertEqual(action['origin_rules'][0]['source_tools'], ['get_most_recent_transactions'])
 
-    def test_create_anchor_never_passes_runtime_data_to_model(self):
-        client = SimpleNamespace(llm_run=lambda system, prompt, **kwargs: json.dumps({'actions': [{
-            'tool': 'send_money', 'fixed_constraints': [{'parameter': 'recipient', 'value': 'AB12'}],
-            'binding_rules': [],
-        }]}))
-        anchor = create_anchor(SimpleNamespace(client=client), 't', 'Refund AB12.', CONTRACTS)
-        self.assertEqual(json.loads(anchor.actions)[0]['tool'], 'send_money')
-        self.assertEqual(json.loads(anchor.planner_metadata)['runtime_observations_in_prompt'], False)
+    def test_compile_only_selects_frozen_action(self):
+        spec = compile_anchor_spec(self.anchor, 'send_money', CONTRACTS)
+        self.assertIn('GB29', spec.fixed_constraints)
+        self.assertIsNone(compile_anchor_spec(self.anchor, 'get_most_recent_transactions', CONTRACTS))
+        self.assertIsNone(compile_anchor_spec(self.anchor, 'delete_file', CONTRACTS))
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            self.anchor.user_task = 'changed'
 
 
 if __name__ == '__main__':

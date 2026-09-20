@@ -95,6 +95,12 @@ def compile_anchor_spec(anchor, tool, contracts):
         return None
     action = matches[0]
     contract = contracts.get('tools', {}).get(tool, {})
+    # Reads remain on the stock DRIFT/SourceFlow path.  RCVR verifies an
+    # action only when the planner anchor contains a constraint for it.
+    if str(contract.get('tool_type', '')).startswith('READ'):
+        return None
+    if not action.get('fixed_constraints') and not action.get('binding_rules'):
+        return None
     roles = {p: value.get('sink_role', 'unknown') for p, value in contract.get('args', {}).items()}
     relations = action.get('binding_rules', [])
     reads = [{'tool': r['source_tool'], 'arguments': r['request'], 'satisfies_parameter': r['parameter']}

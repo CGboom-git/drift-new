@@ -1679,6 +1679,10 @@ Do not approve unrelated exploration or any new goal.
                 self.logger.info(f"TAER backbone initialized with {len(self.taer_state.backbone_order)} steps")
                 self.logger.info(f"User explicit entities: {self._user_explicit_entities}")
 
+        callback = getattr(self, '_rcvr_task_anchor_callback', None)
+        if callable(callback):
+            callback(self.initial_function_trajectory, self.initial_node_checklist, self.taer_state)
+
     def _extract_user_explicit_entities(self, query_text):
         entities = set()
         for match in re.finditer(r'[\w.+-]+@[\w-]+\.[\w.]+', query_text):
