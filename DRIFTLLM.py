@@ -2743,8 +2743,13 @@ Do not approve unrelated exploration or any new goal.
                 completion = self.client.agent_run(openai_messages, self.tools_docs_list, max_tokens=4096, enable_thinking=False)
 
                 self.initial_constraints_build(completion, query, notify_anchor=False)
-                if not self.initial_planner_complete:
-                    self.logger.info("Initial secure planner output incomplete; retrying required trajectory/checklist format.")
+                planner_format_attempts = 0
+                while not self.initial_planner_complete and planner_format_attempts < 3:
+                    planner_format_attempts += 1
+                    self.logger.info(
+                        f"Initial secure planner output incomplete; retrying required trajectory/checklist format "
+                        f"({planner_format_attempts}/3)."
+                    )
                     retry = {"role": "user", "content": (
                         "Return the complete initial secure plan again. Include exactly one "
                         "<function_trajectory>...</function_trajectory> and one "
