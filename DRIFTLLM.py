@@ -1,4 +1,5 @@
 import hashlib
+import ast
 
 from import_lib import *
 from source_flow import (
@@ -1625,7 +1626,7 @@ Do not approve unrelated exploration or any new goal.
         else:
             return True, ""
 
-    def initial_constraints_build(self, completion, raw_user_query=""):
+    def initial_constraints_build(self, completion, raw_user_query="", notify_anchor=True):
         """Build the initial control and data constraints.
         """
 
@@ -1635,17 +1636,19 @@ Do not approve unrelated exploration or any new goal.
         self._user_explicit_entities = self._extract_user_explicit_entities(raw_user_query or "")
         self._runtime_read_extensions = {}
         self._taer_persistent_auth = []
+        self.initial_planner_complete = False
+        text = completion[0] if isinstance(completion, list) and completion else str(completion)
 
-        if ("<function_trajectory>" in completion[0]):
+        if re.search(r"<\s*(?:function_trajectory|traj-1)\s*>", text, re.IGNORECASE):
             try:
-                traj_pattern = re.compile(r"<Traj-1>(\[.*?\])</Traj-1>", re.DOTALL)
-                matches = traj_pattern.search(completion[0])
+                traj_pattern = re.compile(r"<\s*traj-1\s*>(\[.*?\])</\s*traj-1\s*>", re.DOTALL | re.IGNORECASE)
+                matches = traj_pattern.search(text)
                 if matches:
                     self.function_trajectory = [func.strip() for func in matches.group(1).strip().strip("[]").split(",")]
 
                 else:
-                    re_traj_pattern = re.compile(r"<function_trajectory>(.*?)</function_trajectory>", re.DOTALL)
-                    re_matches = re_traj_pattern.search(completion[0])
+                    re_traj_pattern = re.compile(r"<\s*function_trajectory\s*>(.*?)</\s*function_trajectory\s*>", re.DOTALL | re.IGNORECASE)
+                    re_matches = re_traj_pattern.search(text)
                     if re_matches:
                         self.function_trajectory = [func.strip() for func in re_matches.group(1).strip().strip("[]").split(",")]
                     else:
@@ -1656,13 +1659,14 @@ Do not approve unrelated exploration or any new goal.
             except Exception as e:
                 raise InvalidModelOutputError(f"Model output parsing failed: {e}")
 
-        if ("<parameter_checklist>" in completion[0]):
-            self.node_checklist = "None"
+        if re.search(r"<\s*parameter_checklist\s*>", text, re.IGNORECASE):
             try:
-                node_pattern = re.compile(r"<parameter_checklist>(.*?)</parameter_checklist>", re.DOTALL)
-                node_matches = node_pattern.search(completion[0])
+                node_pattern = re.compile(r"<\s*parameter_checklist\s*>(.*?)</\s*parameter_checklist\s*>", re.DOTALL | re.IGNORECASE)
+                node_matches = node_pattern.search(text)
                 if node_matches:
-                    self.node_checklist = node_matches.group(1)
+                    parsed = self._normalize_initial_checklist(node_matches.group(1))
+                    if parsed is not None:
+                        self.node_checklist = json.dumps(parsed, ensure_ascii=False)
 
                 self.initial_node_checklist = self.node_checklist
 
@@ -1679,9 +1683,57 @@ Do not approve unrelated exploration or any new goal.
                 self.logger.info(f"TAER backbone initialized with {len(self.taer_state.backbone_order)} steps")
                 self.logger.info(f"User explicit entities: {self._user_explicit_entities}")
 
+        self.initial_planner_complete = self._initial_plan_complete()
+
+        if notify_anchor:
+            self._notify_rcvr_task_anchor()
+
+    def _notify_rcvr_task_anchor(self):
         callback = getattr(self, '_rcvr_task_anchor_callback', None)
         if callable(callback):
-            callback(self.initial_function_trajectory, self.initial_node_checklist, self.taer_state)
+            callback(self.initial_function_trajectory, self.initial_node_checklist, self.taer_state,
+                     self.initial_planner_complete)
+
+    @staticmethod
+    def _normalize_initial_checklist(value):
+        """Parse JSON and common Python-like planner output into canonical nodes."""
+        if not isinstance(value, str):
+            return None
+        source = value.strip().replace('“', '"').replace('”', '"')
+        try:
+            parsed = json.loads(source)
+        except (TypeError, ValueError):
+            try:
+                parsed = ast.literal_eval(source)
+            except (TypeError, ValueError, SyntaxError):
+                return None
+        if not isinstance(parsed, list) or not all(isinstance(item, dict) for item in parsed):
+            return None
+        normalized = []
+        for item in parsed:
+            name = item.get('name')
+            required = item.get('required parameters', item.get('required_parameters', {}))
+            conditions = item.get('conditions', {})
+            if not isinstance(name, str) or not isinstance(required, dict):
+                return None
+            if isinstance(conditions, str):
+                try:
+                    conditions = ast.literal_eval(conditions)
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+            if conditions is None:
+                conditions = {}
+            if not isinstance(conditions, dict):
+                return None
+            normalized.append({'name': name, 'required parameters': required, 'conditions': conditions})
+        return normalized
+
+    def _initial_plan_complete(self):
+        checklist = self._normalize_initial_checklist(self.initial_node_checklist)
+        if not self.initial_function_trajectory or checklist is None:
+            return False
+        return (len(checklist) == len(self.initial_function_trajectory)
+                and all(node['name'] == tool for node, tool in zip(checklist, self.initial_function_trajectory)))
 
     def _extract_user_explicit_entities(self, query_text):
         entities = set()
@@ -2690,7 +2742,18 @@ Do not approve unrelated exploration or any new goal.
                 openai_messages = [{"role": "system", "content": system_message}, *openai_messages]
                 completion = self.client.agent_run(openai_messages, self.tools_docs_list, max_tokens=4096, enable_thinking=False)
 
-                self.initial_constraints_build(completion, query)
+                self.initial_constraints_build(completion, query, notify_anchor=False)
+                if not self.initial_planner_complete:
+                    self.logger.info("Initial secure planner output incomplete; retrying required trajectory/checklist format.")
+                    retry = {"role": "user", "content": (
+                        "Return the complete initial secure plan again. Include exactly one "
+                        "<function_trajectory>...</function_trajectory> and one "
+                        "<parameter_checklist>...</parameter_checklist>. The checklist must be a JSON list "
+                        "with one node, in the same order, for every trajectory function.")}
+                    completion = self.client.agent_run([*openai_messages, retry], self.tools_docs_list,
+                                                       max_tokens=4096, enable_thinking=False)
+                    self.initial_constraints_build(completion, query, notify_anchor=False)
+                self._notify_rcvr_task_anchor()
 
         # Injection Detection
         if self.args.injection_isolation:
