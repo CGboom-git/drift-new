@@ -1,0 +1,16 @@
+{
+  "method_name": "RCVR",
+  "config_id": "B1_RCVR",
+  "display_label": "Full RCVR exact 15-task subset",
+  "rcvr_mode": "full",
+  "compat_rcdc_mode": "full",
+  "relation_mode": "full",
+  "enable_binding_verification": true,
+  "enable_evidence_isolation": true,
+  "recovery_model_calls_cap": 2,
+  "recovery_read_calls_cap": 2,
+  "recovery_tools": "READ-only runtime tools",
+  "frozen_input_manifest": "experiments/rcdc/rcvr_mechanism_subset15_run_manifest.json",
+  "frozen_input_manifest_sha256": "521863a010c7f07c01e4374876cb3be7cc434b6b45d341d0bf29e7288554a5b2",
+  "online_started": false
+}

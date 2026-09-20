@@ -7,7 +7,8 @@ continue the same candidate under `reject`, `allow`, or `recovery`.
 
 The pilot is restricted to AgentDojo banking `user_task_4`. It requires a
 single candidate tool call in the assistant message. Unsupported multi-call
-batches fail explicitly rather than producing a misleading checkpoint.
+batches emit `unknown_checkpoint_unsupported` and let the Full run continue;
+they are excluded from the three-branch checkpoint analysis.
 
 The checkpoint contains the exact pre-recovery benchmark environment, the
 pre-task environment used for scoring, the candidate, immutable spec, evidence

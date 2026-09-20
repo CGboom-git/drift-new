@@ -243,10 +243,18 @@ class ExperimentalExecutor(ToolsExecutor):
                     return
                 if self.checkpoint_context is None:
                     raise RuntimeError('checkpoint_context_missing')
-                path = capture_checkpoint(
-                    self.checkpoint_root, self.checkpoint_context, self.llm, self,
-                    spec, call, decision, env, messages, extra_args,
-                )
+                try:
+                    path = capture_checkpoint(
+                        self.checkpoint_root, self.checkpoint_context, self.llm, self,
+                        spec, call, decision, env, messages, extra_args,
+                    )
+                except ValueError as exc:
+                    if str(exc) != 'checkpoint_batch_requires_single_candidate':
+                        raise
+                    self.emit({'event': 'unknown_checkpoint_unsupported',
+                               'reason': str(exc), 'call_id': call.call_id,
+                               'spec_id': spec.constraint_id})
+                    return
                 self.emit({'event': 'unknown_checkpoint_frozen', 'path': str(path),
                            'call_id': call.call_id, 'spec_id': spec.constraint_id,
                            'evidence_revision': self.ledger.revision})
