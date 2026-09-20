@@ -6,6 +6,7 @@ task-local.  This wrapper creates the experimental loop inside
 ``run_task_with_pipeline`` and leaves the stock suite and pipeline untouched.
 """
 import json
+import copy
 from pathlib import Path
 
 from DRIFTTaskSuite import DRIFTTaskSuite
@@ -19,9 +20,10 @@ class RCVRTaskSuite(DRIFTTaskSuite):
     _rcvr_config = None
     _rcvr_contracts = None
     _rcvr_events_root = None
+    _rcvr_checkpoint_root = None
 
     @classmethod
-    def configure_rcvr(cls, config, contracts, events_root):
+    def configure_rcvr(cls, config, contracts, events_root, checkpoint_root=None):
         if config.get('method_name') != 'RCVR':
             raise ValueError('rcvr_config_method_name_required')
         if config.get('rcvr_mode') not in ('full', 'strict', 'allow', 'retry', 'shadow'):
@@ -35,10 +37,11 @@ class RCVRTaskSuite(DRIFTTaskSuite):
         cls._rcvr_config = dict(config)
         cls._rcvr_contracts = dict(contracts)
         cls._rcvr_events_root = Path(events_root)
+        cls._rcvr_checkpoint_root = Path(checkpoint_root) if checkpoint_root else None
 
     @classmethod
     def clear_rcvr_configuration(cls):
-        cls._rcvr_config = cls._rcvr_contracts = cls._rcvr_events_root = None
+        cls._rcvr_config = cls._rcvr_contracts = cls._rcvr_events_root = cls._rcvr_checkpoint_root = None
 
     def run_task_with_pipeline(self, agent_pipeline, user_task, injection_task,
                                injections, *args, **kwargs):
@@ -69,11 +72,34 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             enable_binding_verification=config['enable_binding_verification'],
             enable_evidence_isolation=config['enable_evidence_isolation'],
         )
+        if self._rcvr_checkpoint_root is not None:
+            injection_id = getattr(injection_task, 'ID', None) if injection_task is not None else 'clean'
+            executor.checkpoint_root = self._rcvr_checkpoint_root
+            executor.checkpoint_context = {
+                'suite': self.name, 'task_id': task_id,
+                'injection_task_id': injection_id or 'clean',
+                'run_tag': getattr(self.args, 'run_tag', None) or 'untagged',
+                'benchmark_version': self.args.benchmark_version,
+                'config_id': config['config_id'],
+                'recovery_budget': config['recovery_read_calls_cap'],
+                'relation_mode': config['relation_mode'],
+                'enable_binding_verification': config['enable_binding_verification'],
+                'enable_evidence_isolation': config['enable_evidence_isolation'],
+                'injections': copy.deepcopy(injections),
+            }
         # Retain the stock InitialQuery -> LLM -> execution-loop sequence so
         # TaskSuite can invoke this pipeline with an empty message list.
         rcvr_pipeline = AgentPipeline([InitQuery(), llm, loop])
-        result = super().run_task_with_pipeline(rcvr_pipeline, user_task, injection_task,
-                                                injections, *args, **kwargs)
+        if self._rcvr_checkpoint_root is not None:
+            def capture_pre_environment(pre_environment):
+                executor.checkpoint_context['pre_environment'] = pre_environment.model_copy(deep=True)
+            self._capture_pre_environment_for_rcvr = capture_pre_environment
+        try:
+            result = super().run_task_with_pipeline(rcvr_pipeline, user_task, injection_task,
+                                                    injections, *args, **kwargs)
+        finally:
+            if hasattr(self, '_capture_pre_environment_for_rcvr'):
+                del self._capture_pre_environment_for_rcvr
         injection_id = getattr(injection_task, 'ID', None) if injection_task is not None else 'clean'
         event_path = self._rcvr_events_root / self.name / task_id / f'{injection_id or "clean"}.json'
         event_path.parent.mkdir(parents=True, exist_ok=True)

@@ -9,6 +9,7 @@ from .adapter import Gate
 from .constraint_spec import compile_spec
 from .events import EvidenceLedger, HostFeedbackRegistry
 from .schema import Call, canonical
+from .checkpoint import capture as capture_checkpoint
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -81,6 +82,8 @@ class ExperimentalExecutor(ToolsExecutor):
         self.clock = 0
         self.stopped = False
         self.last_recovery_stop = None
+        self.checkpoint_root = None
+        self.checkpoint_context = None
 
     def tick(self):
         self.clock += 1
@@ -235,7 +238,21 @@ class ExperimentalExecutor(ToolsExecutor):
                 # not register that data as host feedback or auto-authorize it.
                 self.llm._source_flow_record_tool_message_at(produced, len(produced)-1)
 
-            outcome = self.gate.candidate(spec, call, self.ledger, dispatch, propose, acquire, self.tick, reads)
+            def freeze_unknown(decision):
+                if self.checkpoint_root is None:
+                    return
+                if self.checkpoint_context is None:
+                    raise RuntimeError('checkpoint_context_missing')
+                path = capture_checkpoint(
+                    self.checkpoint_root, self.checkpoint_context, self.llm, self,
+                    spec, call, decision, env, messages, extra_args,
+                )
+                self.emit({'event': 'unknown_checkpoint_frozen', 'path': str(path),
+                           'call_id': call.call_id, 'spec_id': spec.constraint_id,
+                           'evidence_revision': self.ledger.revision})
+
+            outcome = self.gate.candidate(spec, call, self.ledger, dispatch, propose,
+                                          acquire, self.tick, reads, freeze_unknown)
             if isinstance(outcome, dict) and outcome.get('rcvr_stopped'):
                 self.stopped = True
                 self.last_recovery_stop = outcome

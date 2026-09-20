@@ -22,7 +22,7 @@ class Gate:
         self.enable_binding_verification = enable_binding_verification
 
     def candidate(self, spec, call, ledger, continue_original, propose_read=None,
-                  execute_read=None, position=None, ordinary_read_tools=()):
+                  execute_read=None, position=None, ordinary_read_tools=(), on_unknown=None):
         if self.mode == 'off':
             return continue_original()
         if spec is None:
@@ -41,6 +41,9 @@ class Gate:
         decision = evaluate(spec, call, ledger, self.relation_mode)
         self.emit({'event': 'binding_verification', 'decision': decision.json(), 'mode': self.mode,
                    'relation_mode': self.relation_mode})
+        if decision.verdict == 'UNKNOWN' and on_unknown is not None:
+            # The callback runs before any recovery proposal or tool effect.
+            on_unknown(decision)
         if self.mode == 'shadow':
             return continue_original()
         # UNKNOWN is not INVALID.  This ablation deliberately treats it as a

@@ -172,6 +172,9 @@ class DRIFTTaskSuite(TaskSuite[Env]):
 
         # Create a copy of the environment before running the user task to then diff if needed
         pre_environment = task_environment.model_copy(deep=True)
+        checkpoint_pre_environment = getattr(self, '_capture_pre_environment_for_rcvr', None)
+        if checkpoint_pre_environment is not None:
+            checkpoint_pre_environment(pre_environment)
         if isinstance(user_task, BaseUserTask):
             prompt = user_task.PROMPT
         else:
@@ -223,4 +226,3 @@ class DRIFTTaskSuite(TaskSuite[Env]):
         )
 
         return utility, security, format_messages
-

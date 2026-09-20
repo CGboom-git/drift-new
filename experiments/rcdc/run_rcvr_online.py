@@ -58,6 +58,10 @@ def parse(argv=None):
     parser.add_argument('--config-id', required=True, choices=tuple(EXPECTED))
     parser.add_argument('--confirm-online-execution', action='store_true')
     parser.add_argument(
+        '--checkpoint-dir', type=Path, default=None,
+        help='Opt-in private directory for pre-recovery UNKNOWN snapshots.',
+    )
+    parser.add_argument(
         '--preflight-root', type=Path, default=PREFLIGHT,
         help='Root containing the benchmark-specific frozen manifest and RCVR configs.',
     )
@@ -152,7 +156,8 @@ def run(known, base_args):
     if config.get('contract_schema_hash') and config['contract_schema_hash'] != contracts.get('schema_hash'):
         raise ValueError('contract_schema_hash_changed')
     events_root = known.preflight_root / 'online_events' / base_args.run_tag
-    RCVRTaskSuite.configure_rcvr(config, contracts, events_root)
+    RCVRTaskSuite.configure_rcvr(config, contracts, events_root,
+                                  checkpoint_root=known.checkpoint_dir)
     import pipeline_main
     stock_suite = pipeline_main.DRIFTTaskSuite
     try:
