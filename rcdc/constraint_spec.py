@@ -58,6 +58,7 @@ def query_constraints(query):
 
 
 def compile_spec(task_id, query, initial_trajectory, checklist, backbone, contracts):
+    """Legacy benchmark-template compiler retained only to reproduce old runs."""
     extracted = query_constraints(query)
     if extracted is None:
         return None
@@ -78,3 +79,32 @@ def compile_spec(task_id, query, initial_trajectory, checklist, backbone, contra
                             'backbone_steps': [dataclasses.asdict(s) for s in steps]},
         'tool_contract': contract, 'policy': 'model plan constraints are recorded, not promoted to user constraints'}
     return ConstraintSpec.create(task_id, step_id, tool, constants, roles, relations, reads, annotations)
+
+
+def compile_anchor_spec(anchor, tool, contracts):
+    """Compile a candidate action from an immutable task anchor.
+
+    ``tool`` is only a lookup key. Candidate arguments, trajectories, and
+    runtime evidence cannot add or rewrite any constraint here.
+    """
+    if anchor is None:
+        return None
+    actions = json.loads(anchor.actions)
+    matches = [action for action in actions if action.get('tool') == tool]
+    if len(matches) != 1:
+        return None
+    action = matches[0]
+    contract = contracts.get('tools', {}).get(tool, {})
+    roles = {p: value.get('sink_role', 'unknown') for p, value in contract.get('args', {}).items()}
+    relations = action.get('binding_rules', [])
+    reads = [{'tool': r['source_tool'], 'arguments': r['request'], 'satisfies_parameter': r['parameter']}
+             for r in relations]
+    annotations = {
+        'compiler': 'task_anchor_v1', 'task_anchor_id': anchor.anchor_id,
+        'anchor_planner_version': anchor.planner_version,
+        'anchor_metadata': json.loads(anchor.planner_metadata),
+        'policy': 'candidate arguments and runtime observations cannot extend task constraints',
+        'tool_contract': contract,
+    }
+    return ConstraintSpec.create(anchor.task_id, None, tool, action.get('fixed_constraints', []), roles,
+                                 relations, reads, annotations)

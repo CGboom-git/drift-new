@@ -41,6 +41,10 @@ def load_config(config_id, preflight_root=PREFLIGHT):
     if not path.is_file():
         raise ValueError('run_rcvr_ablation_prepare_first')
     config = json.loads(path.read_text(encoding='utf-8'))
+    # Historical configuration files predate task anchors.  Any new online
+    # RCVR invocation therefore uses the paper-aligned compiler unless the
+    # configuration explicitly requests the legacy reproduction path.
+    config.setdefault('constraint_source', 'task_anchor_v1')
     if config.get('method_name') != 'RCVR':
         raise ValueError('invalid_rcvr_config_method')
     if (config.get('rcvr_mode'), config.get('relation_mode'), config.get('enable_binding_verification'),
@@ -129,6 +133,7 @@ def dry_run(known, base_args):
         'relation_mode': config['relation_mode'], 'frozen_case_count': manifest['case_count'],
         'enable_binding_verification': config['enable_binding_verification'],
         'enable_evidence_isolation': config['enable_evidence_isolation'],
+        'constraint_source': config['constraint_source'],
         'selected_suites': base_args.suites, 'selected_user_tasks': base_args.target_user_tasks,
         'selected_injection_tasks': base_args.target_injection_tasks,
         'contract_profile': profile,

@@ -6,7 +6,8 @@ from agentdojo.agent_pipeline import ToolsExecutor
 from agentdojo.functions_runtime import FunctionCall
 from DRIFTToolsExecutionLoop import DRIFTToolsExecutionLoop
 from .adapter import Gate
-from .constraint_spec import compile_spec
+from .constraint_spec import compile_spec, compile_anchor_spec
+from .task_planner import create_anchor
 from .events import EvidenceLedger, HostFeedbackRegistry
 from .schema import Call, canonical
 from .checkpoint import capture as capture_checkpoint
@@ -69,7 +70,8 @@ def parse_recovery_proposal(answer):
 
 class ExperimentalExecutor(ToolsExecutor):
     def __init__(self, llm, task_id, task, contracts, mode, budget, relation_mode, emit,
-                 enable_binding_verification=True, enable_evidence_isolation=True, suite_name=None):
+                 enable_binding_verification=True, enable_evidence_isolation=True, suite_name=None,
+                 constraint_source='task_anchor_v1'):
         super().__init__()
         self.llm, self.task_id, self.task = llm, task_id, task
         self.suite_name = suite_name
@@ -78,9 +80,14 @@ class ExperimentalExecutor(ToolsExecutor):
             raise ValueError('invalid_evidence_isolation_flag')
         self.gate = Gate(mode, budget, relation_mode, emit, enable_binding_verification)
         self.enable_evidence_isolation = enable_evidence_isolation
+        if constraint_source not in ('task_anchor_v1', 'legacy_regex_v1'):
+            raise ValueError('invalid_constraint_source')
+        self.constraint_source = constraint_source
         self.ledger = EvidenceLedger(task_id)
         self.registry = HostFeedbackRegistry()
-        self.spec = None
+        self.spec = None  # Last candidate spec, retained for checkpoint compatibility.
+        self.specs = {}
+        self.task_anchor = None
         self.clock = 0
         self.stopped = False
         self.last_recovery_stop = None
@@ -96,12 +103,16 @@ class ExperimentalExecutor(ToolsExecutor):
             raise ValueError('task_identity_changed')
         if not messages or messages[-1]['role'] != 'assistant' or not messages[-1].get('tool_calls'):
             return super().query(query, runtime, env, messages, extra_args)
-        if self.spec is None:
+        if self.task_anchor is None and self.constraint_source == 'task_anchor_v1':
+            # This call receives exactly the original task and frozen contracts;
+            # no assistant candidate or runtime observation is supplied.
+            self.task_anchor = create_anchor(self.llm, self.task_id, self.task, self.contracts)
+            self.emit({'event': 'task_anchor_frozen', 'anchor_id': self.task_anchor.anchor_id,
+                       'planner_version': self.task_anchor.planner_version,
+                       'planner_metadata': json.loads(self.task_anchor.planner_metadata)})
+        if not self.specs:
             self.emit({'event': 'constraint_scope',
                        'coverage': task_spec_coverage(self.suite_name, self.task_id)})
-            self.spec = compile_spec(self.task_id, query, self.llm.initial_function_trajectory,
-                self.llm.initial_node_checklist, self.llm.taer_state, self.contracts)
-            self.emit({'event': 'constraint_spec', 'spec': vars(self.spec) if self.spec else None})
         if self.mode == 'shadow':
             # Compute from pre-batch evidence, then call the original executor
             # exactly once with the untouched batch and message objects.
@@ -109,8 +120,9 @@ class ExperimentalExecutor(ToolsExecutor):
             for raw in messages[-1]['tool_calls']:
                 call = Call.create(self.task_id, raw.id, raw.function, raw.args, self.tick(), self.ledger.epoch)
                 observed_calls[raw.id] = call
-                if self.spec and raw.function == self.spec.tool:
-                    self.gate.candidate(self.spec, call, self.ledger, lambda: None)
+                spec = self._spec_for(raw.function, query)
+                if spec:
+                    self.gate.candidate(spec, call, self.ledger, lambda: None)
             result = super().query(query, runtime, env, messages, extra_args)
             for response in result[3][len(messages):]:
                 raw = response.get('tool_call')
@@ -125,7 +137,8 @@ class ExperimentalExecutor(ToolsExecutor):
         calls = messages[-1]['tool_calls']
         for call_index, raw in enumerate(calls):
             call = Call.create(self.task_id, raw.id, raw.function, raw.args, self.tick(), self.ledger.epoch)
-            spec = self.spec if self.spec and raw.function == self.spec.tool else None
+            spec = self._spec_for(raw.function, query)
+            self.spec = spec
             initial_revision = self.ledger.revision
             single = dict(messages[-1], tool_calls=[raw])
 
@@ -286,6 +299,21 @@ class ExperimentalExecutor(ToolsExecutor):
             return query, runtime, env, [*messages[:-1], *recovery_messages, *recovered_candidate_messages, *appended], extra_args
         return query, runtime, env, [*messages, *appended], extra_args
 
+    def _spec_for(self, tool, query):
+        if tool in self.specs:
+            return self.specs[tool]
+        if self.constraint_source == 'task_anchor_v1':
+            spec = compile_anchor_spec(self.task_anchor, tool, self.contracts)
+        else:
+            spec = compile_spec(self.task_id, query, self.llm.initial_function_trajectory,
+                                self.llm.initial_node_checklist, self.llm.taer_state, self.contracts)
+            if spec is not None and spec.tool != tool:
+                spec = None
+        self.specs[tool] = spec
+        self.emit({'event': 'constraint_spec', 'constraint_source': self.constraint_source,
+                   'tool': tool, 'spec': vars(spec) if spec else None})
+        return spec
+
 
 class ExperimentalLoop(DRIFTToolsExecutionLoop):
     def query(self, query, runtime, env, messages, extra_args):
@@ -308,11 +336,13 @@ class ExperimentalLoop(DRIFTToolsExecutionLoop):
 
 
 def components(llm, task_id, task, contracts, mode='off', budget=2, relation_mode='full', emit=lambda e: None,
-               enable_binding_verification=True, enable_evidence_isolation=True, suite_name=None):
+               enable_binding_verification=True, enable_evidence_isolation=True, suite_name=None,
+               constraint_source='legacy_regex_v1'):
     if mode == 'off':
         executor = ToolsExecutor()
         return executor, DRIFTToolsExecutionLoop([executor, llm])
     executor = ExperimentalExecutor(llm, task_id, task, contracts, mode, budget, relation_mode, emit,
-                                    enable_binding_verification, enable_evidence_isolation, suite_name)
+                                    enable_binding_verification, enable_evidence_isolation, suite_name,
+                                    constraint_source)
     loop = DRIFTToolsExecutionLoop([executor, llm]) if mode == 'shadow' else ExperimentalLoop([executor, llm])
     return executor, loop

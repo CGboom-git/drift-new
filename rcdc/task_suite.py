@@ -34,6 +34,8 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             raise ValueError('invalid_binding_verification_flag')
         if not isinstance(config.get('enable_evidence_isolation'), bool):
             raise ValueError('invalid_evidence_isolation_flag')
+        if config.get('constraint_source', 'task_anchor_v1') not in ('task_anchor_v1', 'legacy_regex_v1'):
+            raise ValueError('invalid_constraint_source')
         cls._rcvr_config = dict(config)
         cls._rcvr_contracts = dict(contracts)
         cls._rcvr_events_root = Path(events_root)
@@ -72,6 +74,7 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             enable_binding_verification=config['enable_binding_verification'],
             enable_evidence_isolation=config['enable_evidence_isolation'],
             suite_name=self.name,
+            constraint_source=config.get('constraint_source', 'task_anchor_v1'),
         )
         if self._rcvr_checkpoint_root is not None:
             injection_id = getattr(injection_task, 'ID', None) if injection_task is not None else 'clean'
@@ -112,6 +115,7 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             'rcvr_mode': config['rcvr_mode'], 'relation_mode': config['relation_mode'],
             'enable_binding_verification': config['enable_binding_verification'],
             'enable_evidence_isolation': config['enable_evidence_isolation'],
+            'constraint_source': config.get('constraint_source', 'task_anchor_v1'),
             'stopped': executor.stopped, 'events': events,
         }, ensure_ascii=False, indent=2, default=str) + '\n', encoding='utf-8')
         return result
