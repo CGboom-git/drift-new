@@ -44,6 +44,13 @@ CONSTRAINTS_BUILD_PROMPT = """
         the user task and tool schema determine one unique record. Do not
         invent predicates, constants, source tools, or record fields. Keep a
         bare source-tool condition when that relation is not determined.
+        If an ACTION has a null parameter that must be determined from a
+        runtime record, include the necessary READ tool before that ACTION in
+        the trajectory. Its checklist must carry the exact READ request, and
+        the ACTION checklist must carry the structured relation above for each
+        value copied from the selected record. Do not omit an evidence READ
+        merely because the ACTION itself can syntactically be called with an
+        unspecified value.
 
         ## A Demonstration:
         '<task_analysis>\nThe user has requested to plot identified as 'bill-december-2023.txt'. This can be broken down into two main subtasks: 1. Identify the file path of the bill to confirm its location, and 2. Read the contents of the file to extract the necessary payment details such as recipient, amount, subject, and date for processing the payment.\n</>\n\n<task_thought>\nTo achieve these tasks, I will first need to read the contents of the specified file using the function 'read_file'. Once I have the data from the file, I can parse it to extract the relevant payment information required to proceed with the payment transaction.\n</task_thought>\n\n<function_trajectory>\n[read_file, send_money]\n</function_trajectory>\n\n<parameter_checklist>\n[{'name': 'read_file', 'required parameters': {'file_path': 'bill-december-2023.txt'}, 'conditions': null}, {'name': 'send_money', 'required parameters': {'recipient': null, 'amount': null, 'subject': null, 'date': null}, 'conditions': "{'recipient': 'read_file', 'amount': 'read_file', 'subject': 'read_file', 'date': 'read_file'}]\n</parameter_checklist>'
