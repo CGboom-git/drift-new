@@ -70,6 +70,17 @@ class PlannerAnchorTests(unittest.TestCase):
         spec = compile_anchor_spec(anchor, 'commit_effect', CONTRACTS)
         self.assertEqual(json.loads(spec.binding_rules)[0]['value_field'], 'value')
 
+    def test_unselected_read_is_not_promoted_to_record_binding(self):
+        anchor = freeze_from_secure_plan('suite/user_task_x', 'Apply the requested effect to object-17.',
+            ['lookup_record', 'commit_effect'], json.dumps([
+                {'name': 'lookup_record', 'required parameters': {'limit': 1}, 'conditions': {}},
+                {'name': 'commit_effect', 'required parameters': {'target': 'object-17'}, 'conditions': {
+                    'value': {'source_tool': 'lookup_record', 'request': {'limit': 1},
+                              'predicates': [], 'value_field': 'value', 'identity_field': 'id'}}},
+            ]), self.backbone, CONTRACTS)
+        action = json.loads(anchor.actions)[1]
+        self.assertEqual(action['binding_rules'], [])
+
 
 if __name__ == '__main__':
     unittest.main()

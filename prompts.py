@@ -44,6 +44,11 @@ CONSTRAINTS_BUILD_PROMPT = """
         the user task and tool schema determine one unique record. Do not
         invent predicates, constants, source tools, or record fields. Keep a
         bare source-tool condition when that relation is not determined.
+        A READ request limit, result position, or "first/latest" wording by
+        itself never identifies an authorized record. For a structured record
+        relation, provide at least one predicate grounded in an explicit user
+        value or a fixed parameter of the same ACTION; otherwise use the bare
+        source-tool condition and leave the value unresolved.
         If an ACTION has a null parameter that must be determined from a
         runtime record, include the necessary READ tool before that ACTION in
         the trajectory. Its checklist must carry the exact READ request, and

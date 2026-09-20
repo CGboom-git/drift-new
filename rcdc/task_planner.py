@@ -77,7 +77,7 @@ def _binding_rule(parameter, condition, fixed_values, contracts):
     predicates = condition.get("predicates", [])
     value_field = condition.get("value_field")
     identity_field = condition.get("identity_field", "")
-    if (not isinstance(request, dict) or not isinstance(predicates, list)
+    if (not isinstance(request, dict) or not isinstance(predicates, list) or not predicates
             or not isinstance(value_field, str) or not value_field
             or not isinstance(identity_field, str)):
         return None
