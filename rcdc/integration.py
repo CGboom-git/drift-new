@@ -10,6 +10,7 @@ from .constraint_spec import compile_spec
 from .events import EvidenceLedger, HostFeedbackRegistry
 from .schema import Call, canonical
 from .checkpoint import capture as capture_checkpoint
+from .task_spec_registry import coverage as task_spec_coverage
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -68,9 +69,10 @@ def parse_recovery_proposal(answer):
 
 class ExperimentalExecutor(ToolsExecutor):
     def __init__(self, llm, task_id, task, contracts, mode, budget, relation_mode, emit,
-                 enable_binding_verification=True, enable_evidence_isolation=True):
+                 enable_binding_verification=True, enable_evidence_isolation=True, suite_name=None):
         super().__init__()
         self.llm, self.task_id, self.task = llm, task_id, task
+        self.suite_name = suite_name
         self.contracts, self.mode, self.emit = contracts, mode, emit
         if not isinstance(enable_evidence_isolation, bool):
             raise ValueError('invalid_evidence_isolation_flag')
@@ -95,6 +97,8 @@ class ExperimentalExecutor(ToolsExecutor):
         if not messages or messages[-1]['role'] != 'assistant' or not messages[-1].get('tool_calls'):
             return super().query(query, runtime, env, messages, extra_args)
         if self.spec is None:
+            self.emit({'event': 'constraint_scope',
+                       'coverage': task_spec_coverage(self.suite_name, self.task_id)})
             self.spec = compile_spec(self.task_id, query, self.llm.initial_function_trajectory,
                 self.llm.initial_node_checklist, self.llm.taer_state, self.contracts)
             self.emit({'event': 'constraint_spec', 'spec': vars(self.spec) if self.spec else None})
@@ -304,11 +308,11 @@ class ExperimentalLoop(DRIFTToolsExecutionLoop):
 
 
 def components(llm, task_id, task, contracts, mode='off', budget=2, relation_mode='full', emit=lambda e: None,
-               enable_binding_verification=True, enable_evidence_isolation=True):
+               enable_binding_verification=True, enable_evidence_isolation=True, suite_name=None):
     if mode == 'off':
         executor = ToolsExecutor()
         return executor, DRIFTToolsExecutionLoop([executor, llm])
     executor = ExperimentalExecutor(llm, task_id, task, contracts, mode, budget, relation_mode, emit,
-                                    enable_binding_verification, enable_evidence_isolation)
+                                    enable_binding_verification, enable_evidence_isolation, suite_name)
     loop = DRIFTToolsExecutionLoop([executor, llm]) if mode == 'shadow' else ExperimentalLoop([executor, llm])
     return executor, loop

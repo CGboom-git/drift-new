@@ -71,6 +71,7 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             relation_mode=config['relation_mode'], emit=events.append,
             enable_binding_verification=config['enable_binding_verification'],
             enable_evidence_isolation=config['enable_evidence_isolation'],
+            suite_name=self.name,
         )
         if self._rcvr_checkpoint_root is not None:
             injection_id = getattr(injection_task, 'ID', None) if injection_task is not None else 'clean'

@@ -1,0 +1,1296 @@
+{
+  "version": 1,
+  "benchmark_version": "v1.2",
+  "purpose": "declarative RCVR task-spec coverage registry",
+  "runtime_policy": "only verified entries may emit RCVR ConstraintSpec; all others must be explicitly audited",
+  "inventory_sha256": "2e2987b4de5f0bf54c0ff90be53258a34d0755be58deef66b861976ac19d747e",
+  "task_count": 97,
+  "potential_case_count": 1046,
+  "entries": [
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_0",
+      "potential_case_count": 10,
+      "action_tools": [
+        "send_money"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_1",
+      "potential_case_count": 10,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_10",
+      "potential_case_count": 10,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_11",
+      "potential_case_count": 10,
+      "action_tools": [
+        "send_money"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_12",
+      "potential_case_count": 10,
+      "action_tools": [
+        "update_scheduled_transaction"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_13",
+      "potential_case_count": 10,
+      "action_tools": [
+        "update_user_info"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_14",
+      "potential_case_count": 10,
+      "action_tools": [
+        "update_password"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_15",
+      "potential_case_count": 10,
+      "action_tools": [
+        "update_user_info",
+        "update_scheduled_transaction",
+        "send_money"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_2",
+      "potential_case_count": 10,
+      "action_tools": [
+        "update_scheduled_transaction"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_3",
+      "potential_case_count": 10,
+      "action_tools": [
+        "send_money"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_4",
+      "potential_case_count": 10,
+      "action_tools": [
+        "send_money"
+      ],
+      "runtime_status": "verified",
+      "spec_family": "refund_v1",
+      "authoring_requirements": []
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_5",
+      "potential_case_count": 10,
+      "action_tools": [
+        "send_money"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_6",
+      "potential_case_count": 10,
+      "action_tools": [
+        "schedule_transaction"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_7",
+      "potential_case_count": 10,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_8",
+      "potential_case_count": 10,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "banking",
+      "user_task_id": "user_task_9",
+      "potential_case_count": 10,
+      "action_tools": [
+        "update_scheduled_transaction"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_0",
+      "potential_case_count": 6,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_1",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_direct_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_10",
+      "potential_case_count": 6,
+      "action_tools": [
+        "add_user_to_channel",
+        "add_user_to_channel",
+        "add_user_to_channel"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_11",
+      "potential_case_count": 6,
+      "action_tools": [
+        "invite_user_to_slack",
+        "add_user_to_channel",
+        "add_user_to_channel"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_12",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_channel_message"
+      ],
+      "runtime_status": "verified",
+      "spec_family": "channel_selection_v1",
+      "authoring_requirements": []
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_13",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_direct_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_14",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_direct_message",
+        "send_direct_message",
+        "send_direct_message",
+        "send_direct_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_15",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_channel_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_16",
+      "potential_case_count": 6,
+      "action_tools": [
+        "invite_user_to_slack",
+        "send_direct_message",
+        "send_direct_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_17",
+      "potential_case_count": 6,
+      "action_tools": [
+        "invite_user_to_slack"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_18",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_direct_message",
+        "send_channel_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_19",
+      "potential_case_count": 6,
+      "action_tools": [
+        "add_user_to_channel",
+        "send_channel_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_2",
+      "potential_case_count": 6,
+      "action_tools": [
+        "invite_user_to_slack"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_20",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_channel_message",
+        "invite_user_to_slack",
+        "send_direct_message",
+        "send_direct_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_3",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_channel_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_4",
+      "potential_case_count": 6,
+      "action_tools": [
+        "post_webpage"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_5",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_channel_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_6",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_direct_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_7",
+      "potential_case_count": 6,
+      "action_tools": [
+        "add_user_to_channel"
+      ],
+      "runtime_status": "verified",
+      "spec_family": "channel_selection_v1",
+      "authoring_requirements": []
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_8",
+      "potential_case_count": 6,
+      "action_tools": [
+        "send_channel_message"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "slack",
+      "user_task_id": "user_task_9",
+      "potential_case_count": 6,
+      "action_tools": [
+        "add_user_to_channel"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_0",
+      "potential_case_count": 8,
+      "action_tools": [
+        "reserve_hotel"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_1",
+      "potential_case_count": 8,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_10",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_11",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_12",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_13",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_14",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_15",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_16",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_17",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_18",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_19",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_2",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_3",
+      "potential_case_count": 8,
+      "action_tools": [
+        "send_email"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_4",
+      "potential_case_count": 8,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_5",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_6",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_7",
+      "potential_case_count": 8,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_8",
+      "potential_case_count": 8,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "travel",
+      "user_task_id": "user_task_9",
+      "potential_case_count": 8,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_0",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_1",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_10",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_11",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_12",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_13",
+      "potential_case_count": 15,
+      "action_tools": [
+        "append_to_file",
+        "send_email"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_14",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_15",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_16",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_17",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_18",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_19",
+      "potential_case_count": 15,
+      "action_tools": [
+        "append_to_file",
+        "send_email"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_2",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_20",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_21",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_22",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_23",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_24",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_25",
+      "potential_case_count": 15,
+      "action_tools": [
+        "send_email",
+        "send_email",
+        "send_email"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_26",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_27",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_28",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_29",
+      "potential_case_count": 15,
+      "action_tools": [
+        "append_to_file"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_3",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_30",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_31",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_file"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_32",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_file",
+        "share_file"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_33",
+      "potential_case_count": 15,
+      "action_tools": [
+        "send_email"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_34",
+      "potential_case_count": 15,
+      "action_tools": [
+        "append_to_file"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_35",
+      "potential_case_count": 15,
+      "action_tools": [
+        "delete_file"
+      ],
+      "runtime_status": "verified",
+      "spec_family": "file_selection_v1",
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_36",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_file"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_37",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_file",
+        "share_file"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_38",
+      "potential_case_count": 15,
+      "action_tools": [
+        "delete_file"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_39",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_4",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_5",
+      "potential_case_count": 15,
+      "action_tools": [],
+      "runtime_status": "not_applicable_read_only",
+      "spec_family": null,
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_6",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_7",
+      "potential_case_count": 15,
+      "action_tools": [
+        "reschedule_calendar_event"
+      ],
+      "runtime_status": "needs_semantic_spec",
+      "spec_family": null,
+      "authoring_requirements": [
+        "declare every final action and the user-authorized fixed fields",
+        "declare each dynamic action argument's permitted READ source and selection relation",
+        "add a deterministic positive, mismatch, and missing-evidence test",
+        "independent reviewer marks the entry verified"
+      ]
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_8",
+      "potential_case_count": 15,
+      "action_tools": [
+        "add_calendar_event_participants"
+      ],
+      "runtime_status": "verified",
+      "spec_family": "calendar_participants_v1",
+      "authoring_requirements": []
+    },
+    {
+      "suite": "workspace",
+      "user_task_id": "user_task_9",
+      "potential_case_count": 15,
+      "action_tools": [
+        "create_calendar_event"
+      ],
+      "runtime_status": "verified",
+      "spec_family": "calendar_participants_v1",
+      "authoring_requirements": []
+    }
+  ]
+}
