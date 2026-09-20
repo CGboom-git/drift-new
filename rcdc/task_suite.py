@@ -73,7 +73,12 @@ class RCVRTaskSuite(DRIFTTaskSuite):
         if constraint_source == 'task_anchor_v1':
             # DRIFT calls this after its initial secure planner builds the
             # trajectory/checklist and TAER backbone, before any tool result.
-            def freeze_anchor(initial_trajectory, initial_checklist, backbone):
+            def freeze_anchor(initial_trajectory, initial_checklist, backbone, planner_complete):
+                if not planner_complete:
+                    events.append({'event': 'task_anchor_incomplete',
+                                   'reason': 'secure_planner_missing_or_misaligned_checklist',
+                                   'initial_trajectory': list(initial_trajectory or [])})
+                    return None
                 anchor = freeze_from_secure_plan(task_id, prompt, initial_trajectory,
                                                  initial_checklist, backbone, self._rcvr_contracts)
                 llm._rcvr_task_anchor = anchor
