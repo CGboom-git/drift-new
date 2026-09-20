@@ -131,6 +131,19 @@ class TestCLIParsing(unittest.TestCase):
         with self.assertRaises(SystemExit):
             get_args(argv=["--taer_mode", "invalid"])
 
+    def test_taer_variant_defaults_to_full(self):
+        args = get_args(argv=[])
+        self.assertEqual(args.taer_variant, "full")
+
+    def test_taer_variants_are_explicit(self):
+        for variant in ("full", "no_anchor", "no_ephemeral", "no_scope"):
+            args = get_args(argv=["--taer_mode", "on", "--taer_variant", variant])
+            self.assertEqual(args.taer_variant, variant)
+
+    def test_taer_variant_invalid_rejected(self):
+        with self.assertRaises(SystemExit):
+            get_args(argv=["--taer_variant", "unknown"])
+
 
 class TestTaskSuiteMessageFiltering(unittest.TestCase):
     def test_none_messages_are_removed_before_trace_parsing(self):
@@ -160,9 +173,11 @@ class TestTaskSuiteMessageFiltering(unittest.TestCase):
 
 
 class TestTaerRouting(unittest.TestCase):
-    def _make_llm(self, taer_mode):
+    def _make_llm(self, taer_mode, taer_variant="full"):
+        from DRIFTLLM import DRIFTLLM
         mock_args = MagicMock()
         mock_args.taer_mode = taer_mode
+        mock_args.taer_variant = taer_variant
         mock_args.dynamic_validation = True
         mock_args.build_constraints = False
         mock_args.injection_isolation = False
@@ -201,9 +216,16 @@ class TestTaerRouting(unittest.TestCase):
         llm.source_label_store = mock_store
         llm.source_flow_contract_helper = mock_contracts
         llm.taer_mode_enabled = MagicMock(return_value=(taer_mode == "on"))
+        llm.taer_variant = lambda: taer_variant if taer_mode == "on" else "off"
+        llm.taer_anchor_enabled = lambda: taer_variant != "no_anchor"
+        llm.taer_boundary_enabled = lambda: taer_variant != "no_scope"
+        llm.taer_ephemeral_enabled = lambda: taer_variant != "no_ephemeral"
+        llm._taer_call = DRIFTLLM._taer_call
+        llm._grant_taer_authorization = lambda tool_name, tool_args: DRIFTLLM._grant_taer_authorization(llm, tool_name, tool_args)
         llm.taer_state = TAERState() if taer_mode == "on" else None
         llm._final_decision_owner = ""
         llm._taer_one_time_auth = None
+        llm._taer_persistent_auth = []
         llm._runtime_read_extensions = {}
         llm.tools_docs_list = []
 
@@ -1308,6 +1330,79 @@ class TestTaerRouting(unittest.TestCase):
 
         self.assertIsNone(err)
         llm._run_original_drift_deviation_validation.assert_called_once()
+
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_no_anchor_uses_drift_boundary_and_exact_auth(self, mock_boundary, mock_matcher):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on", "no_anchor")
+        llm._is_action_tool.return_value = True
+        llm._run_original_drift_deviation_validation.return_value = ("ALIGN", None)
+        mock_boundary.return_value = TAERBoundaryResult(
+            passed=True, explicit_violation=False, violation_type=None,
+            checked_authority_args={}, evidence_source_ids=[], reason="boundary_pass",
+        )
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 100, "recipient": "John"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}],
+        )
+
+        mock_matcher.assert_not_called()
+        llm.client.llm_run.assert_not_called()
+        mock_boundary.assert_called_once()
+        self.assertEqual(llm._taer_one_time_auth["tool_name"], "send_money")
+
+    @patch("DRIFTLLM.check_params_against_consumer")
+    @patch("DRIFTLLM.match_candidate_to_backbone")
+    @patch("DRIFTLLM.check_taer_boundary")
+    def test_no_scope_skips_both_scope_guards(self, mock_boundary, mock_matcher, mock_params):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on", "no_scope")
+        llm._is_action_tool.return_value = True
+        mock_matcher.return_value = BackboneMatchResult(
+            status="NONE", step_id=None, candidate_step_ids=[],
+            reason="no_match", is_currently_ready=False,
+            parameter_compatibility="UNKNOWN",
+        )
+        llm.client.llm_run.return_value = json.dumps({
+            "relation": "DIRECT_EFFECT", "consumer_step_id": "s000",
+            "missing_condition": None, "provides": "payment",
+            "expected_effect": "send money", "control_sources": [],
+            "argument_sources": {}, "scope_delta": "NEW_DESTINATION",
+            "risk": "IRREVERSIBLE", "confidence": "HIGH", "reason": "test",
+        })
+
+        DRIFTLLM.trajectory_constraint_validation(
+            llm, ["send_money"],
+            self._make_output("send_money", {"amount": 999, "recipient": "Mallory"}),
+            "Send $100 to John", [{"role": "user", "content": "Send $100 to John"}],
+        )
+
+        mock_params.assert_not_called()
+        mock_boundary.assert_not_called()
+        self.assertEqual(llm._taer_one_time_auth["tool_args"]["recipient"], "Mallory")
+
+    def test_no_ephemeral_authorization_is_task_scoped_and_exact(self):
+        from DRIFTLLM import DRIFTLLM
+        llm = self._make_llm("on", "no_ephemeral")
+        args = {"amount": 100, "recipient": "John"}
+        DRIFTLLM._grant_taer_authorization(llm, "send_money", args)
+        self.assertIsNone(llm._taer_one_time_auth)
+        self.assertEqual(len(llm._taer_persistent_auth), 1)
+
+        calls = [{"function": {"name": "send_money", "arguments": json.dumps(args)}}]
+        output = {"role": "assistant", "content": "", "tool_calls": []}
+        messages = [{"role": "user", "content": "Send $100 to John"}]
+        first, _ = DRIFTLLM.checklist_constraint_validation(llm, calls, output, messages[0]["content"], messages)
+        second, _ = DRIFTLLM.checklist_constraint_validation(llm, calls, output, messages[0]["content"], messages)
+        self.assertIsNone(first)
+        self.assertIsNone(second)
+
+        modified = [{"function": {"name": "send_money", "arguments": json.dumps({"amount": 999, "recipient": "John"})}}]
+        DRIFTLLM.checklist_constraint_validation(llm, modified, output, messages[0]["content"], messages)
+        self.assertEqual(len(llm._taer_persistent_auth), 1)
 
     @patch("DRIFTLLM.match_candidate_to_backbone")
     @patch("DRIFTLLM.check_taer_boundary")

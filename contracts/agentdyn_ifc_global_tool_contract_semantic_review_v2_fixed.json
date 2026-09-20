@@ -1,0 +1,3337 @@
+{
+  "benchmark": "agentdyn",
+  "benchmark_version": "v1.2",
+  "contract_version": "pact_drift_ifc_agentdyn_semantic_review_v2_fixed",
+  "adapter": {
+    "name": "agentdyn",
+    "suites": [
+      "shopping",
+      "github",
+      "dailylife"
+    ],
+    "notes": "Dataset-scoped contract generated from live AgentDyn schemas; semantic roles are rule-reviewed and must be audited when schemas change."
+  },
+  "generated_by": {
+    "mode": "fixed_after_schema_inventory_and_manual_semantic_review",
+    "candidate_file": "agentdyn_ifc_global_tool_contract_candidate_v1.json",
+    "reviewed_changes": {
+      "download_tools": "classified as actions because they write to local storage",
+      "account_updates": "classified as external; identity and account fields are high-risk sinks",
+      "destructive_external_tools": "distinguished from internal destructive changes"
+    }
+  },
+  "sink_roles": [
+    "target",
+    "command",
+    "credential",
+    "content",
+    "selector",
+    "control",
+    "argument"
+  ],
+  "tool_schema_hashes": {
+    "add_calendar_event_participants": "23f0c8e76b1c089d6e55db4864f5a49b0347f7deae846abd984043b7a7263477",
+    "browse_webpage": "b59b67a5025cd5c2fb2fade3099d5bf52830dc66657ce874707900cea96a6dfa",
+    "cancel_calendar_event": "fc5cb2bcbee2e86f904c6f380429f32d9813b5a95c1744bbcaa96b1f1d43f598",
+    "cart_add_product": "3e479fd8f9d451b63d421620ba2b0c218c432b301b19220834c34dd832a69253",
+    "cart_remove_product": "6e1a81f49e7d3d31f7e4e32ac7d868b8aca9bcaa50fc79dd413bd1199ff284b6",
+    "cart_total": "5113863d7da91b5d2f8ea3ef273d004651214b3608db86c949ffdb4689b4d482",
+    "checkout_selected_cart": "6ce1edb7da5bcb314d313de8132bfeb1f32850cd6756106238d8ebdab6f094c1",
+    "clear_cart": "05ae4bf608abf2aebac76b9356a3f47997cc1d6e2062f6bd3eb3c789b91d9088",
+    "copy_node": "5dc0e7a3067203ee6166795d63b1d87cc60dec872fda3ed1ea0562298abda173",
+    "create_calendar_event": "aea539a2ad6293f539d73cafe47eb19c1168ca75065ecf7f9eefe547eb9d9e5a",
+    "create_dir": "55ef1bb1ac559de181d273e272e58b3668652a463025597c6f9a4d4dcfa29593",
+    "create_file": "1dacb40ab46650a6c36cc3eddf5fc6c726f2eb1b32d8eb39bceeceeffff0c6f8",
+    "delete_email": "7f8933033c765ad85e0d17e5cde355f9b37e1c067036477add6c7ade37b0f1e4",
+    "delete_node": "718f75414639c5fc95ae0ba57d85f6ee1d53c50a07d19e7074d45441887a4112",
+    "download_file_through_id": "604f20387324e72c493688e04f3f33a3ccd22ae36314e1a594040c718eb2677e",
+    "download_file_through_url": "243548ddc09f79e767ee4aa1c6c6136af169ef05382adc0e2c76c58cee58300a",
+    "get_balance": "4f892265a20e0f195b3c48bd894e28736a6b97bdc4300684f7d5c42fa279e3fe",
+    "get_current_day": "371b9be91e6048401c9eb6338dbf94ba1250c2a4c9342a0a876bb84576a741cf",
+    "get_day_calendar_events": "5ced3e077acc995a50489e71cefdd221bda4b6adac93692c57af64aaf3b47b46",
+    "get_github_account_user_information": "8fb764cd168e8488626a8de590fbe5d19f8f85348ea9fc1b2991fdaca24073d6",
+    "get_github_linked_unread_emails": "c370fb2fabc9766f5f5acf9425be9d27266e4573fead31024b166fac9c93485a",
+    "get_github_repository_information": "0cddfd98e7a48ea96be5db8d8fe07507199f667a2be1c7dd47bf72e2c607102c",
+    "get_invoice": "b7ff0e2320f7555a864f2f2d6aaee6b56af108bb3d429df3ea78e2145d8d068d",
+    "get_logged_in_github_user_information": "bd5a50376b30529fbe527edb7e415f64194445fa4df1f65d638ff8c74a92f6ed",
+    "get_received_emails": "d32bb9cb65d50d39871cee90b0356f13cb2a04b577a10aea0e84655f37d57c99",
+    "get_sent_emails": "197068f8c260ed7f330f122722c073e88479648cea0f1ccb134d1497d24dca47",
+    "get_shopping_account_user_information": "09face51c369d9d3c261e53d1d9b5b897aec9874e3f71a367e4579a296312c7c",
+    "get_shopping_linked_received_emails": "59a8c4d6930e7bf8431c7dc08c8072bea57145af7ceb48b29b448d87c38d16f8",
+    "get_shopping_linked_unread_emails": "6b5a83b6a94e8ebc50216a7acab98a718df0886295612d10c5ece3a588a9c9ec",
+    "get_unread_emails": "30e556049a372344c22d5c36e5c690a1887b925ec79f4d7ee69215b1cf442cf1",
+    "git_add_ssh_key": "f38a9683db8904063c53f49546bcbd102e594486376b5714135aece542e30411",
+    "git_clone": "0cac6bcb6a30e2229f24254acd2d74b9e406705bbc2255a305d2a533e3c79beb",
+    "git_create_repo": "4d22a813c6db628a7556da9a9bf8f678f99d59858f2e89528747701e260abc30",
+    "git_delete_repo": "52fb734c5af486ae1f649d073fd9cc0dc1edc6ce36ff075d8aff3898f66b81e7",
+    "git_delete_ssh_key": "d0527456fd20cb877bc56ad842b0a124bdc25c2669f5c460f63bb1bf9f2c2e3d",
+    "git_get_linked_ssh_keys": "d6a8b9735edbf1c705383a4798bf7d27f0b6a604d568f3615aece69c16f6c218",
+    "git_invite_collaborators": "3eb464a8edc88a50b8fd198c139ccf8f508c800690c314b9ec91af60d7f5c8e5",
+    "git_issue": "404182e5e9ae1524fb4fa0d6b6af72e1b80a05cab355b442a0c936ec047397ac",
+    "git_pull": "9a2bf194f104041511b041f616fe98a7414ccb1eae18232e7c841cf76ab4a565",
+    "git_push": "ef1fd37e1cd902780a06dfbb507b0032a3e06ac464da61769bb2bca3b095d0cc",
+    "git_star": "027002b57c6db25d269d747f46db3ef2c77e2d92298a6f767dcae023da2f164b",
+    "git_transfer_repo_ownership": "a89e3ba19e27617a75a1f56b0f6932678f39b709148d82b369b7a613423014ab",
+    "git_unstar": "ff1be4ae6eab5bfaebdc5d806419f92da83117ffe36264e8a1ba22e95b7a18e7",
+    "input_to_webpage": [
+      "15d1a04b1370c16bccb4364c77dee14d7517151aba0757f7e6865e445788e5cb",
+      "63a8e903b584b458a06113e0b7572b3e7bedcd7f70ac8163148f412b790fc813"
+    ],
+    "list_directory": "c9174fa211898e44bd68d39d229dcfbacc24034dc61774332e2ceae041c81855",
+    "login_github_account": "f62aa1c9533e2f95290c0f026b088c8089e3ebe18ade4a7ef0086a35cb292c2f",
+    "login_shopping_account": "ae590b3d419974165b9a1052cf2592a4e9dbf489a1a1897a76c40776a2b976e2",
+    "move_node": "f9f30d600b05c28f03c2c72e22a3c5aaee4b12f399cf7990b4b19e211c58f5f3",
+    "read_file": "830b6b9898fb5d1249ddb01c458fcc322367be26bb67d260fceb811af2d5898d",
+    "refund_order": "7160fcf527f001df528947db1bb529a35544d62f767c173c45e2c6697105f557",
+    "reschedule_calendar_event": "54c5d5d18304b701e280b23d9766c33dd6442359fc82630da465b8aa11e056e1",
+    "search_calendar_events": "e5993d69e9025403c6a9364bbc7f098fb6a0e71d90a2941427bfe53de6ae8772",
+    "search_emails": "58ca988447e6925725c3c814d69fb2127940514ac258c80c71efcfa07be2f1cd",
+    "search_product": "1f77e1323e8c9f5bed3acbc845f0de14b54df59b7dfeff661fce77ac3427f739",
+    "send_email": "157001e8b2a3f5e4c461e0d90424348d334371b739a7d13f164a4cfcc5e2d626",
+    "send_money": "3b9bbc65e7a828ed7c2c758269883e49d9c55a63e84a2d7c9ea6a96372d041dc",
+    "update_github_account_password": "6e9e6c31702aa6b43e490267db7db4fbfafc3bb23e0820b6fc3c950331d67acd",
+    "update_shopping_account_password": "9c286ba7ac0ec04f138c732af2ef1b04fccca78c60ba79441ce1fe7652aabd33",
+    "update_shopping_account_user_info": "95f65573e8c7dec397adba434166f3b1e7ee43e3a97a495ca1973e9838d09008",
+    "verify_github_account": "00bc856f0031b43c9c3bc1c12949953157f7893910df21c3f75b40737a80efb8",
+    "verify_shopping_account": "8c1a235ae849cfc031af3c16dc758d85c0eb375fcac31897e69166250cc34d3e",
+    "verify_transaction": "a942299de5268ff186acd0975c9f29dd5ff3c1de0d938d077bb6b56267bb84c4",
+    "view_available_discounts": "e6266d6ed919d8f15af48ac5a510967b8ca9a1341b416ed941339562813c644f",
+    "view_cart": "2e55a8f5868cdaadf15ad78d0f6eb828a7445e9a4336a8cc26732bc9f2d8381d",
+    "view_order_history": "263f5629df43f422dcae0a16d5ac4c4589a28673cdfb41dd17c699f9d3a8fca5"
+  },
+  "tools": {
+    "add_calendar_event_participants": {
+      "name": "add_calendar_event_participants",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Adds the given `participants` to the event with the given `event_id`.\nIt will also email the new participants notifying them of the event.",
+      "args": {
+        "event_id": {
+          "name": "event_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "participants": {
+          "name": "participants",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "23f0c8e76b1c089d6e55db4864f5a49b0347f7deae846abd984043b7a7263477"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "event_id",
+            "participants"
+          ],
+          "dailylife": [
+            "event_id",
+            "participants"
+          ]
+        }
+      }
+    },
+    "browse_webpage": {
+      "name": "browse_webpage",
+      "tool_type": "read",
+      "side_effect": "conditional_external_navigation",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Visits a URL to retrieve web content or trigger a web-based action. \nUse this to read a web page or to 'click' a link that performs a specific task or confirmation.",
+      "args": {
+        "url": {
+          "name": "url",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "b59b67a5025cd5c2fb2fade3099d5bf52830dc66657ce874707900cea96a6dfa"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "url"
+          ],
+          "github": [
+            "url"
+          ],
+          "dailylife": [
+            "url"
+          ]
+        }
+      }
+    },
+    "cancel_calendar_event": {
+      "name": "cancel_calendar_event",
+      "tool_type": "action",
+      "side_effect": "external_destructive",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Cancels the event with the given `event_id`. The event will be marked as canceled and no longer appear in the calendar.\nIt will also send an email to the participants notifying them of the cancellation.",
+      "args": {
+        "event_id": {
+          "name": "event_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "fc5cb2bcbee2e86f904c6f380429f32d9813b5a95c1744bbcaa96b1f1d43f598"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "event_id"
+          ],
+          "dailylife": [
+            "event_id"
+          ]
+        }
+      }
+    },
+    "cart_add_product": {
+      "name": "cart_add_product",
+      "tool_type": "action",
+      "side_effect": "internal",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Add a product to the cart by product_id.",
+      "args": {
+        "product_id": {
+          "name": "product_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "quantity": {
+          "name": "quantity",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "3e479fd8f9d451b63d421620ba2b0c218c432b301b19220834c34dd832a69253"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "product_id",
+            "quantity"
+          ]
+        }
+      }
+    },
+    "cart_remove_product": {
+      "name": "cart_remove_product",
+      "tool_type": "action",
+      "side_effect": "destructive",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Remove a product from the cart by product_id.",
+      "args": {
+        "product_id": {
+          "name": "product_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "6e1a81f49e7d3d31f7e4e32ac7d868b8aca9bcaa50fc79dd413bd1199ff284b6"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "product_id"
+          ]
+        }
+      }
+    },
+    "cart_total": {
+      "name": "cart_total",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Calculate the total amount of the current cart of the current account.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "5113863d7da91b5d2f8ea3ef273d004651214b3608db86c949ffdb4689b4d482"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "checkout_selected_cart": {
+      "name": "checkout_selected_cart",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Checkout specific products from the current cart of the current account.",
+      "args": {
+        "discount_code": {
+          "name": "discount_code",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "product_ids": {
+          "name": "product_ids",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "6ce1edb7da5bcb314d313de8132bfeb1f32850cd6756106238d8ebdab6f094c1"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "product_ids"
+          ]
+        }
+      }
+    },
+    "clear_cart": {
+      "name": "clear_cart",
+      "tool_type": "action",
+      "side_effect": "destructive",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Clear all items from the cart.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "05ae4bf608abf2aebac76b9356a3f47997cc1d6e2062f6bd3eb3c789b91d9088"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "copy_node": {
+      "name": "copy_node",
+      "tool_type": "action",
+      "side_effect": "internal",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Copies a local file or directory from the source path to the destination path.",
+      "args": {
+        "destination_path": {
+          "name": "destination_path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "source_path": {
+          "name": "source_path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "5dc0e7a3067203ee6166795d63b1d87cc60dec872fda3ed1ea0562298abda173"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "source_path",
+            "destination_path"
+          ],
+          "github": [
+            "source_path",
+            "destination_path"
+          ],
+          "dailylife": [
+            "source_path",
+            "destination_path"
+          ]
+        }
+      }
+    },
+    "create_calendar_event": {
+      "name": "create_calendar_event",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Creates a new calendar event with the given details and adds it to the calendar.\nIt also sends an email to the participants with the event details.",
+      "args": {
+        "description": {
+          "name": "description",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        },
+        "end_time": {
+          "name": "end_time",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "location": {
+          "name": "location",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "participants": {
+          "name": "participants",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "start_time": {
+          "name": "start_time",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "title": {
+          "name": "title",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "aea539a2ad6293f539d73cafe47eb19c1168ca75065ecf7f9eefe547eb9d9e5a"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "title",
+            "start_time",
+            "end_time"
+          ],
+          "dailylife": [
+            "title",
+            "start_time",
+            "end_time"
+          ]
+        }
+      }
+    },
+    "create_dir": {
+      "name": "create_dir",
+      "tool_type": "action",
+      "side_effect": "internal",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Create a new local directory at the specified path, including parent directories.",
+      "args": {
+        "path": {
+          "name": "path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [
+        "download_file_through_url",
+        "download_file_through_id",
+        "git_clone",
+        "git_pull"
+      ],
+      "schema_variants": {
+        "hashes": [
+          "55ef1bb1ac559de181d273e272e58b3668652a463025597c6f9a4d4dcfa29593"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "path"
+          ],
+          "github": [
+            "path"
+          ],
+          "dailylife": [
+            "path"
+          ]
+        }
+      }
+    },
+    "create_file": {
+      "name": "create_file",
+      "tool_type": "action",
+      "side_effect": "internal",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Create a new local file at the specified path.",
+      "args": {
+        "content": {
+          "name": "content",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        },
+        "path": {
+          "name": "path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "1dacb40ab46650a6c36cc3eddf5fc6c726f2eb1b32d8eb39bceeceeffff0c6f8"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "path"
+          ],
+          "github": [
+            "path"
+          ],
+          "dailylife": [
+            "path"
+          ]
+        }
+      }
+    },
+    "delete_email": {
+      "name": "delete_email",
+      "tool_type": "action",
+      "side_effect": "destructive",
+      "suites": [
+        "dailylife"
+      ],
+      "description": "Deletes the email with the given `email_id` from the inbox.",
+      "args": {
+        "email_id": {
+          "name": "email_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "7f8933033c765ad85e0d17e5cde355f9b37e1c067036477add6c7ade37b0f1e4"
+        ],
+        "required_by_suite": {
+          "dailylife": [
+            "email_id"
+          ]
+        }
+      }
+    },
+    "delete_node": {
+      "name": "delete_node",
+      "tool_type": "action",
+      "side_effect": "destructive",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Delete a local file or directory and all its contents at the given path.",
+      "args": {
+        "path": {
+          "name": "path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "718f75414639c5fc95ae0ba57d85f6ee1d53c50a07d19e7074d45441887a4112"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "path"
+          ],
+          "github": [
+            "path"
+          ],
+          "dailylife": [
+            "path"
+          ]
+        }
+      }
+    },
+    "download_file_through_id": {
+      "name": "download_file_through_id",
+      "tool_type": "action",
+      "side_effect": "internal_filesystem_write",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Downloads a file from a given email attachment ID to the local folder.",
+      "args": {
+        "file_id": {
+          "name": "file_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "save_dir": {
+          "name": "save_dir",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "604f20387324e72c493688e04f3f33a3ccd22ae36314e1a594040c718eb2677e"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "file_id"
+          ],
+          "github": [
+            "file_id"
+          ],
+          "dailylife": [
+            "file_id"
+          ]
+        }
+      }
+    },
+    "download_file_through_url": {
+      "name": "download_file_through_url",
+      "tool_type": "action",
+      "side_effect": "internal_filesystem_write",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Downloads a file from a given URL to the local folder.",
+      "args": {
+        "save_dir": {
+          "name": "save_dir",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "url": {
+          "name": "url",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "243548ddc09f79e767ee4aa1c6c6136af169ef05382adc0e2c76c58cee58300a"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "url"
+          ],
+          "github": [
+            "url"
+          ],
+          "dailylife": [
+            "url"
+          ]
+        }
+      }
+    },
+    "get_balance": {
+      "name": "get_balance",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Gets the bank balance associated with the shopping platform account.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "4f892265a20e0f195b3c48bd894e28736a6b97bdc4300684f7d5c42fa279e3fe"
+        ],
+        "required_by_suite": {
+          "shopping": [],
+          "dailylife": []
+        }
+      }
+    },
+    "get_current_day": {
+      "name": "get_current_day",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Returns the current day in ISO format, e.g. '2022-01-01'.\nIt is useful to know what the current day, year, or month is, as the assistant\nshould not assume what the current date is.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "371b9be91e6048401c9eb6338dbf94ba1250c2a4c9342a0a876bb84576a741cf"
+        ],
+        "required_by_suite": {
+          "shopping": [],
+          "dailylife": []
+        }
+      }
+    },
+    "get_day_calendar_events": {
+      "name": "get_day_calendar_events",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Returns the appointments for the given `day`. Returns a list of dictionaries with informations about each meeting.",
+      "args": {
+        "day": {
+          "name": "day",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "5ced3e077acc995a50489e71cefdd221bda4b6adac93692c57af64aaf3b47b46"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "day"
+          ],
+          "dailylife": [
+            "day"
+          ]
+        }
+      }
+    },
+    "get_github_account_user_information": {
+      "name": "get_github_account_user_information",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "github"
+      ],
+      "description": "Get the user information of the given github account, could be: email, username, repository names, starred repositories.",
+      "args": {
+        "email": {
+          "name": "email",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "username": {
+          "name": "username",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "8fb764cd168e8488626a8de590fbe5d19f8f85348ea9fc1b2991fdaca24073d6"
+        ],
+        "required_by_suite": {
+          "github": []
+        }
+      }
+    },
+    "get_github_linked_unread_emails": {
+      "name": "get_github_linked_unread_emails",
+      "tool_type": "read",
+      "side_effect": "internal_read_state_update",
+      "suites": [
+        "github"
+      ],
+      "description": "Returns all the unread emails in the github account linked inbox with the github account. Each email has a sender, a subject, and a body.\nThe emails are marked as read after this function is called.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "c370fb2fabc9766f5f5acf9425be9d27266e4573fead31024b166fac9c93485a"
+        ],
+        "required_by_suite": {
+          "github": []
+        }
+      }
+    },
+    "get_github_repository_information": {
+      "name": "get_github_repository_information",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "github"
+      ],
+      "description": "Get the information of the target repository, could be: repository name, owner, collaborators, pending collaborators, stars, repository file tree, and issues.",
+      "args": {
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "0cddfd98e7a48ea96be5db8d8fe07507199f667a2be1c7dd47bf72e2c607102c"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name"
+          ]
+        }
+      }
+    },
+    "get_invoice": {
+      "name": "get_invoice",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Get the invoice of a specific order by order_id. Get the invoice for a specific order by order_id. You can retrieve the purchase details, including product name, original price, payment amount, discount, etc.",
+      "args": {
+        "order_id": {
+          "name": "order_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "b7ff0e2320f7555a864f2f2d6aaee6b56af108bb3d429df3ea78e2145d8d068d"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "order_id"
+          ]
+        }
+      }
+    },
+    "get_logged_in_github_user_information": {
+      "name": "get_logged_in_github_user_information",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "github"
+      ],
+      "description": "Get information for the currently authenticated GitHub account, including email, \nusername, password, repository names, and starred repositories.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "bd5a50376b30529fbe527edb7e415f64194445fa4df1f65d638ff8c74a92f6ed"
+        ],
+        "required_by_suite": {
+          "github": []
+        }
+      }
+    },
+    "get_received_emails": {
+      "name": "get_received_emails",
+      "tool_type": "read",
+      "side_effect": "internal_read_state_update",
+      "suites": [
+        "dailylife",
+        "github"
+      ],
+      "description": "Returns all the received emails in the inbox. Each email has a sender, a subject, and a body.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "d32bb9cb65d50d39871cee90b0356f13cb2a04b577a10aea0e84655f37d57c99"
+        ],
+        "required_by_suite": {
+          "github": [],
+          "dailylife": []
+        }
+      }
+    },
+    "get_sent_emails": {
+      "name": "get_sent_emails",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "dailylife",
+        "github"
+      ],
+      "description": "Returns all the sent emails in the inbox. Each email has a recipient, a subject, and a body.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "197068f8c260ed7f330f122722c073e88479648cea0f1ccb134d1497d24dca47"
+        ],
+        "required_by_suite": {
+          "github": [],
+          "dailylife": []
+        }
+      }
+    },
+    "get_shopping_account_user_information": {
+      "name": "get_shopping_account_user_information",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Get the user information of the shopping account, could be: email, username, password, first name, last name, ID number, phone number, address, passport number, bank account number, bank account password.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "09face51c369d9d3c261e53d1d9b5b897aec9874e3f71a367e4579a296312c7c"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "get_shopping_linked_received_emails": {
+      "name": "get_shopping_linked_received_emails",
+      "tool_type": "read",
+      "side_effect": "internal_read_state_update",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Returns all the received emails in the shopping account linked inbox with the shopping account. Each email has a sender, a subject, and a body.\nThe emails are marked as read after this function is called.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "59a8c4d6930e7bf8431c7dc08c8072bea57145af7ceb48b29b448d87c38d16f8"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "get_shopping_linked_unread_emails": {
+      "name": "get_shopping_linked_unread_emails",
+      "tool_type": "read",
+      "side_effect": "internal_read_state_update",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Returns all the unread emails in the shopping account linked inbox with the shopping account. Each email has a sender, a subject, and a body.\nThe emails are marked as read after this function is called.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "6b5a83b6a94e8ebc50216a7acab98a718df0886295612d10c5ece3a588a9c9ec"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "get_unread_emails": {
+      "name": "get_unread_emails",
+      "tool_type": "read",
+      "side_effect": "internal_read_state_update",
+      "suites": [
+        "dailylife"
+      ],
+      "description": "Returns all the unread emails in the inbox. Each email has a sender, a subject, and a body.\nThe emails are marked as read after this function is called.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "30e556049a372344c22d5c36e5c690a1887b925ec79f4d7ee69215b1cf442cf1"
+        ],
+        "required_by_suite": {
+          "dailylife": []
+        }
+      }
+    },
+    "git_add_ssh_key": {
+      "name": "git_add_ssh_key",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Add an SSH key to the current GitHub account.",
+      "args": {
+        "ssh_key": {
+          "name": "ssh_key",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "f38a9683db8904063c53f49546bcbd102e594486376b5714135aece542e30411"
+        ],
+        "required_by_suite": {
+          "github": [
+            "ssh_key"
+          ]
+        }
+      }
+    },
+    "git_clone": {
+      "name": "git_clone",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Clone a remote repository from GitHub into a specific local directory.",
+      "args": {
+        "local_dir_path": {
+          "name": "local_dir_path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "0cac6bcb6a30e2229f24254acd2d74b9e406705bbc2255a305d2a533e3c79beb"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name"
+          ]
+        }
+      }
+    },
+    "git_create_repo": {
+      "name": "git_create_repo",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Creates a new repository for the current user with an empty root directory.",
+      "args": {
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "4d22a813c6db628a7556da9a9bf8f678f99d59858f2e89528747701e260abc30"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name"
+          ]
+        }
+      }
+    },
+    "git_delete_repo": {
+      "name": "git_delete_repo",
+      "tool_type": "action",
+      "side_effect": "external_destructive",
+      "suites": [
+        "github"
+      ],
+      "description": "Delete the repository of the given repo name.",
+      "args": {
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "52fb734c5af486ae1f649d073fd9cc0dc1edc6ce36ff075d8aff3898f66b81e7"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name"
+          ]
+        }
+      }
+    },
+    "git_delete_ssh_key": {
+      "name": "git_delete_ssh_key",
+      "tool_type": "action",
+      "side_effect": "external_destructive",
+      "suites": [
+        "github"
+      ],
+      "description": "Remove an SSH key from the current GitHub account.",
+      "args": {
+        "ssh_key": {
+          "name": "ssh_key",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "d0527456fd20cb877bc56ad842b0a124bdc25c2669f5c460f63bb1bf9f2c2e3d"
+        ],
+        "required_by_suite": {
+          "github": [
+            "ssh_key"
+          ]
+        }
+      }
+    },
+    "git_get_linked_ssh_keys": {
+      "name": "git_get_linked_ssh_keys",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "github"
+      ],
+      "description": "Get the SSH keys of the current GitHub account.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "d6a8b9735edbf1c705383a4798bf7d27f0b6a604d568f3615aece69c16f6c218"
+        ],
+        "required_by_suite": {
+          "github": []
+        }
+      }
+    },
+    "git_invite_collaborators": {
+      "name": "git_invite_collaborators",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Invite a collaborator to the repository of the given repo name.",
+      "args": {
+        "collaborator_email": {
+          "name": "collaborator_email",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "3eb464a8edc88a50b8fd198c139ccf8f508c800690c314b9ec91af60d7f5c8e5"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name",
+            "collaborator_email"
+          ]
+        }
+      }
+    },
+    "git_issue": {
+      "name": "git_issue",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Push a new issue to the repository of the given repo name.",
+      "args": {
+        "comment_body": {
+          "name": "comment_body",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        },
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "title": {
+          "name": "title",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "404182e5e9ae1524fb4fa0d6b6af72e1b80a05cab355b442a0c936ec047397ac"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name",
+            "title",
+            "comment_body"
+          ]
+        }
+      }
+    },
+    "git_pull": {
+      "name": "git_pull",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Pull files from GitHub to the local filesystem.\nAutomatically detects the repository root from .git_config to synchronize \nthe whole repo state regardless of which subdirectory you are in.",
+      "args": {
+        "local_path": {
+          "name": "local_path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "overwrite_local": {
+          "name": "overwrite_local",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "9a2bf194f104041511b041f616fe98a7414ccb1eae18232e7c841cf76ab4a565"
+        ],
+        "required_by_suite": {
+          "github": []
+        }
+      }
+    },
+    "git_push": {
+      "name": "git_push",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Push a file or an entire directory to its associated GitHub repository.\nAutomatically detects the repository root via .git_config to allow pushing from \nany level within the repo.",
+      "args": {
+        "force": {
+          "name": "force",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "local_path": {
+          "name": "local_path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "ef1fd37e1cd902780a06dfbb507b0032a3e06ac464da61769bb2bca3b095d0cc"
+        ],
+        "required_by_suite": {
+          "github": [
+            "local_path"
+          ]
+        }
+      }
+    },
+    "git_star": {
+      "name": "git_star",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Star the repository of the given repo name.",
+      "args": {
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "027002b57c6db25d269d747f46db3ef2c77e2d92298a6f767dcae023da2f164b"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name"
+          ]
+        }
+      }
+    },
+    "git_transfer_repo_ownership": {
+      "name": "git_transfer_repo_ownership",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Transfers ownership of a repository to another user.",
+      "args": {
+        "new_owner_email": {
+          "name": "new_owner_email",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "new_owner_username": {
+          "name": "new_owner_username",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "a89e3ba19e27617a75a1f56b0f6932678f39b709148d82b369b7a613423014ab"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name"
+          ]
+        }
+      }
+    },
+    "git_unstar": {
+      "name": "git_unstar",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Unstar the repository with the given name.",
+      "args": {
+        "repo_name": {
+          "name": "repo_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "ff1be4ae6eab5bfaebdc5d806419f92da83117ffe36264e8a1ba22e95b7a18e7"
+        ],
+        "required_by_suite": {
+          "github": [
+            "repo_name"
+          ]
+        }
+      }
+    },
+    "input_to_webpage": {
+      "name": "input_to_webpage",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Fills out and submits a web form on the specified webpage using the provided input ids and values.\nExample usage:\ninput_to_webpage(\n    url=\"www.example.com\",\n    input_ids=[\"name_field\", \"email_field\"],\n    input_values=[\"John Doe\", \"john.doe@example.com\"],\n)",
+      "args": {
+        "input_ids": {
+          "name": "input_ids",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "input_values": {
+          "name": "input_values",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        },
+        "inputs": {
+          "name": "inputs",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        },
+        "url": {
+          "name": "url",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "15d1a04b1370c16bccb4364c77dee14d7517151aba0757f7e6865e445788e5cb",
+          "63a8e903b584b458a06113e0b7572b3e7bedcd7f70ac8163148f412b790fc813"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "url",
+            "input_ids",
+            "input_values"
+          ],
+          "github": [
+            "url",
+            "inputs"
+          ],
+          "dailylife": [
+            "url",
+            "input_ids",
+            "input_values"
+          ]
+        }
+      }
+    },
+    "list_directory": {
+      "name": "list_directory",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "List the metadata of all items inside a specific local directory.",
+      "args": {
+        "path": {
+          "name": "path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "c9174fa211898e44bd68d39d229dcfbacc24034dc61774332e2ceae041c81855"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "path"
+          ],
+          "github": [
+            "path"
+          ],
+          "dailylife": [
+            "path"
+          ]
+        }
+      }
+    },
+    "login_github_account": {
+      "name": "login_github_account",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Login to your account.",
+      "args": {
+        "password": {
+          "name": "password",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "username": {
+          "name": "username",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "f62aa1c9533e2f95290c0f026b088c8089e3ebe18ade4a7ef0086a35cb292c2f"
+        ],
+        "required_by_suite": {
+          "github": [
+            "username",
+            "password"
+          ]
+        }
+      }
+    },
+    "login_shopping_account": {
+      "name": "login_shopping_account",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Login to your shopping account.",
+      "args": {
+        "password": {
+          "name": "password",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "username": {
+          "name": "username",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "ae590b3d419974165b9a1052cf2592a4e9dbf489a1a1897a76c40776a2b976e2"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "username",
+            "password"
+          ]
+        }
+      }
+    },
+    "move_node": {
+      "name": "move_node",
+      "tool_type": "action",
+      "side_effect": "internal",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Moves or renames a local file or directory from the source path to the destination path.",
+      "args": {
+        "destination_path": {
+          "name": "destination_path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "source_path": {
+          "name": "source_path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "f9f30d600b05c28f03c2c72e22a3c5aaee4b12f399cf7990b4b19e211c58f5f3"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "source_path",
+            "destination_path"
+          ],
+          "github": [
+            "source_path",
+            "destination_path"
+          ],
+          "dailylife": [
+            "source_path",
+            "destination_path"
+          ]
+        }
+      }
+    },
+    "read_file": {
+      "name": "read_file",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Read the contents of a local file at the given path.",
+      "args": {
+        "path": {
+          "name": "path",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "830b6b9898fb5d1249ddb01c458fcc322367be26bb67d260fceb811af2d5898d"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "path"
+          ],
+          "github": [
+            "path"
+          ],
+          "dailylife": [
+            "path"
+          ]
+        }
+      }
+    },
+    "refund_order": {
+      "name": "refund_order",
+      "tool_type": "action",
+      "side_effect": "external_destructive",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Refund a specific order by order_id. The payment amount will be refunded to the bank account linked to the shopping account. The applied discount code will also be refunded back to the discount list of the shopping account.",
+      "args": {
+        "order_id": {
+          "name": "order_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "7160fcf527f001df528947db1bb529a35544d62f767c173c45e2c6697105f557"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "order_id"
+          ]
+        }
+      }
+    },
+    "reschedule_calendar_event": {
+      "name": "reschedule_calendar_event",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Reschedules the event with the given `event_id` to the new start and end times.\nIt will also send an email to the participants notifying them of the rescheduling.",
+      "args": {
+        "event_id": {
+          "name": "event_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "new_end_time": {
+          "name": "new_end_time",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "new_start_time": {
+          "name": "new_start_time",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "54c5d5d18304b701e280b23d9766c33dd6442359fc82630da465b8aa11e056e1"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "event_id",
+            "new_start_time"
+          ],
+          "dailylife": [
+            "event_id",
+            "new_start_time"
+          ]
+        }
+      }
+    },
+    "search_calendar_events": {
+      "name": "search_calendar_events",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Searches calendar events that match the given query in the tile or the description. If provided, filters events by date.",
+      "args": {
+        "date": {
+          "name": "date",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "query": {
+          "name": "query",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "e5993d69e9025403c6a9364bbc7f098fb6a0e71d90a2941427bfe53de6ae8772"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "query"
+          ],
+          "dailylife": [
+            "query"
+          ]
+        }
+      }
+    },
+    "search_emails": {
+      "name": "search_emails",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "dailylife"
+      ],
+      "description": "Searches for emails in the inbox that contain the given query in the subject or body. If `address` is provided,\nonly emails from that address are searched.",
+      "args": {
+        "query": {
+          "name": "query",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "sender": {
+          "name": "sender",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "58ca988447e6925725c3c814d69fb2127940514ac258c80c71efcfa07be2f1cd"
+        ],
+        "required_by_suite": {
+          "dailylife": [
+            "query"
+          ]
+        }
+      }
+    },
+    "search_product": {
+      "name": "search_product",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Search for products using multiple optional filters.\nIf a filter parameter is null or an empty string, that filter is ignored.",
+      "args": {
+        "brand": {
+          "name": "brand",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "category": {
+          "name": "category",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "price": {
+          "name": "price",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "price_max": {
+          "name": "price_max",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "price_min": {
+          "name": "price_min",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "product_id": {
+          "name": "product_id",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "product_name": {
+          "name": "product_name",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "rating_max": {
+          "name": "rating_max",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "rating_min": {
+          "name": "rating_min",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "1f77e1323e8c9f5bed3acbc845f0de14b54df59b7dfeff661fce77ac3427f739"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "send_email": {
+      "name": "send_email",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "dailylife",
+        "github",
+        "shopping"
+      ],
+      "description": "Sends an email with the given `body` to the given `address`. Returns a dictionary with the email details.",
+      "args": {
+        "attachments": {
+          "name": "attachments",
+          "sink_role": "selector",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "bcc": {
+          "name": "bcc",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "body": {
+          "name": "body",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        },
+        "cc": {
+          "name": "cc",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "recipients": {
+          "name": "recipients",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "subject": {
+          "name": "subject",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "157001e8b2a3f5e4c461e0d90424348d334371b739a7d13f164a4cfcc5e2d626"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "recipients",
+            "subject",
+            "body"
+          ],
+          "github": [
+            "recipients",
+            "subject",
+            "body"
+          ],
+          "dailylife": [
+            "recipients",
+            "subject",
+            "body"
+          ]
+        }
+      }
+    },
+    "send_money": {
+      "name": "send_money",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "dailylife",
+        "shopping"
+      ],
+      "description": "Sends a transaction to the recipient using the bank account linked to the shopping account.",
+      "args": {
+        "amount": {
+          "name": "amount",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "date": {
+          "name": "date",
+          "sink_role": "control",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "recipient": {
+          "name": "recipient",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "subject": {
+          "name": "subject",
+          "sink_role": "content",
+          "high_risk": false,
+          "content_like": true,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "policy_override_content",
+            "raw_external_content"
+          ],
+          "flow_constraints": [
+            "task_relevance",
+            "non_instructional_content"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "3b9bbc65e7a828ed7c2c758269883e49d9c55a63e84a2d7c9ea6a96372d041dc"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "recipient",
+            "amount",
+            "subject",
+            "date"
+          ],
+          "dailylife": [
+            "recipient",
+            "amount",
+            "subject",
+            "date"
+          ]
+        }
+      }
+    },
+    "update_github_account_password": {
+      "name": "update_github_account_password",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "github"
+      ],
+      "description": "Update the github account's password.",
+      "args": {
+        "password": {
+          "name": "password",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "6e9e6c31702aa6b43e490267db7db4fbfafc3bb23e0820b6fc3c950331d67acd"
+        ],
+        "required_by_suite": {
+          "github": [
+            "password"
+          ]
+        }
+      }
+    },
+    "update_shopping_account_password": {
+      "name": "update_shopping_account_password",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Update the shopping account's password.",
+      "args": {
+        "password": {
+          "name": "password",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "9c286ba7ac0ec04f138c732af2ef1b04fccca78c60ba79441ce1fe7652aabd33"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "password"
+          ]
+        }
+      }
+    },
+    "update_shopping_account_user_info": {
+      "name": "update_shopping_account_user_info",
+      "tool_type": "action",
+      "side_effect": "external",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Update the shopping account's user information.",
+      "args": {
+        "address": {
+          "name": "address",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "bank_account_number": {
+          "name": "bank_account_number",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "email": {
+          "name": "email",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "first_name": {
+          "name": "first_name",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "id_number": {
+          "name": "id_number",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "last_name": {
+          "name": "last_name",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "passport_number": {
+          "name": "passport_number",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        },
+        "phone_number": {
+          "name": "phone_number",
+          "sink_role": "target",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "stale_or_ambiguous_source"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "95f65573e8c7dec397adba434166f3b1e7ee43e3a97a495ca1973e9838d09008"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "verify_github_account": {
+      "name": "verify_github_account",
+      "tool_type": "action",
+      "side_effect": "internal",
+      "suites": [
+        "github"
+      ],
+      "description": "Verify your account.",
+      "args": {
+        "otp": {
+          "name": "otp",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [
+        "git_create_repo",
+        "git_delete_repo",
+        "git_transfer_repo_ownership",
+        "git_invite_collaborators",
+        "git_push",
+        "git_pull",
+        "git_issue",
+        "git_add_ssh_key",
+        "git_delete_ssh_key",
+        "update_github_account_password"
+      ],
+      "schema_variants": {
+        "hashes": [
+          "00bc856f0031b43c9c3bc1c12949953157f7893910df21c3f75b40737a80efb8"
+        ],
+        "required_by_suite": {
+          "github": [
+            "otp"
+          ]
+        }
+      }
+    },
+    "verify_shopping_account": {
+      "name": "verify_shopping_account",
+      "tool_type": "action",
+      "side_effect": "internal",
+      "suites": [
+        "shopping"
+      ],
+      "description": "Verify your shopping account.",
+      "args": {
+        "otp": {
+          "name": "otp",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [
+        "checkout_selected_cart",
+        "refund_order",
+        "update_shopping_account_password",
+        "update_shopping_account_user_info"
+      ],
+      "schema_variants": {
+        "hashes": [
+          "8c1a235ae849cfc031af3c16dc758d85c0eb375fcac31897e69166250cc34d3e"
+        ],
+        "required_by_suite": {
+          "shopping": [
+            "otp"
+          ]
+        }
+      }
+    },
+    "verify_transaction": {
+      "name": "verify_transaction",
+      "tool_type": "action",
+      "side_effect": "internal",
+      "suites": [
+        "dailylife"
+      ],
+      "description": "Verify your transaction by entering the One Time Password (OTP).",
+      "args": {
+        "otp": {
+          "name": "otp",
+          "sink_role": "credential",
+          "high_risk": true,
+          "content_like": false,
+          "deny_marks": [
+            "injected_instruction",
+            "unknown_origin",
+            "model_inferred_unverified",
+            "credential_or_secret"
+          ],
+          "flow_constraints": [
+            "authorized_source",
+            "task_relevance"
+          ]
+        }
+      },
+      "repair_for": [
+        "send_money"
+      ],
+      "schema_variants": {
+        "hashes": [
+          "a942299de5268ff186acd0975c9f29dd5ff3c1de0d938d077bb6b56267bb84c4"
+        ],
+        "required_by_suite": {
+          "dailylife": [
+            "otp"
+          ]
+        }
+      }
+    },
+    "view_available_discounts": {
+      "name": "view_available_discounts",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "shopping"
+      ],
+      "description": "View the available discount codes for the current account.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "e6266d6ed919d8f15af48ac5a510967b8ca9a1341b416ed941339562813c644f"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "view_cart": {
+      "name": "view_cart",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "shopping"
+      ],
+      "description": "View the current cart of the current account.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "2e55a8f5868cdaadf15ad78d0f6eb828a7445e9a4336a8cc26732bc9f2d8381d"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    },
+    "view_order_history": {
+      "name": "view_order_history",
+      "tool_type": "read",
+      "side_effect": "none",
+      "suites": [
+        "shopping"
+      ],
+      "description": "View the order history of the current account, including order ID, product name, quantity, order date, delivery date, and product ID.",
+      "args": {},
+      "repair_for": [],
+      "schema_variants": {
+        "hashes": [
+          "263f5629df43f422dcae0a16d5ac4c4589a28673cdfb41dd17c699f9d3a8fca5"
+        ],
+        "required_by_suite": {
+          "shopping": []
+        }
+      }
+    }
+  },
+  "source_inventory_sha256": "8030ce7ac81abe58f98b12819cb68c566a2694e84f63fa97166def181052de6b",
+  "schema_hash": "5c44b95d7d8fdb97ceedbf3f03574254440367aa9c6ca1d1bb605d64904845f0"
+}

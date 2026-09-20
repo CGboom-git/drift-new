@@ -1,0 +1,14 @@
+{
+  "method_name": "RCVR",
+  "config_id": "B4_GENERIC_RECOVERY",
+  "display_label": "Generic Bounded Recovery",
+  "rcvr_mode": "retry",
+  "compat_rcdc_mode": "retry",
+  "relation_mode": "full",
+  "recovery_model_calls_cap": 2,
+  "recovery_read_calls_cap": 2,
+  "recovery_tools": "READ-only runtime tools",
+  "frozen_input_manifest": "experiments/rcdc/targeted_manifest.json",
+  "frozen_input_manifest_sha256": "9ff992713666d11da42d0c461f7a1804aab3a2bce27848b52228646126a53112",
+  "online_started": false
+}

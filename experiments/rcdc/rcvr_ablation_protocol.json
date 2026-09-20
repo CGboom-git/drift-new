@@ -1,0 +1,101 @@
+{
+  "method_name": "RCVR",
+  "module_names": {
+    "constraint_specification": "Constraint Specification Module",
+    "binding_verification": "Binding Verification Module",
+    "recovery": "Evidence-Bounded Recovery Module",
+    "isolation": "Evidence Isolation Module"
+  },
+  "status": "PRE_ONLINE_PROTOCOL",
+  "common_controls": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "candidate_task_and_attack_inputs": "identical frozen case manifest per batch",
+    "recovery_model_calls_cap": 2,
+    "recovery_read_calls_cap": 2,
+    "recovery_tools": "READ-only runtime tools",
+    "original_full_files": "unchanged"
+  },
+  "configurations": [
+    {
+      "id": "B0_APDE",
+      "label": "DRIFT Base",
+      "mode": "off",
+      "relation_mode": "full",
+      "enable_binding_verification": false,
+      "unknown_policy": "off",
+      "enable_recovery": false,
+      "recovery_mode": "off",
+      "enable_evidence_isolation": true,
+      "claim": "Original DRIFT baseline, reported from the paper's full evaluation"
+    },
+    {
+      "id": "B1_RCVR",
+      "label": "Full RCVR",
+      "mode": "full",
+      "relation_mode": "full",
+      "enable_binding_verification": true,
+      "unknown_policy": "three_value",
+      "enable_recovery": true,
+      "recovery_mode": "bounded",
+      "enable_evidence_isolation": true,
+      "claim": "Constraint-specific binding verification plus evidence-bounded recovery"
+    },
+    {
+      "id": "B2_WO_BINDING",
+      "label": "w/o Binding Verification",
+      "mode": "full",
+      "relation_mode": "full",
+      "enable_binding_verification": false,
+      "unknown_policy": "three_value",
+      "enable_recovery": true,
+      "recovery_mode": "bounded",
+      "enable_evidence_isolation": true,
+      "claim": "Keeps provenance/source-field tracking and original DRIFT validation, but disables all constraint-specific binding judgement"
+    },
+    {
+      "id": "B3_UNKNOWN_STOP",
+      "label": "UNKNOWN to Stop",
+      "mode": "strict",
+      "relation_mode": "full",
+      "enable_binding_verification": true,
+      "unknown_policy": "reject",
+      "enable_recovery": false,
+      "recovery_mode": "off",
+      "enable_evidence_isolation": true,
+      "claim": "Binding verification remains; UNKNOWN receives no recovery"
+    },
+    {
+      "id": "B4_UNKNOWN_ALLOW",
+      "label": "UNKNOWN to Allow",
+      "mode": "allow",
+      "relation_mode": "full",
+      "enable_binding_verification": true,
+      "unknown_policy": "allow",
+      "enable_recovery": false,
+      "recovery_mode": "off",
+      "enable_evidence_isolation": true,
+      "claim": "Binding verification remains; UNKNOWN is permissively dispatched without recovery"
+    },
+    {
+      "id": "B5_WO_EVIDENCE_ISOLATION",
+      "label": "w/o Evidence Isolation",
+      "mode": "full",
+      "relation_mode": "full",
+      "enable_binding_verification": true,
+      "unknown_policy": "three_value",
+      "enable_recovery": true,
+      "recovery_mode": "bounded",
+      "enable_evidence_isolation": false,
+      "claim": "Removes only RCVR recovery prompt separation between host control and untrusted evidence; all validators and DRIFT injection isolation remain fixed"
+    }
+  ],
+  "required_nonbenchmark_diagnostics": [
+    "three-valued binding matrix",
+    "recovery authority-boundary stress test"
+  ],
+  "reporting_constraints": [
+    "Do not replace the historical AgentDojo main table with this targeted subset.",
+    "Report model, recovery, and APDE validation calls separately.",
+    "Report infrastructure/model failures separately from security success."
+  ]
+}

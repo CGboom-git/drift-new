@@ -42,7 +42,9 @@ class DRIFTLLM(PromptingLLM):
         self.initial_node_checklist = "None"
         self.tool_permissions = {}
         self.source_label_store = SourceLabelStore()
-        self.source_flow_contract_helper = ContractHelper("contracts")
+        self.source_flow_contract_helper = ContractHelper(
+            "contracts", benchmark=self.contract_profile()
+        )
         self.source_flow_compiler = FlowExpectationCompiler(self.source_flow_contract_helper)
         self.source_flow_resolver = SinkEvidenceResolver()
         self.source_flow_validator = FlowAwareValidator()
@@ -52,7 +54,9 @@ class DRIFTLLM(PromptingLLM):
         self._source_flow_validated_args_cache: dict[str, dict[str, Any]] = {}
         self.taer_state = None
         self._taer_one_time_auth = None  # {"tool_name", "tool_args", "used"} for checklist bypass
+        self._taer_persistent_auth = []  # exact task-scoped calls for the no_ephemeral ablation
         self._taer_pending_repairs = {}  # {repair_id: {repair, tool_name, tool_args}} for delayed binding
+        self._runtime_drift_taer_events = []  # observational only; never read by policy code
         self._authorized_action_instances = []
         self._final_decision_owner = ""  # "TAER" or "ORIGINAL_DRIFT" per validation round
         self._user_explicit_entities = set()  # user-authorized entities from query
@@ -64,11 +68,62 @@ class DRIFTLLM(PromptingLLM):
             or getattr(self.args, "source_flow_validation", False)
         )
 
+    def contract_profile(self):
+        """Choose a contract family without mixing overlapping tool names."""
+        configured = getattr(self.args, "contract_profile", "auto")
+        if configured != "auto":
+            return configured
+        suites = {item.strip().lower() for item in str(getattr(self.args, "suites", "")).split(",") if item.strip()}
+        return "agentdyn" if suites and suites <= {"shopping", "github", "dailylife"} else "agentdojo"
+
     def source_flow_validation_enabled(self):
         return bool(getattr(self.args, "source_flow_validation", False))
 
     def taer_mode_enabled(self):
         return getattr(self.args, "taer_mode", "off") == "on"
+
+    def taer_variant(self):
+        """Return the active TAER policy without changing the legacy off path."""
+        if not self.taer_mode_enabled():
+            return "off"
+        return getattr(self.args, "taer_variant", "full")
+
+    def taer_anchor_enabled(self):
+        return self.taer_variant() != "no_anchor"
+
+    def taer_boundary_enabled(self):
+        return self.taer_variant() != "no_scope"
+
+    def taer_ephemeral_enabled(self):
+        return self.taer_variant() != "no_ephemeral"
+
+    def runtime_drift_trace_enabled(self):
+        return bool(getattr(self.args, "runtime_drift_trace", False))
+
+    def _runtime_drift_record_taer(self, tool_name, tool_args, final_decision, **details):
+        """Record an already-made TAER decision without influencing it."""
+        if not self.runtime_drift_trace_enabled():
+            return
+        self._runtime_drift_taer_events.append({
+            "decision_index": len(self._runtime_drift_taer_events),
+            "runtime_action": {"tool_name": tool_name, "arguments": dict(tool_args or {})},
+            "final_decision": final_decision,
+            "taer_variant": self.taer_variant(),
+            **details,
+        })
+
+    @staticmethod
+    def _taer_call(tool_name, tool_args):
+        return {"tool_name": tool_name, "tool_args": dict(tool_args or {})}
+
+    def _grant_taer_authorization(self, tool_name, tool_args):
+        """Grant exact-call authorization under the selected lifetime policy."""
+        call = self._taer_call(tool_name, tool_args)
+        if self.taer_ephemeral_enabled():
+            self._taer_one_time_auth = {**call, "used": False}
+            return
+        if call not in self._taer_persistent_auth:
+            self._taer_persistent_auth.append(call)
 
     def delegated_task_source_enabled(self):
         return True
@@ -629,7 +684,7 @@ Do not approve unrelated exploration or any new goal.
         })
         try:
             from json_repair import repair_json
-            raw = self.client.llm_run(prompt, data)
+            raw = self.client.llm_run(prompt, data, max_tokens=1024, enable_thinking=False)
             result = json.loads(repair_json(raw))
             return bool(result.get("necessary")), result.get("reason", "")
         except Exception as exc:
@@ -1360,7 +1415,7 @@ Do not approve unrelated exploration or any new goal.
                 <Function>\n{function}\n</Function>
                 """
 
-        choice = self.client.llm_run(guidelines, data)
+        choice = self.client.llm_run(guidelines, data, max_tokens=512, enable_thinking=False)
         if ("B" in choice):
             self.logger.info(f"Function {function} is Write permission")
             return "Write"
@@ -1455,7 +1510,7 @@ Do not approve unrelated exploration or any new goal.
             data += f"\n<Delegated_Task_Instructions>\n{delegated_task_context}\n</Delegated_Task_Instructions>\n"
         data += "\n"
 
-        answer = self.client.llm_run(guidelines, data)
+        answer = self.client.llm_run(guidelines, data, max_tokens=1024, enable_thinking=False)
         if ("Yes" in answer) or ("YES" in answer):
             return True, ""
 
@@ -1507,7 +1562,7 @@ Do not approve unrelated exploration or any new goal.
         from json_repair import repair_json
 
         for i in range(3):
-            answer = self.client.llm_run(guidelines, data)
+            answer = self.client.llm_run(guidelines, data, max_tokens=2048, enable_thinking=False)
             formatted_answer = repair_json(answer)
             try:
                json.loads(formatted_answer)
@@ -1579,6 +1634,7 @@ Do not approve unrelated exploration or any new goal.
         self.node_checklist = "None"
         self._user_explicit_entities = self._extract_user_explicit_entities(raw_user_query or "")
         self._runtime_read_extensions = {}
+        self._taer_persistent_auth = []
 
         if ("<function_trajectory>" in completion[0]):
             try:
@@ -1884,6 +1940,13 @@ Do not approve unrelated exploration or any new goal.
         self._final_decision_owner = "TAER"
 
         auth_call = {"tool_name": achieved_func, "tool_args": dict(tool_args or {})}
+        if not self.taer_ephemeral_enabled():
+            if auth_call not in self._taer_persistent_auth:
+                self._taer_persistent_auth.append(auth_call)
+            if self.logger:
+                self.logger.info(f"Final decision: ALLOW (owner=TAER, drift_advice=ALIGN, read_extension={achieved_func})")
+            return
+
         auth = self._taer_one_time_auth
         if auth and not auth.get("used", True) and "tool_calls" in auth:
             auth["tool_calls"].append(auth_call)
@@ -1961,6 +2024,12 @@ Do not approve unrelated exploration or any new goal.
                     if getattr(self.args, "taer_mode", "off") == "on":
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: ALLOW (owner=TAER, in_plan=True)")
+                        self._runtime_drift_record_taer(
+                            achieved_func, self._tool_args_for_name(output, achieved_func), "ALLOW",
+                            plan_match_status="IN_PLAN", task_anchor_result=None,
+                            bounded_scope={"status": "not_required"},
+                            ephemeral_authorization={"status": "not_required"},
+                        )
                         if self._is_action_tool(achieved_func):
                             self._record_authorized_action_instance(
                                 achieved_func,
@@ -2056,6 +2125,81 @@ Do not approve unrelated exploration or any new goal.
                         f"Trajectory-outside ACTION {achieved_func} entering TAER"
                     )
 
+                    if not self.taer_anchor_enabled():
+                        self.logger.info(
+                            f"TAER ablation no_anchor: using original DRIFT advisory for {achieved_func}"
+                        )
+                        drift_advice, _ = self._run_original_drift_deviation_validation(
+                            achieved_func, output, query, messages,
+                            extended_function_trajectory, extended_checklist,
+                            thought_content, latest_function_messages,
+                            advisory_only=True,
+                        )
+                        if drift_advice != "ALIGN":
+                            self._final_decision_owner = "TAER"
+                            self.logger.info("Final decision: REJECT (owner=TAER, variant=no_anchor)")
+                            self._runtime_drift_record_taer(
+                                achieved_func, tool_args, "REJECT", plan_match_status="OUT_OF_PLAN",
+                                task_anchor_result={"status": "disabled", "drift_advice": drift_advice},
+                                bounded_scope={"status": "not_evaluated"},
+                                ephemeral_authorization={"granted": False},
+                            )
+                            return {
+                                "role": "user",
+                                "rejected_tool_name": achieved_func,
+                                "content": (
+                                    f"[CALL ERROR] TAER no-anchor ablation rejected {achieved_func}: "
+                                    "original DRIFT advisory did not align."
+                                ),
+                            }, output
+
+                        if self.taer_boundary_enabled():
+                            source_records = list(self.source_label_store.records) if self.source_label_store else []
+                            boundary = check_taer_boundary(
+                                achieved_func, tool_args, {"scope_delta": "NONE"}, None,
+                                source_records, self.source_flow_contract_helper,
+                                self._user_explicit_entities,
+                            )
+                            if not boundary.passed:
+                                self._final_decision_owner = "TAER"
+                                self.logger.info(
+                                    f"Final decision: REJECT (owner=TAER, variant=no_anchor, boundary={boundary.reason})"
+                                )
+                                self._runtime_drift_record_taer(
+                                    achieved_func, tool_args, "REJECT", plan_match_status="OUT_OF_PLAN",
+                                    task_anchor_result={"status": "disabled", "drift_advice": drift_advice},
+                                    bounded_scope={"passed": False, "reason": boundary.reason},
+                                    ephemeral_authorization={"granted": False},
+                                )
+                                return {
+                                    "role": "user",
+                                    "rejected_tool_name": achieved_func,
+                                    "content": (
+                                        f"[CALL ERROR] TAER boundary guard blocked {achieved_func}: "
+                                        f"{boundary.reason}. Continue the original user task."
+                                    ),
+                                }, output
+
+                        self._grant_taer_authorization(achieved_func, tool_args)
+                        self.function_trajectory = extended_function_trajectory
+                        temp_achieved_trajectory.append(achieved_func)
+                        self.achieved_function_trajectory = list(temp_achieved_trajectory)
+                        try:
+                            self.node_checklist = json.dumps(extended_checklist)
+                        except Exception:
+                            self.node_checklist = extended_checklist
+                        self._final_decision_owner = "TAER"
+                        self.logger.info("Final decision: ALLOW (owner=TAER, variant=no_anchor)")
+                        self._runtime_drift_record_taer(
+                            achieved_func, tool_args, "ALLOW", plan_match_status="OUT_OF_PLAN",
+                            task_anchor_result={"status": "disabled", "drift_advice": drift_advice},
+                            bounded_scope={"passed": True if self.taer_boundary_enabled() else None,
+                                           "status": "evaluated" if self.taer_boundary_enabled() else "disabled"},
+                            ephemeral_authorization={"granted": True,
+                                                     "lifetime": "one_time" if self.taer_ephemeral_enabled() else "task_scoped"},
+                        )
+                        continue
+
                     match_result = match_candidate_to_backbone(
                         achieved_func, tool_args, self.taer_state,
                     )
@@ -2071,11 +2215,14 @@ Do not approve unrelated exploration or any new goal.
                         )
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: ALLOW (owner=TAER, relation=DIRECT_EFFECT)")
-                        self._taer_one_time_auth = {
-                            "tool_name": achieved_func,
-                            "tool_args": dict(tool_args),
-                            "used": False,
-                        }
+                        self._runtime_drift_record_taer(
+                            achieved_func, tool_args, "ALLOW", plan_match_status="BACKBONE_MATCH",
+                            task_anchor_result={"relation": "DIRECT_EFFECT", "source": "deterministic_backbone"},
+                            bounded_scope={"status": "parameter_match"},
+                            ephemeral_authorization={"granted": True,
+                                                     "lifetime": "one_time" if self.taer_ephemeral_enabled() else "task_scoped"},
+                        )
+                        self._grant_taer_authorization(achieved_func, tool_args)
                         # Fan-out tracking
                         step = self.taer_state.backbone_steps.get(match_result.step_id)
                         fan_out_mode = getattr(step, "fan_out_mode", None) if step else None
@@ -2127,7 +2274,7 @@ Do not approve unrelated exploration or any new goal.
                         "latest_thought": thought_content[:300],
                     })
 
-                    anchor_raw = self.client.llm_run(TAER_ANCHOR_PROMPT, anchor_context)
+                    anchor_raw = self.client.llm_run(TAER_ANCHOR_PROMPT, anchor_context, max_tokens=1024, enable_thinking=False)
 
                     try:
                         from json_repair import repair_json
@@ -2186,6 +2333,12 @@ Do not approve unrelated exploration or any new goal.
                             self.logger.info(f"{achieved_func} rejected by TAER as HIGH-confidence NEW_GOAL")
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: REJECT (owner=TAER)")
+                        self._runtime_drift_record_taer(
+                            achieved_func, tool_args, "REJECT", plan_match_status="OUT_OF_PLAN",
+                            task_anchor_result={"relation": relation, "confidence": confidence},
+                            bounded_scope={"status": "not_evaluated", "reason": "new_goal"},
+                            ephemeral_authorization={"granted": False},
+                        )
                         return error_msg, output
 
                     if relation == "AMBIGUOUS":
@@ -2201,16 +2354,36 @@ Do not approve unrelated exploration or any new goal.
                         if drift_advice == "ALIGN":
                             self._final_decision_owner = "TAER"
                             self.logger.info("Final decision: ALLOW (owner=TAER, drift_advice=ALIGN)")
+                            self._runtime_drift_record_taer(
+                                achieved_func, tool_args, "ALLOW", plan_match_status="OUT_OF_PLAN",
+                                task_anchor_result={"relation": relation, "confidence": confidence,
+                                                    "drift_advice": drift_advice},
+                                bounded_scope={"status": "fallback"},
+                                ephemeral_authorization={"granted": False},
+                            )
                         else:
                             self._final_decision_owner = "TAER"
                             self.logger.info("Final decision: REJECT (owner=TAER)")
+                            self._runtime_drift_record_taer(
+                                achieved_func, tool_args, "REJECT", plan_match_status="OUT_OF_PLAN",
+                                task_anchor_result={"relation": relation, "confidence": confidence,
+                                                    "drift_advice": drift_advice},
+                                bounded_scope={"status": "fallback"},
+                                ephemeral_authorization={"granted": False},
+                            )
                             return {"role": "user", "rejected_tool_name": achieved_func, "content": f"[CALL ERROR] TAER rejected {achieved_func}: ambiguous trajectory was not supported by DRIFT advisory."}, output
                         temp_achieved_trajectory.append(achieved_func)
                         continue
 
-                    param_result, param_reason = check_params_against_consumer(
-                        achieved_func, tool_args, anchor_result, self.taer_state,
-                    )
+                    if self.taer_boundary_enabled():
+                        param_result, param_reason = check_params_against_consumer(
+                            achieved_func, tool_args, anchor_result, self.taer_state,
+                        )
+                    else:
+                        param_result, param_reason = "allow", None
+                        self.logger.info(
+                            f"TAER ablation no_scope: skipped consumer parameter check for {achieved_func}"
+                        )
                     if param_result == "fallback":
                         self.logger.info(
                             f"TAER param check fallback: {param_reason} → original DRIFT"
@@ -2224,9 +2397,21 @@ Do not approve unrelated exploration or any new goal.
                         if drift_advice != "ALIGN":
                             self._final_decision_owner = "TAER"
                             self.logger.info("Final decision: REJECT (owner=TAER)")
+                            self._runtime_drift_record_taer(
+                                achieved_func, tool_args, "REJECT", plan_match_status="OUT_OF_PLAN",
+                                task_anchor_result={"relation": relation, "confidence": confidence},
+                                bounded_scope={"status": "fallback", "reason": param_reason},
+                                ephemeral_authorization={"granted": False},
+                            )
                             return {"role": "user", "rejected_tool_name": achieved_func, "content": f"[CALL ERROR] TAER rejected {achieved_func}: parameter fallback was not supported by DRIFT advisory."}, output
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: ALLOW (owner=TAER, drift_advice=ALIGN)")
+                        self._runtime_drift_record_taer(
+                            achieved_func, tool_args, "ALLOW", plan_match_status="OUT_OF_PLAN",
+                            task_anchor_result={"relation": relation, "confidence": confidence},
+                            bounded_scope={"status": "fallback", "reason": param_reason},
+                            ephemeral_authorization={"granted": False},
+                        )
                         temp_achieved_trajectory.append(achieved_func)
                         continue
 
@@ -2247,18 +2432,30 @@ Do not approve unrelated exploration or any new goal.
                             self.logger.info(f"{achieved_func} blocked by TAER param check: {param_reason}")
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: REJECT (owner=TAER)")
+                        self._runtime_drift_record_taer(
+                            achieved_func, tool_args, "REJECT", plan_match_status="OUT_OF_PLAN",
+                            task_anchor_result={"relation": relation, "confidence": confidence},
+                            bounded_scope={"passed": False, "reason": param_reason, "stage": "consumer_params"},
+                            ephemeral_authorization={"granted": False},
+                        )
                         return error_msg, output
 
-                    source_records = list(self.source_label_store.records) if self.source_label_store else []
-                    boundary = check_taer_boundary(
-                        achieved_func, tool_args, anchor_result,
-                        anchor_result.get("consumer_step_id"),
-                        source_records,
-                        self.source_flow_contract_helper,
-                        self._user_explicit_entities,
-                    )
+                    boundary = None
+                    if self.taer_boundary_enabled():
+                        source_records = list(self.source_label_store.records) if self.source_label_store else []
+                        boundary = check_taer_boundary(
+                            achieved_func, tool_args, anchor_result,
+                            anchor_result.get("consumer_step_id"),
+                            source_records,
+                            self.source_flow_contract_helper,
+                            self._user_explicit_entities,
+                        )
+                    else:
+                        self.logger.info(
+                            f"TAER ablation no_scope: skipped boundary guard for {achieved_func}"
+                        )
 
-                    if not boundary.passed:
+                    if boundary is not None and not boundary.passed:
                         self.logger.info(
                             f"TAER boundary blocked {achieved_func}: {boundary.reason}"
                         )
@@ -2276,6 +2473,12 @@ Do not approve unrelated exploration or any new goal.
                         }
                         self._final_decision_owner = "TAER"
                         self.logger.info("Final decision: REJECT (owner=TAER)")
+                        self._runtime_drift_record_taer(
+                            achieved_func, tool_args, "REJECT", plan_match_status="OUT_OF_PLAN",
+                            task_anchor_result={"relation": relation, "confidence": confidence},
+                            bounded_scope={"passed": False, "reason": boundary.reason, "stage": "boundary"},
+                            ephemeral_authorization={"granted": False},
+                        )
                         return error_msg, output
 
                     if relation == "REPAIR":
@@ -2290,11 +2493,7 @@ Do not approve unrelated exploration or any new goal.
                         )
                         self.taer_state.active_consumer_step_id = repair.consumer_step_id
 
-                    self._taer_one_time_auth = {
-                        "tool_name": achieved_func,
-                        "tool_args": dict(tool_args),
-                        "used": False,
-                    }
+                    self._grant_taer_authorization(achieved_func, tool_args)
 
                     if self.logger:
                         self.logger.info(
@@ -2303,6 +2502,15 @@ Do not approve unrelated exploration or any new goal.
                         )
                     self._final_decision_owner = "TAER"
                     self.logger.info(f"Final decision: ALLOW (owner=TAER, relation={relation})")
+                    self._runtime_drift_record_taer(
+                        achieved_func, tool_args, "ALLOW", plan_match_status="OUT_OF_PLAN",
+                        task_anchor_result={"relation": relation, "confidence": confidence,
+                                            "consumer_step_id": anchor_result.get("consumer_step_id")},
+                        bounded_scope={"passed": True if boundary is not None else None,
+                                       "status": "evaluated" if boundary is not None else "disabled"},
+                        ephemeral_authorization={"granted": True,
+                                                 "lifetime": "one_time" if self.taer_ephemeral_enabled() else "task_scoped"},
+                    )
 
                     temp_achieved_trajectory.append(achieved_func)
                     continue
@@ -2324,6 +2532,15 @@ Do not approve unrelated exploration or any new goal.
     def checklist_constraint_validation(self, json_tool_calls, output, query, messages):
         """Judge whether if the parameter checklist conform the data constraints.
         """
+        if self._taer_persistent_auth and json_tool_calls:
+            actual_calls = []
+            for tc in json_tool_calls:
+                tc_args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"].get("arguments", {})
+                actual_calls.append(self._taer_call(tc["function"]["name"], tc_args))
+            if all(call in self._taer_persistent_auth for call in actual_calls):
+                self.logger.info("Persistent TAER authorization matched; skipping checklist rejection")
+                return None, output
+
         if self._taer_one_time_auth is not None and not self._taer_one_time_auth.get("used", True):
             auth = self._taer_one_time_auth
             if json_tool_calls and "tool_calls" in auth:
@@ -2424,6 +2641,9 @@ Do not approve unrelated exploration or any new goal.
         )
         if is_new_conversation:
             self._runtime_read_extensions = {}
+            self._taer_persistent_auth = []
+            if self.runtime_drift_trace_enabled():
+                self._runtime_drift_taer_events = []
 
         if self.source_flow_enabled():
             if not self._source_flow_run_active or is_new_conversation:
@@ -2464,7 +2684,7 @@ Do not approve unrelated exploration or any new goal.
                 self.logger.info("Building Constraints ...")
                 system_message = CONSTRAINTS_BUILD_PROMPT
                 openai_messages = [{"role": "system", "content": system_message}, *openai_messages]
-                completion = self.client.agent_run(openai_messages, self.tools_docs_list)
+                completion = self.client.agent_run(openai_messages, self.tools_docs_list, max_tokens=4096, enable_thinking=False)
 
                 self.initial_constraints_build(completion, query)
 
@@ -2480,7 +2700,7 @@ Do not approve unrelated exploration or any new goal.
                     obs = messages[context["message_index"]]
                     user_prompt = f"""<User Query>\n{query}\n</User Query>
                     <Tool Results>\n{obs}\n</Tool Results>"""
-                    detected_instructions = self.client.llm_run(system_message, user_prompt)
+                    detected_instructions = self.client.llm_run(system_message, user_prompt, max_tokens=1024, enable_thinking=False)
 
                     cycle_times = 0
                     injection_completion_mark, messages, openai_messages = self.injection_isolate(detected_instructions, messages, openai_messages, context)
@@ -2490,7 +2710,7 @@ Do not approve unrelated exploration or any new goal.
                         obs = messages[context["message_index"]]
                         user_prompt = f"""<User Query>\n{query}\n</User Query>
                         <Tool Results>\n{obs}\n</Tool Results>"""
-                        detected_instructions = self.client.llm_run(system_message, user_prompt)
+                        detected_instructions = self.client.llm_run(system_message, user_prompt, max_tokens=1024, enable_thinking=False)
                         injection_completion_mark, messages, openai_messages = self.injection_isolate(detected_instructions, messages, openai_messages, context)
 
         elif source_flow_contexts and self.source_flow_enabled():

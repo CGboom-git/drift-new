@@ -1,0 +1,16 @@
+{
+  "method_name": "RCVR",
+  "config_id": "B4_UNKNOWN_ALLOW",
+  "display_label": "UNKNOWN to Allow",
+  "rcvr_mode": "allow",
+  "compat_rcdc_mode": "allow",
+  "relation_mode": "full",
+  "enable_binding_verification": true,
+  "enable_evidence_isolation": true,
+  "recovery_model_calls_cap": 2,
+  "recovery_read_calls_cap": 2,
+  "recovery_tools": "READ-only runtime tools",
+  "frozen_input_manifest": "experiments/rcdc/targeted_manifest.json",
+  "frozen_input_manifest_sha256": "9ff992713666d11da42d0c461f7a1804aab3a2bce27848b52228646126a53112",
+  "online_started": false
+}

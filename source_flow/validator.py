@@ -125,8 +125,9 @@ class FlowValidationDecision:
 
 
 class ContractHelper:
-    def __init__(self, contracts_dir: str | Path = "contracts") -> None:
+    def __init__(self, contracts_dir: str | Path = "contracts", benchmark: str | None = None) -> None:
         self.contracts_dir = Path(contracts_dir)
+        self.benchmark = benchmark
         self.contracts = self._load_contracts()
 
     def get_tool_type(self, tool_name: str) -> str:
@@ -227,7 +228,14 @@ class ContractHelper:
         for path in self.contracts_dir.rglob("*.json"):
             try:
                 with path.open(encoding="utf-8") as f:
-                    contracts.append(json.load(f))
+                    contract = json.load(f)
+                if self.benchmark is not None and (
+                    not isinstance(contract, dict)
+                    or contract.get("benchmark") != self.benchmark
+                    or not contract.get("contract_version")
+                ):
+                    continue
+                contracts.append(contract)
             except Exception:
                 continue
         return contracts

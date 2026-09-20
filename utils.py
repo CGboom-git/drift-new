@@ -26,13 +26,33 @@ def get_args(description='DRIFT', argv=None):
     # Eval Setting
     parser.add_argument('--benchmark_version', type=str, default='v1.2', help='the version of agentdojo')
     parser.add_argument('--model', type=str, default='gpt-4o-mini-2024-07-18', help='gpt-4o-mini, gpt-4o')
+    parser.add_argument('--temperature', type=float, default=None, help='Optional API sampling temperature. Omit to preserve the provider default.')
+    parser.add_argument(
+        '--openai_max_retries', type=int, default=0,
+        help=(
+            'SDK retries per provider request. Defaults to 0 so an ambiguous transport failure '
+            'cannot create duplicate billable calls; the failed case is instead explicitly marked.'
+        ),
+    )
     parser.add_argument("--suites", type=str, default="banking,slack,travel,workspace", help="which suites to use, separated by comma.")
+    parser.add_argument(
+        "--contract_profile", choices=["auto", "agentdojo", "agentdyn"], default="auto",
+        help="Select the dataset-specific semantic tool contract; auto infers it from --suites.",
+    )
     parser.add_argument('--force_rerun', action='store_true', help='Whether to force rerun.')
     parser.add_argument('--do_attack', action='store_true', help='Whether the setting is under attack.')
     parser.add_argument('--attack_type', type=str, default="important_instructions", help='The attack type, you can select from "direct, ignore_previous, system_message, injecagent, dos, swearwords_dos, captcha_dos, offensive_email_dos, felony_dos, important_instructions, important_instructions_no_user_name, important_instructions_no_model_name, important_instructions_no_names, important_instructions_wrong_model_name, important_instructions_wrong_user_name, tool_knowledge"')
 
     parser.add_argument('--target_user_tasks', type=str, default=None, help='User task number you want to evaluate, sperated by comma, such as "1,4,7".')
     parser.add_argument('--target_injection_tasks', type=str, default=None, help='Injection task number you want to specific evaluate, sperated by comma, such as "1,2,3".')
+    parser.add_argument(
+        '--target_case_manifest', type=str, default=None,
+        help=(
+            'Optional JSON manifest with an exact list of {suite_name, attack_type, '
+            'user_task_id, injection_task_id} cases. This prevents a repair run from '
+            'expanding targeted IDs into a Cartesian product.'
+        ),
+    )
 
     # DRIFT Setting
     parser.add_argument("--build_constraints", action='store_true', help="Whether to build initial constraints.")
@@ -52,11 +72,29 @@ def get_args(description='DRIFT', argv=None):
         help="Enable source-flow validation before ACTION/WRITE execution.",
     )
     parser.add_argument(
+        "--runtime_drift_trace",
+        action="store_true",
+        help=(
+            "Write observational runtime-drift traces for offline analysis. "
+            "Disabled by default and does not affect execution decisions."
+        ),
+    )
+    parser.add_argument(
         "--taer_mode",
         type=str,
         choices=["on", "off"],
         default="off",
         help="TAER mode: on (Trajectory-Aware Execution Recovery enabled), off (use original DRIFT deviation validation).",
+    )
+    parser.add_argument(
+        "--taer_variant",
+        type=str,
+        choices=["full", "no_anchor", "no_ephemeral", "no_scope"],
+        default="full",
+        help=(
+            "Internal TAER ablation. The default 'full' preserves the original TAER algorithm; "
+            "other values affect behavior only when --taer_mode on."
+        ),
     )
     parser.add_argument(
         "--run_tag",
