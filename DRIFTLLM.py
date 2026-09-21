@@ -1911,7 +1911,8 @@ ACTION parameter that can be safely compiled; return [] if none can be expressed
             if self.logger:
                 self.logger.info("Contract-constrained relation compiler rejected non-list model output")
             return False
-        parsed = compile_relation_choices(existing, self.initial_function_trajectory, contract, choices, user_query)
+        parsed = compile_relation_choices(existing, self.initial_function_trajectory, contract, choices, user_query,
+                                           allow_partial=True)
         if parsed is None:
             if self.logger:
                 self.logger.info("Contract-constrained relation compiler rejected model choices")

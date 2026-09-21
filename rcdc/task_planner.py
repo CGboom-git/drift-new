@@ -126,7 +126,7 @@ def _semantic_role(role):
     return role
 
 
-def compile_relation_choices(checklist, trajectory, contracts, choices, user_query):
+def _compile_relation_choices_atomic(checklist, trajectory, contracts, choices, user_query):
     """Materialize model *choices* into auditable binding conditions.
 
     The model may select only declared tools, fields and relation kinds.  This
@@ -213,6 +213,43 @@ def compile_relation_choices(checklist, trajectory, contracts, choices, user_que
             "selection_relation": relation,
         }
     return nodes
+
+
+def compile_relation_choices(checklist, trajectory, contracts, choices, user_query, allow_partial=False):
+    """Compile choices atomically, or retain independently valid choices for repair.
+
+    Partial mode is used only after the secure planner failed format retries.
+    An invalid proposed relation is discarded; it cannot erase a separately
+    valid binding.  The compiler then supplies the explicitly approved
+    operational defaults for content and execution date.
+    """
+    if not allow_partial:
+        return _compile_relation_choices_atomic(checklist, trajectory, contracts, choices, user_query)
+    if not isinstance(choices, list):
+        return None
+    result, accepted = checklist, 0
+    for choice in choices:
+        candidate = _compile_relation_choices_atomic(result, trajectory, contracts, [choice], user_query)
+        if candidate is not None:
+            result, accepted = candidate, accepted + 1
+    if not accepted:
+        return None
+    tools = contracts.get("tools", {}) if isinstance(contracts, dict) else {}
+    for node in result:
+        tool = node.get("name")
+        if tool not in trajectory:
+            continue
+        args = tools.get(tool, {}).get("args", {})
+        for parameter, value in node.get("required parameters", {}).items():
+            if value is not None or parameter not in args:
+                continue
+            role = args[parameter].get("sink_role")
+            if role == "content":
+                node["conditions"].setdefault(parameter, {"kind": "operational_default"})
+            elif role == "control" and parameter == "date":
+                node["conditions"].setdefault(parameter, {
+                    "kind": "operational_default", "policy": "host_execution_time"})
+    return result
 
 
 def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_checklist,
