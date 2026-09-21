@@ -17,10 +17,24 @@
       "user_task_6",
       "user_task_7"
     ],
-    "injection_task_ids": [
-      "injection_task_0",
-      "injection_task_1"
-    ],
+    "injection_task_ids_by_suite": {
+      "banking": [
+        "injection_task_0",
+        "injection_task_1"
+      ],
+      "workspace": [
+        "injection_task_0",
+        "injection_task_1"
+      ],
+      "slack": [
+        "injection_task_1",
+        "injection_task_2"
+      ],
+      "travel": [
+        "injection_task_6",
+        "injection_task_0"
+      ]
+    },
     "attack_type": "important_instructions"
   },
   "task_count": 32,
@@ -223,19 +237,13 @@
       "suite_name": "slack",
       "attack_type": "important_instructions",
       "user_task_id": "user_task_0",
-      "injection_task_id": "injection_task_0"
+      "injection_task_id": "injection_task_1"
     },
     {
       "suite_name": "slack",
       "attack_type": "important_instructions",
       "user_task_id": "user_task_0",
-      "injection_task_id": "injection_task_1"
-    },
-    {
-      "suite_name": "slack",
-      "attack_type": "important_instructions",
-      "user_task_id": "user_task_1",
-      "injection_task_id": "injection_task_0"
+      "injection_task_id": "injection_task_2"
     },
     {
       "suite_name": "slack",
@@ -246,8 +254,8 @@
     {
       "suite_name": "slack",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_2",
-      "injection_task_id": "injection_task_0"
+      "user_task_id": "user_task_1",
+      "injection_task_id": "injection_task_2"
     },
     {
       "suite_name": "slack",
@@ -258,8 +266,8 @@
     {
       "suite_name": "slack",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_3",
-      "injection_task_id": "injection_task_0"
+      "user_task_id": "user_task_2",
+      "injection_task_id": "injection_task_2"
     },
     {
       "suite_name": "slack",
@@ -270,8 +278,8 @@
     {
       "suite_name": "slack",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_4",
-      "injection_task_id": "injection_task_0"
+      "user_task_id": "user_task_3",
+      "injection_task_id": "injection_task_2"
     },
     {
       "suite_name": "slack",
@@ -282,8 +290,8 @@
     {
       "suite_name": "slack",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_5",
-      "injection_task_id": "injection_task_0"
+      "user_task_id": "user_task_4",
+      "injection_task_id": "injection_task_2"
     },
     {
       "suite_name": "slack",
@@ -294,8 +302,8 @@
     {
       "suite_name": "slack",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_6",
-      "injection_task_id": "injection_task_0"
+      "user_task_id": "user_task_5",
+      "injection_task_id": "injection_task_2"
     },
     {
       "suite_name": "slack",
@@ -306,14 +314,26 @@
     {
       "suite_name": "slack",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_7",
-      "injection_task_id": "injection_task_0"
+      "user_task_id": "user_task_6",
+      "injection_task_id": "injection_task_2"
     },
     {
       "suite_name": "slack",
       "attack_type": "important_instructions",
       "user_task_id": "user_task_7",
       "injection_task_id": "injection_task_1"
+    },
+    {
+      "suite_name": "slack",
+      "attack_type": "important_instructions",
+      "user_task_id": "user_task_7",
+      "injection_task_id": "injection_task_2"
+    },
+    {
+      "suite_name": "travel",
+      "attack_type": "important_instructions",
+      "user_task_id": "user_task_0",
+      "injection_task_id": "injection_task_6"
     },
     {
       "suite_name": "travel",
@@ -324,8 +344,8 @@
     {
       "suite_name": "travel",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_0",
-      "injection_task_id": "injection_task_1"
+      "user_task_id": "user_task_1",
+      "injection_task_id": "injection_task_6"
     },
     {
       "suite_name": "travel",
@@ -336,8 +356,8 @@
     {
       "suite_name": "travel",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_1",
-      "injection_task_id": "injection_task_1"
+      "user_task_id": "user_task_2",
+      "injection_task_id": "injection_task_6"
     },
     {
       "suite_name": "travel",
@@ -348,8 +368,8 @@
     {
       "suite_name": "travel",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_2",
-      "injection_task_id": "injection_task_1"
+      "user_task_id": "user_task_3",
+      "injection_task_id": "injection_task_6"
     },
     {
       "suite_name": "travel",
@@ -360,8 +380,8 @@
     {
       "suite_name": "travel",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_3",
-      "injection_task_id": "injection_task_1"
+      "user_task_id": "user_task_4",
+      "injection_task_id": "injection_task_6"
     },
     {
       "suite_name": "travel",
@@ -372,8 +392,8 @@
     {
       "suite_name": "travel",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_4",
-      "injection_task_id": "injection_task_1"
+      "user_task_id": "user_task_5",
+      "injection_task_id": "injection_task_6"
     },
     {
       "suite_name": "travel",
@@ -384,8 +404,8 @@
     {
       "suite_name": "travel",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_5",
-      "injection_task_id": "injection_task_1"
+      "user_task_id": "user_task_6",
+      "injection_task_id": "injection_task_6"
     },
     {
       "suite_name": "travel",
@@ -396,20 +416,14 @@
     {
       "suite_name": "travel",
       "attack_type": "important_instructions",
-      "user_task_id": "user_task_6",
-      "injection_task_id": "injection_task_1"
+      "user_task_id": "user_task_7",
+      "injection_task_id": "injection_task_6"
     },
     {
       "suite_name": "travel",
       "attack_type": "important_instructions",
       "user_task_id": "user_task_7",
       "injection_task_id": "injection_task_0"
-    },
-    {
-      "suite_name": "travel",
-      "attack_type": "important_instructions",
-      "user_task_id": "user_task_7",
-      "injection_task_id": "injection_task_1"
     }
   ]
 }

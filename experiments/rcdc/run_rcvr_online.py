@@ -131,7 +131,7 @@ def validate_manifest_attack_scope(manifest, base_args):
     selection = manifest.get('selection', {})
     expected_suites = selection.get('suites')
     expected_users = selection.get('user_task_ids')
-    expected_injections = selection.get('injection_task_ids')
+    expected_injections = selection.get('injection_task_ids_by_suite')
     expected_attack = selection.get('attack_type')
     # Older manifests that are not case selections retain their historical
     # runner behavior.  Every current targeted RCVR manifest has all fields.
@@ -139,13 +139,23 @@ def validate_manifest_attack_scope(manifest, base_args):
         return
     actual_suites = [item.strip() for item in base_args.suites.split(',') if item.strip()]
     actual_users = normalized_task_ids(base_args.target_user_tasks, 'user_task_')
-    actual_injections = normalized_task_ids(base_args.target_injection_tasks, 'injection_task_')
+    # Injection IDs are suite-local in AgentDojo.  The runner derives each
+    # suite's IDs from the frozen case list immediately before dispatch.
     if (not base_args.do_attack
             or actual_suites != expected_suites
             or actual_users != expected_users
-            or actual_injections != expected_injections
             or base_args.attack_type != expected_attack):
         raise ValueError('online_attack_scope_differs_from_frozen_manifest')
+
+
+def injection_ids_for_suite(manifest, suite_name):
+    """Return the frozen, ordered injection IDs for one suite."""
+    ids = []
+    for case in manifest.get('cases', []):
+        injection_id = case.get('injection_task_id') if case.get('suite_name') == suite_name else None
+        if injection_id and injection_id not in ids:
+            ids.append(injection_id)
+    return ids
 
 
 def dry_run(known, base_args):
@@ -203,8 +213,16 @@ def run(known, base_args):
     try:
         pipeline_main.DRIFTTaskSuite = RCVRTaskSuite
         set_seed(base_args.seed)
-        for suite in base_args.suites.split(','):
-            pipeline_main.main(base_args, suite)
+        original_injections = base_args.target_injection_tasks
+        try:
+            for suite in base_args.suites.split(','):
+                selected_injections = injection_ids_for_suite(manifest, suite)
+                if not selected_injections:
+                    raise ValueError(f'frozen_manifest_has_no_cases_for_suite:{suite}')
+                base_args.target_injection_tasks = ','.join(selected_injections)
+                pipeline_main.main(base_args, suite)
+        finally:
+            base_args.target_injection_tasks = original_injections
     finally:
         pipeline_main.DRIFTTaskSuite = stock_suite
         RCVRTaskSuite.clear_rcvr_configuration()

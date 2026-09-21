@@ -11,7 +11,7 @@
   "recovery_read_calls_cap": 2,
   "recovery_tools": "READ-only runtime tools",
   "frozen_input_manifest": "experiments/rcdc/rcvr_structural_64case_manifest.json",
-  "frozen_input_manifest_sha256": "541f08dd2dd7337577f1a0cba7c7f3479101644cf10f8aab5c0e7790f26aa623",
+  "frozen_input_manifest_sha256": "098da60048d3b22a1ea2683571a20d583704f2323a5b3c5602e4917fa9cd2398",
   "contract_profile": "agentdojo",
   "online_started": false
 }
