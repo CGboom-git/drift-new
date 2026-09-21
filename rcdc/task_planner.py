@@ -100,6 +100,9 @@ def _binding_rule(parameter, condition, fixed_values, contracts):
             return None
         normalized_predicates.append({"field": field, "value": value, "operator": operator})
     comparison = condition.get("comparison", "exact")
+    field_role = _semantic_role(contracts.get("tools", {}).get(source_tool, {}).get("output_semantics", {}).get("fields", {}).get(value_field, {}).get("role"))
+    if comparison == "exact" and field_role == "financial_value":
+        comparison = "number"
     if comparison not in {"exact", "number", "set_of_strings"}:
         return None
     rule = {
