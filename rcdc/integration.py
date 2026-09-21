@@ -13,6 +13,7 @@ from .schema import Call, Decision, Witness, canonical, digest
 from .binding_witness import evaluate
 from .checkpoint import capture as capture_checkpoint
 from .task_spec_registry import coverage as task_spec_coverage
+from .taer_policy import assess_deterministic_candidate
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -102,6 +103,20 @@ class ExperimentalExecutor(ToolsExecutor):
     def _unified_decision(self, spec, call, raw):
         """One three-valued verdict from immutable constraints and SourceFlow."""
         binding = evaluate(spec, call, self.ledger, self.gate.relation_mode)
+        taer_state = getattr(self.llm, 'taer_state', None)
+        taer = assess_deterministic_candidate(
+            call.tool, json.loads(call.arguments), taer_state,
+            boundary_enabled=bool(getattr(self.llm, 'taer_boundary_enabled', lambda: False)()),
+            source_records=list(getattr(getattr(self.llm, 'source_label_store', None), 'records', []) or []),
+            contract_helper=getattr(self.llm, 'source_flow_contract_helper', None),
+            explicit_entities=getattr(self.llm, '_user_explicit_entities', []),
+        ) if getattr(getattr(self.llm, 'args', None), 'taer_mode', 'off') == 'on' else None
+        if taer is not None and taer.verdict == 'INVALID':
+            witness = Witness(call.call_id, call.tool, '*', canonical({}), spec.constraint_id, None,
+                              'taer_backbone', 'task_anchor', 'authorization', True, 'INVALID',
+                              taer.reason, 'TAER', 'taer_deterministic_policy', self.ledger.revision)
+            return Decision('INVALID', tuple([*binding.witnesses, witness]), (),
+                            digest(dataclasses.asdict(call)), spec.constraint_id, self.ledger.revision)
         flow = self.llm._source_flow_validate_tool_calls(
             {'role': 'assistant', 'content': '', 'tool_calls': [raw]})
         if flow is None:

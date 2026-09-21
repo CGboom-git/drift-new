@@ -9,6 +9,7 @@ from rcdc.events import EvidenceLedger, HostFeedbackRegistry
 from rcdc.binding_witness import evaluate, fresh
 from rcdc.recovery import Recovery
 from rcdc.adapter import Gate, attach
+from rcdc.taer_policy import assess_deterministic_candidate
 
 
 class MechanismTests(unittest.TestCase):
@@ -129,6 +130,23 @@ class MechanismTests(unittest.TestCase):
         recovery._complete_taer_repair({'success': False, 'tool_call_id': 'read-2'})
         self.assertEqual(failed.status, 'rolled_back')
         self.assertEqual(state.repair_rollback_count, 1)
+
+    def test_taer_backbone_conflict_is_validator_evidence_not_dispatch(self):
+        from taer.models import BackboneStep, TAERState
+        state = TAERState(initialized=True, backbone_order=['s1'], backbone_steps={
+            's1': BackboneStep('s1', 0, 'send_money', 'refund',
+                               required_parameters={'recipient': 'GB29'}, status='ready'),
+        })
+        conflict = assess_deterministic_candidate(
+            'send_money', {'recipient': 'US133'}, state, boundary_enabled=False,
+            source_records=[], contract_helper=None, explicit_entities=[])
+        self.assertEqual((conflict.verdict, conflict.reason),
+                         ('INVALID', 'taer_backbone_parameter_conflict'))
+        allowed = assess_deterministic_candidate(
+            'send_money', {'recipient': 'GB29'}, state, boundary_enabled=False,
+            source_records=[], contract_helper=None, explicit_entities=[])
+        self.assertEqual((allowed.verdict, allowed.reason),
+                         ('VALID', 'taer_backbone_direct_effect'))
 
     def test_host_spoof_and_mutation(self):
         registry = HostFeedbackRegistry(); m = registry.issue({'verdict': 'VALID'})
