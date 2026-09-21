@@ -455,7 +455,7 @@ class FlowAwareValidator:
 
             default_policy = spec.raw_condition.get("policy") if isinstance(spec.raw_condition, dict) else None
             if (spec.operational_default and (
-                    (sink_role == "content" and not self.contract_helper.is_high_risk_arg(tool_name, arg_name))
+                    (sink_role == "content" and not contract_helper.is_high_risk_arg(tool_name, arg_name))
                     or (sink_role == "control" and arg_name == "date" and default_policy == "host_execution_time"))):
                 valid_args[arg_name] = value
                 continue
