@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from rcdc.constraint_spec import compile_anchor_spec
 from rcdc.task_planner import compile_relation_choices, freeze_from_secure_plan
+from rcdc.binding_ir import from_anchor
 
 
 CONTRACTS = {'tools': {
@@ -54,6 +55,12 @@ class PlannerAnchorTests(unittest.TestCase):
         self.assertIsNone(compile_anchor_spec(self.anchor, 'unplanned_effect', CONTRACTS))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             self.anchor.user_task = 'changed'
+
+    def test_binding_ir_contains_only_frozen_anchor_rules(self):
+        nodes = json.loads(from_anchor(self.anchor))
+        self.assertEqual([node['name'] for node in nodes], ['lookup_record', 'commit_effect'])
+        self.assertEqual(nodes[1]['required parameters']['target'], 'object-17')
+        self.assertNotIn('value', nodes[1]['conditions'])
 
     def test_structured_planner_relation_compiles_to_existing_witness_rule(self):
         anchor = freeze_from_secure_plan('suite/user_task_x', 'Apply the requested effect to object-17.',

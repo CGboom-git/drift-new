@@ -13,6 +13,7 @@ from DRIFTTaskSuite import DRIFTTaskSuite
 from agentdojo.agent_pipeline import AgentPipeline, InitQuery
 from .integration import components
 from .task_planner import freeze_from_secure_plan
+from .binding_ir import from_anchor
 
 
 class RCVRTaskSuite(DRIFTTaskSuite):
@@ -97,6 +98,7 @@ class RCVRTaskSuite(DRIFTTaskSuite):
                 anchor = freeze_from_secure_plan(task_id, prompt, initial_trajectory,
                                                  initial_checklist, backbone, self._rcvr_contracts)
                 llm._rcvr_task_anchor = anchor
+                llm._rcvr_binding_ir = from_anchor(anchor)
                 events.append({'event': 'task_anchor_frozen', 'anchor_id': anchor.anchor_id,
                                'planner_version': anchor.planner_version,
                                'planner_metadata': json.loads(anchor.planner_metadata)})
@@ -139,7 +141,7 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             result = super().run_task_with_pipeline(rcvr_pipeline, user_task, injection_task,
                                                     injections, *args, **kwargs)
         finally:
-            for attr in ('_rcvr_task_anchor_callback', '_rcvr_task_anchor', '_rcvr_unified_final_owner'):
+            for attr in ('_rcvr_task_anchor_callback', '_rcvr_task_anchor', '_rcvr_binding_ir', '_rcvr_unified_final_owner'):
                 if hasattr(llm, attr):
                     delattr(llm, attr)
             if hasattr(self, '_capture_pre_environment_for_rcvr'):

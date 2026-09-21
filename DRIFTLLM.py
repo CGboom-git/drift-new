@@ -165,7 +165,7 @@ class DRIFTLLM(PromptingLLM):
         if not self.source_flow_validation_enabled() or not self.source_label_store:
             return {}
         try:
-            specs = self.source_flow_compiler.spec_map(self.node_checklist, tool_name, tool_args or {})
+            specs = self.source_flow_compiler.spec_map(getattr(self, '_rcvr_binding_ir', self.node_checklist), tool_name, tool_args or {})
             evidence = self.source_flow_resolver.resolve_args(
                 tool_name, tool_args or {}, specs, self.source_label_store,
                 self.source_flow_contract_helper,
@@ -463,7 +463,7 @@ class DRIFTLLM(PromptingLLM):
                 trajectory_state,
             )
             sink_specs = self.source_flow_compiler.spec_map(
-                self.node_checklist,
+                getattr(self, '_rcvr_binding_ir', self.node_checklist),
                 tool_name,
                 tool_args,
             )
@@ -2071,7 +2071,7 @@ emit only kind operational_default with policy host_execution_time. Do not emit 
         if tool_args.get("file_id") in (None, "") or tool_args.get("content") in (None, ""):
             return False
 
-        specs = self.source_flow_compiler.spec_map(self.node_checklist, tool_name, tool_args)
+        specs = self.source_flow_compiler.spec_map(getattr(self, '_rcvr_binding_ir', self.node_checklist), tool_name, tool_args)
         evidence = self.source_flow_resolver.resolve_args(
             tool_name, tool_args, specs, self.source_label_store,
             self.source_flow_contract_helper,
