@@ -42,7 +42,19 @@ def select(payload, rule):
     selected = []
     ids = set()
     for row in payload:
-        identity = field(row, rule['identity_field']) if rule.get('identity_field') else row
+        # ``identity_field`` is planner metadata used only to detect duplicate
+        # rows.  Tool input contracts rarely declare a response schema, so a
+        # planner may name an unavailable identifier (for example
+        # ``transaction_id`` when this particular backend exposes ``id``).
+        # That must not discard an otherwise fully specified, uniquely
+        # selected binding.  Fall back to the complete structured row, which
+        # still detects literal duplicate records without inventing a value.
+        try:
+            identity = field(row, rule['identity_field']) if rule.get('identity_field') else row
+        except ValueError as exc:
+            if str(exc) != 'missing_field':
+                raise
+            identity = row
         key = canonical(identity)
         if key in ids:
             raise ValueError('ambiguous_record_identity')

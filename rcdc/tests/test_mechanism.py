@@ -1,6 +1,7 @@
 import argparse
 import copy
 import dataclasses
+import json
 import unittest
 from types import SimpleNamespace
 from rcdc import add_arguments
@@ -68,6 +69,18 @@ class MechanismTests(unittest.TestCase):
         spec = ConstraintSpec.create('t', None, self.call.tool, [fixed('user', 'Charlie')])
         c = Call.create('t', 'c', self.call.tool, {'user': 'Charlie', 'derived_from_authorized_source': False}, 10)
         self.assertEqual(evaluate(spec, c, self.ledger).verdict, 'VALID')
+
+    def test_unavailable_planner_identity_field_falls_back_to_structured_row(self):
+        """Response identifiers are optional metadata, not binding evidence."""
+        spec = dataclasses.replace(self.spec, binding_rules=json.dumps([{
+            'parameter': 'channel', 'source_tool': 'get_channels', 'request': {},
+            'predicates': [{'field': 'name', 'operator': 'equals', 'value': 'External-project'}],
+            'value_field': 'name', 'identity_field': 'planner_record_id',
+            'rule_id': 'R3', 'comparison': 'exact',
+            'relation_type': 'unique_object_field', 'authority_basis': 'test',
+        }]))
+        self.observe([{'id': 'row-1', 'name': 'External-project'}])
+        self.assertEqual(evaluate(spec, self.call, self.ledger).verdict, 'VALID')
 
     def test_invalid_cannot_enter_recovery(self):
         self.observe()
