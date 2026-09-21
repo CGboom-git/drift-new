@@ -1903,12 +1903,18 @@ ACTION parameter that can be safely compiled; return [] if none can be expressed
                            'frozen_checklist': existing, 'tools': allowed_tools,
                            'binding_capabilities': contract.get('binding_capabilities', {})}, ensure_ascii=False)
         answer = self.client.llm_run(instruction, data, max_tokens=2048, enable_thinking=False)
+        if self.logger:
+            self.logger.info("Contract-constrained relation choices: %s", answer)
         try:
             choices = json.loads(self._extract_checklist_json(answer) or '')
         except (TypeError, ValueError):
+            if self.logger:
+                self.logger.info("Contract-constrained relation compiler rejected non-list model output")
             return False
         parsed = compile_relation_choices(existing, self.initial_function_trajectory, contract, choices, user_query)
         if parsed is None:
+            if self.logger:
+                self.logger.info("Contract-constrained relation compiler rejected model choices")
             return False
         candidate = json.dumps(parsed, ensure_ascii=False)
         previous = self.initial_node_checklist
@@ -1916,6 +1922,8 @@ ACTION parameter that can be safely compiled; return [] if none can be expressed
         self.initial_node_checklist = candidate
         complete = self._initial_plan_complete(user_query)
         if not complete:
+            if self.logger:
+                self.logger.info("Contract-constrained relation compiler produced incomplete checklist")
             self.node_checklist = previous
             self.initial_node_checklist = previous
             return False
