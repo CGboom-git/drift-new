@@ -41,6 +41,7 @@ class DRIFTLLM(PromptingLLM):
         self.achieved_function_trajectory = []
         self.node_checklist = "None"
         self.initial_node_checklist = "None"
+        self.initial_planner_incomplete_reason = ""
         self.tool_permissions = {}
         self.source_label_store = SourceLabelStore()
         self.source_flow_contract_helper = ContractHelper(
@@ -1637,6 +1638,7 @@ Do not approve unrelated exploration or any new goal.
         self._runtime_read_extensions = {}
         self._taer_persistent_auth = []
         self.initial_planner_complete = False
+        self.initial_planner_incomplete_reason = ""
         text = completion[0] if isinstance(completion, list) and completion else str(completion)
 
         if re.search(r"<\s*(?:function_trajectory|traj-1)\s*>", text, re.IGNORECASE):
@@ -1731,9 +1733,60 @@ Do not approve unrelated exploration or any new goal.
     def _initial_plan_complete(self):
         checklist = self._normalize_initial_checklist(self.initial_node_checklist)
         if not self.initial_function_trajectory or checklist is None:
+            self.initial_planner_incomplete_reason = "missing_trajectory_or_checklist"
             return False
-        return (len(checklist) == len(self.initial_function_trajectory)
-                and all(node['name'] == tool for node, tool in zip(checklist, self.initial_function_trajectory)))
+        if (len(checklist) != len(self.initial_function_trajectory)
+                or not all(node['name'] == tool for node, tool in zip(checklist, self.initial_function_trajectory))):
+            self.initial_planner_incomplete_reason = "trajectory_checklist_misalignment"
+            return False
+        for node in checklist:
+            tool = node['name']
+            tool_type = str(self.source_flow_contract_helper.get_tool_type(tool)).lower()
+            if tool_type not in {"action", "write", "execute"}:
+                continue
+            required, conditions = node['required parameters'], node['conditions']
+            for parameter, condition in conditions.items():
+                if not self._planner_condition_has_source(condition) or required.get(parameter) is not None:
+                    continue
+                role = self.source_flow_contract_helper.get_arg_role(tool, parameter)
+                if role in {"target", "control"} and not self._planner_relation_complete(condition, required):
+                    self.initial_planner_incomplete_reason = f"ungrounded_read_relation:{tool}.{parameter}"
+                    return False
+        self.initial_planner_incomplete_reason = ""
+        return True
+
+    @staticmethod
+    def _planner_condition_has_source(condition):
+        return ((isinstance(condition, str) and bool(condition))
+                or (isinstance(condition, dict) and bool(condition.get("source_tool"))))
+
+    @staticmethod
+    def _planner_relation_complete(condition, required_parameters):
+        if not isinstance(condition, dict):
+            return False
+        if not isinstance(condition.get("source_tool"), str) or not condition["source_tool"]:
+            return False
+        if not isinstance(condition.get("request", {}), dict):
+            return False
+        if not isinstance(condition.get("value_field"), str) or not condition["value_field"]:
+            return False
+        if not isinstance(condition.get("identity_field", ""), str):
+            return False
+        predicates = condition.get("predicates")
+        if not isinstance(predicates, list) or not predicates:
+            return False
+        for predicate in predicates:
+            if not isinstance(predicate, dict) or not isinstance(predicate.get("field"), str):
+                return False
+            if predicate.get("operator", "equals") not in {"equals", "prefix", "date"}:
+                return False
+            if "value_from_parameter" in predicate:
+                reference = predicate["value_from_parameter"]
+                if not isinstance(reference, str) or required_parameters.get(reference) is None:
+                    return False
+            elif "value" not in predicate:
+                return False
+        return True
 
     def _extract_user_explicit_entities(self, query_text):
         entities = set()
@@ -2751,7 +2804,8 @@ Do not approve unrelated exploration or any new goal.
                         f"({planner_format_attempts}/3)."
                     )
                     retry = {"role": "user", "content": (
-                        "Return the complete initial secure plan again. Include exactly one "
+                        f"Return the complete initial secure plan again. The previous plan was incomplete: "
+                        f"{self.initial_planner_incomplete_reason}. Include exactly one "
                         "<function_trajectory>...</function_trajectory> and one "
                         "<parameter_checklist>...</parameter_checklist>. The checklist must be a JSON list "
                         "with one node, in the same order, for every trajectory function.")}
