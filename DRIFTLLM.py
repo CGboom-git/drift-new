@@ -1914,6 +1914,26 @@ ACTION parameter that can be safely compiled; return [] if none can be expressed
         parsed = compile_relation_choices(existing, self.initial_function_trajectory, contract, choices, user_query,
                                            allow_partial=True)
         if parsed is None:
+            repair_instruction = """Your previous RelationChoice list was rejected. Return ONLY a corrected JSON list.
+Use only source tools whose output_semantics declares every referenced field. The ONLY legal selection operators
+are equals, prefix, and date; never use is_null. A fixed_action_parameter may name only an already non-null action
+parameter. For a task-semantic runtime value select a declared READ record field and select that record with a
+user_literal that appears verbatim in user_query. For content emit only kind operational_default; for action date
+emit only kind operational_default with policy host_execution_time. Do not emit a choice you cannot express."""
+            retry = self.client.llm_run(repair_instruction, json.dumps({
+                'user_query': user_query, 'trajectory': self.initial_function_trajectory,
+                'tools': allowed_tools, 'binding_capabilities': contract.get('binding_capabilities', {}),
+                'rejected_choices': choices}, ensure_ascii=False), max_tokens=1536, enable_thinking=False)
+            try:
+                repaired_choices = json.loads(self._extract_checklist_json(retry) or '')
+            except (TypeError, ValueError):
+                repaired_choices = None
+            if isinstance(repaired_choices, list):
+                parsed = compile_relation_choices(existing, self.initial_function_trajectory, contract,
+                                                   repaired_choices, user_query, allow_partial=True)
+                if self.logger:
+                    self.logger.info("Contract-constrained relation repair choices: %s", retry)
+        if parsed is None:
             if self.logger:
                 self.logger.info("Contract-constrained relation compiler rejected model choices")
             return False
