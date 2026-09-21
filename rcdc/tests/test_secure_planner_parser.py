@@ -1,4 +1,7 @@
 import unittest
+from types import SimpleNamespace
+
+from pydantic import BaseModel
 
 from DRIFTLLM import DRIFTLLM
 
@@ -27,6 +30,20 @@ class SecurePlannerParserTests(unittest.TestCase):
         self.assertTrue(DRIFTLLM._is_structured_runtime_relation({
             'source_tool': 'lookup_record', 'request': {},
             'predicates': [{'field': 'target', 'value': 'object-17'}], 'value_field': 'value'}))
+
+    def test_runtime_relation_uses_declared_return_fields(self):
+        class Record(BaseModel):
+            id: int
+            sender: str
+            amount: float
+
+        schema = DRIFTLLM._tool_output_schema(SimpleNamespace(return_type=list[Record]))
+        valid = {'source_tool': 'lookup_record', 'request': {},
+                 'predicates': [{'field': 'sender', 'value': 'person'}],
+                 'value_field': 'amount', 'identity_field': 'id'}
+        invalid = {**valid, 'identity_field': 'transaction_id'}
+        self.assertTrue(DRIFTLLM._structured_relation_matches_return_schema(valid, schema))
+        self.assertFalse(DRIFTLLM._structured_relation_matches_return_schema(invalid, schema))
 
 
 if __name__ == '__main__':

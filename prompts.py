@@ -48,6 +48,10 @@ CONSTRAINTS_BUILD_PROMPT = """
         source-tool condition is insufficient for an ACTION parameter: leave
         the plan incomplete rather than authorizing a value without a record
         selection rule.
+        Every tool description includes an optional return_schema. When it is
+        present, source_tool, predicate fields, value_field, and identity_field
+        must use exactly those schema field names. Do not make up an output
+        field from a tool name or from the user request.
         A READ request limit, result position, or "first/latest" wording by
         itself never identifies an authorized record. For a structured record
         relation, provide at least one predicate grounded in an explicit user

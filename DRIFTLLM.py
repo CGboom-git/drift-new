@@ -1784,6 +1784,42 @@ Do not approve unrelated exploration or any new goal.
                 and isinstance(condition.get('value_field'), str)
                 and bool(condition.get('value_field')))
 
+    @staticmethod
+    def _return_schema_fields(schema):
+        """Return top-level record fields from a tool's declared return type."""
+        if not isinstance(schema, dict):
+            return set()
+        definitions = schema.get('$defs', {})
+
+        def resolve(value):
+            while isinstance(value, dict) and isinstance(value.get('$ref'), str):
+                ref = value['$ref']
+                if not ref.startswith('#/$defs/'):
+                    return value
+                value = definitions.get(ref.rsplit('/', 1)[-1], {})
+            return value if isinstance(value, dict) else {}
+
+        current = resolve(schema)
+        while current.get('type') == 'array':
+            current = resolve(current.get('items', {}))
+        return set(current.get('properties', {})) if isinstance(current.get('properties'), dict) else set()
+
+    @classmethod
+    def _structured_relation_matches_return_schema(cls, condition, return_schema):
+        fields = cls._return_schema_fields(return_schema)
+        if not fields:
+            return True
+        referenced = [condition.get('value_field'), condition.get('identity_field')]
+        referenced.extend(predicate.get('field') for predicate in condition.get('predicates', [])
+                          if isinstance(predicate, dict))
+        return all(not field or field in fields for field in referenced)
+
+    def _tool_return_schema(self, tool_name):
+        for tool in getattr(self, 'tools_docs_list', []):
+            if tool.get('name') == tool_name:
+                return tool.get('return_schema')
+        return None
+
     def _initial_plan_complete(self, user_query=""):
         checklist = self._normalize_initial_checklist(self.initial_node_checklist)
         if not self.initial_function_trajectory or checklist is None:
@@ -1797,7 +1833,10 @@ Do not approve unrelated exploration or any new goal.
                 continue
             for parameter, value in node['required parameters'].items():
                 if value is None:
-                    if not self._is_structured_runtime_relation(node['conditions'].get(parameter)):
+                    condition = node['conditions'].get(parameter)
+                    if (not self._is_structured_runtime_relation(condition)
+                            or not self._structured_relation_matches_return_schema(
+                                condition, self._tool_return_schema(condition['source_tool']))):
                         return False
                 elif not self._planner_action_value_is_grounded(value, user_query):
                     return False
@@ -2745,6 +2784,18 @@ Do not approve unrelated exploration or any new goal.
 
         return align_error_message, output
 
+    @staticmethod
+    def _tool_output_schema(tool):
+        """Expose declared return structure to the secure planner, not data."""
+        return_type = getattr(tool, 'return_type', None)
+        if return_type is None:
+            return None
+        try:
+            from pydantic import TypeAdapter
+            return TypeAdapter(return_type).json_schema()
+        except (TypeError, ValueError):
+            return None
+
     def achieve_tools(
         self,
         tools: Sequence[Function]
@@ -2756,6 +2807,7 @@ Do not approve unrelated exploration or any new goal.
                 "name": tool.name,
                 "description": tool.description,
                 "parameters": tool.parameters.model_json_schema(),
+                "return_schema": self._tool_output_schema(tool),
             }
             tools_docs_list.append(tool_dict)
 
