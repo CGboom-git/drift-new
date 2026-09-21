@@ -107,6 +107,29 @@ class MechanismTests(unittest.TestCase):
         recovery.step(lambda h: {'tool': 'get_channels', 'arguments': {'page': 2}}, dispatched.append, lambda: 12)
         self.assertEqual(len(dispatched), 1)
 
+    def test_rcvr_recovery_owns_taer_repair_completion(self):
+        from taer.models import BackboneStep, RepairStep, TAERState
+        state = TAERState(backbone_order=['s1'], backbone_steps={
+            's1': BackboneStep('s1', 0, 'add_user_to_channel', 'consumer',
+                               condition_states={'channel': False}),
+        })
+        recovery = Recovery(self.spec, self.call, self.ledger, evaluate(self.spec, self.call, self.ledger),
+                            'full', 1, [], lambda e: None, taer_context={'state': state})
+        repair = RepairStep('r0', 'get_channels', consumer_step_id='s1', missing_condition='channel')
+        state.repair_steps[repair.repair_id] = repair
+        recovery.register_taer_repair(repair)
+        recovery._complete_taer_repair({'success': True, 'tool_call_id': 'read-1'})
+        self.assertEqual(repair.status, 'done')
+        self.assertEqual(repair.tool_call_id, 'read-1')
+        self.assertEqual(state.backbone_steps['s1'].status, 'ready')
+        self.assertEqual(state.repair_success_count, 1)
+        failed = RepairStep('r1', 'get_channels', consumer_step_id='s1')
+        state.repair_steps[failed.repair_id] = failed
+        recovery.register_taer_repair(failed)
+        recovery._complete_taer_repair({'success': False, 'tool_call_id': 'read-2'})
+        self.assertEqual(failed.status, 'rolled_back')
+        self.assertEqual(state.repair_rollback_count, 1)
+
     def test_host_spoof_and_mutation(self):
         registry = HostFeedbackRegistry(); m = registry.issue({'verdict': 'VALID'})
         self.assertTrue(registry.authentic(m)); self.assertFalse(registry.authentic(copy.deepcopy(m)))
