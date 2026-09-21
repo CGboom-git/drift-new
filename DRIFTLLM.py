@@ -1888,6 +1888,57 @@ Do not approve unrelated exploration or any new goal.
             for name, data in contract.get("tools", {}).items()
             if name in action_tools or str(data.get("tool_type", "")).startswith("READ")
         }
+        # Enumerate complete, contract-valid choices.  The model will select an
+        # id only; it never writes a source, field, predicate, or literal.
+        candidates = []
+        caps = contract.get('binding_capabilities', {})
+        compat = caps.get('parameter_role_compatibility', {})
+        read_nodes = {node.get('name'): node for node in existing}
+        for node in existing:
+            action = node.get('name')
+            args = contract.get('tools', {}).get(action, {}).get('args', {})
+            for parameter, current in node.get('required parameters', {}).items():
+                if current is not None or parameter not in args:
+                    continue
+                for source, source_spec in allowed_tools.items():
+                    if not str(source_spec.get('tool_type', '')).startswith('READ'):
+                        continue
+                    fields = source_spec.get('output_semantics', {}).get('fields', {})
+                    for value_field, value_info in fields.items():
+                        role = str(value_info.get('role', ''))
+                        role = 'principal' if role.startswith('principal') else role
+                        if role not in compat.get(args[parameter].get('sink_role'), []):
+                            continue
+                        for selector, selector_info in fields.items():
+                            if not str(selector_info.get('role', '')).startswith('principal'):
+                                continue
+                            for fixed_name, fixed_value in node.get('required parameters', {}).items():
+                                if fixed_value is not None and self._planner_action_value_is_grounded(fixed_value, user_query):
+                                    candidates.append({'action_tool': action, 'parameter': parameter, 'source_tool': source,
+                                        'relation': 'unique_selected_record_field', 'value_field': value_field,
+                                        'identity_field': 'id' if 'id' in fields else '',
+                                        'request': read_nodes.get(source, {}).get('required parameters', {}),
+                                        'selection': [{'field': selector, 'operator': 'equals',
+                                                       'value': {'kind': 'user_literal', 'value': fixed_value}}]})
+        if candidates:
+            choice_prompt = "Return ONLY a JSON list of integer candidate ids that express the user task. Do not write objects."
+            ids_text = self.client.llm_run(choice_prompt, json.dumps({'user_query': user_query,
+                'candidates': [{'id': i, 'choice': c} for i, c in enumerate(candidates)]}, ensure_ascii=False),
+                max_tokens=256, enable_thinking=False)
+            try:
+                ids = json.loads(self._extract_checklist_json(ids_text) or '')
+                selected = [candidates[i] for i in ids if isinstance(i, int) and 0 <= i < len(candidates)]
+            except (TypeError, ValueError):
+                selected = []
+            parsed = compile_relation_choices(existing, self.initial_function_trajectory, contract, selected, user_query,
+                                               allow_partial=True) if selected else None
+            if parsed is not None:
+                candidate = json.dumps(parsed, ensure_ascii=False)
+                self.node_checklist = self.initial_node_checklist = candidate
+                if self._initial_plan_complete(user_query):
+                    self.initial_planner_complete = True
+                    self._notify_rcvr_task_anchor()
+                    return True
         instruction = """Return ONLY a JSON list of constrained RelationChoice objects.
 You are selecting relations for an already frozen plan, not writing the plan. Each object has
 action_tool, parameter, source_tool, relation, value_field, identity_field, request and selection.
