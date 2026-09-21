@@ -334,7 +334,7 @@ def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_chec
             if parameter in contract_args and value is None and parameter == "date":
                 conditions.setdefault(parameter, {
                     "kind": "operational_default", "policy": "host_execution_time"})
-        fixed_constraints, origin_rules, binding_rules, unresolved_slots = [], [], [], []
+        fixed_constraints, origin_rules, binding_rules, unresolved_slots, derived_content_slots = [], [], [], [], []
         operational_defaults = [
             {"parameter": parameter, "policy": condition.get("policy")}
             for parameter, condition in conditions.items()
@@ -369,15 +369,27 @@ def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_chec
             sink_role = contract_args[parameter].get("sink_role", "unknown")
             source_tools = [name for name in _source_tools(condition)
                             if str(contracts.get("tools", {}).get(name, {}).get("tool_type", "")).startswith("READ")]
-            unresolved_slots.append({
+            slot = {
                 "parameter": parameter,
                 "sink_role": sink_role,
                 "source_tools": source_tools or _unresolved_slot_sources(trajectory, contracts, sink_role),
                 "authority_basis": "secure_planner_partial_binding_slot",
-            })
+            }
+            # A content argument may be a summary, composition, or formatted
+            # rendering of clean runtime evidence. It is not an entity ID and
+            # therefore must not be forced through an exact scalar witness.
+            if sink_role == "content" and slot["source_tools"]:
+                derived_content_slots.append({
+                    **slot,
+                    "derivation": "taint_isolated_evidence_composition",
+                    "authority_basis": "secure_planner_content_derivation_obligation",
+                })
+            else:
+                unresolved_slots.append(slot)
         actions.append({"tool": tool, "consumer_step_id": getattr(step, "step_id", None),
                         "fixed_constraints": fixed_constraints, "binding_rules": binding_rules,
                         "origin_rules": origin_rules, "unresolved_slots": unresolved_slots,
+                        "derived_content_slots": derived_content_slots,
                         "operational_defaults": operational_defaults})
 
     return TaskAnchor.create(task_id, user_task, actions, {

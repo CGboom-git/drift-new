@@ -99,7 +99,7 @@ def compile_anchor_spec(anchor, tool, contracts):
     # action only when the planner anchor contains a constraint for it.
     if str(contract.get('tool_type', '')).startswith('READ'):
         return None
-    if not action.get('fixed_constraints') and not action.get('binding_rules') and not action.get('unresolved_slots'):
+    if not action.get('fixed_constraints') and not action.get('binding_rules') and not action.get('unresolved_slots') and not action.get('derived_content_slots'):
         return None
     roles = {p: value.get('sink_role', 'unknown') for p, value in contract.get('args', {}).items()}
     relations = action.get('binding_rules', [])
@@ -112,6 +112,8 @@ def compile_anchor_spec(anchor, tool, contracts):
         'policy': 'candidate arguments and runtime observations cannot extend task constraints',
         'tool_contract': contract,
         'unresolved_slots': action.get('unresolved_slots', []),
+        'derived_content_slots': action.get('derived_content_slots', []),
+        'origin_rules': action.get('origin_rules', []),
         'operational_defaults': action.get('operational_defaults', []),
     }
     return ConstraintSpec.create(anchor.task_id, None, tool, action.get('fixed_constraints', []), roles,

@@ -235,12 +235,41 @@ class ExperimentalExecutor(ToolsExecutor):
                 return True
         return False
 
+    def _sourceflow_evidence_state(self, evidence):
+        """Classify content evidence without treating raw text as trusted."""
+        store = getattr(self.llm, 'source_label_store', None)
+        records = list(getattr(store, 'records', []) or []) if store is not None else []
+        if not records:
+            return 'safe' if store is None else 'pending'
+        matches = [
+            record for record in records
+            if getattr(record, 'tool', None) == evidence.tool
+            and getattr(record, 'evidence', {}).get('tool_call_id') == evidence.call_id
+        ]
+        if not matches:
+            return 'pending'
+        forbidden = {'injected_instruction', 'unknown_origin', 'model_generated'}
+        for record in matches:
+            labels = set(getattr(record, 'source_labels', []) or [])
+            if ('sanitized_observation' in labels and not (labels & forbidden)
+                    and getattr(record, 'sanitized_visible', True) is not False):
+                return 'safe'
+            if (getattr(record, 'source_kind', '') == 'tool_raw_output'
+                    and getattr(record, 'sanitized_visible', None) is True
+                    and not (labels & forbidden)):
+                return 'safe'
+        return 'tainted' if any(
+            'injected_instruction' in set(getattr(record, 'source_labels', []) or [])
+            for record in matches
+        ) else 'pending'
+
     def _evaluate_runtime_slots(self, spec, call):
-        """Resolve partial-anchor slots only from prior, host-recorded READ data."""
+        """Resolve entity slots exactly and content slots through clean evidence."""
         base = evaluate(spec, call, self.ledger, self.gate.relation_mode)
         annotations = json.loads(spec.source_annotations)
         slots = annotations.get('unresolved_slots') or []
-        if not slots:
+        content_slots = annotations.get('derived_content_slots') or []
+        if not slots and not content_slots:
             return base
         args = json.loads(call.arguments)
         roles = json.loads(spec.parameter_roles)
@@ -277,32 +306,92 @@ class ExperimentalExecutor(ToolsExecutor):
                                      source.revision if source else None))
             if verdict == 'UNKNOWN':
                 missing.append(f'{parameter}:{reason}')
+        for slot in content_slots:
+            parameter = slot.get('parameter')
+            allowed = set(slot.get('source_tools') or [])
+            value = args.get(parameter)
+            matching = [
+                evidence for evidence in self.ledger.evidence()
+                if evidence.task_id == call.task_id and evidence.epoch == call.epoch
+                and evidence.position < call.position and evidence.success
+                and (not allowed or evidence.tool in allowed)
+            ]
+            states = [self._sourceflow_evidence_state(evidence) for evidence in matching]
+            source = next((evidence for evidence, state in zip(reversed(matching), reversed(states))
+                           if state == 'safe'), None)
+            if value is None or (isinstance(value, str) and not value.strip()) or not matching:
+                verdict, reason = 'UNKNOWN', 'missing_content_derivation_evidence'
+            elif self._injected_value(value):
+                verdict, reason = 'INVALID', 'injected_value_for_content_derivation'
+            elif source is not None:
+                verdict, reason = 'VALID', 'taint_isolated_content_derivation_satisfied'
+            elif 'tainted' in states:
+                verdict, reason = 'INVALID', 'tainted_content_derivation_evidence'
+            else:
+                verdict, reason = 'UNKNOWN', 'content_evidence_pending_isolation'
+            witnesses.append(Witness(call.call_id, call.tool, parameter, canonical(value), spec.constraint_id,
+                                     source.source_id if source else None,
+                                     source.tool if source else slot.get('authority_basis', 'host'),
+                                     roles.get(parameter, slot.get('sink_role', 'content')),
+                                     'taint_isolated_evidence_composition', bool(source), verdict, reason,
+                                     'RUNTIME_CONTENT', slot.get('authority_basis', 'host'),
+                                     source.revision if source else None))
+            if verdict == 'UNKNOWN':
+                missing.append(f'{parameter}:{reason}')
         verdict = ('INVALID' if any(w.verdict == 'INVALID' for w in witnesses)
                    else 'UNKNOWN' if any(w.verdict == 'UNKNOWN' for w in witnesses) else 'VALID')
         return Decision(verdict, tuple(witnesses), tuple(sorted(set(missing))),
                         digest(dataclasses.asdict(call)), spec.constraint_id, self.ledger.revision)
 
     @staticmethod
-    def _slot_evidence_tools(spec, evidence_tools):
-        # A frozen binding rule already declares its exact recovery source.
-        # Prefer it over the broad suite READ inventory.  Partial anchors use
-        # their unresolved slots; only a truly unspecified case may fall back.
+    def _evidence_route(spec, evidence_tools, missing_conditions=()):
+        """Compile a bounded READ route from active evidence obligations.
+
+        Target tools directly satisfy a missing anchor slot. Planner-declared
+        READs remain bridge tools, so multi-hop lookup can obtain identifiers
+        required by target reads. Neither category admits a consequential tool.
+        """
         evidence = set(evidence_tools)
-        try:
-            scope = json.loads(spec.recovery_scope or '[]') if spec is not None else []
-        except (TypeError, ValueError):
-            scope = []
-        scoped = {item.get('tool') for item in scope if isinstance(item, dict) and item.get('tool')}
-        if scoped & evidence:
-            return sorted(scoped & evidence)
         annotations = json.loads(spec.source_annotations) if spec is not None else {}
-        declared = {name for slot in annotations.get('unresolved_slots', []) or []
-                    for name in slot.get('source_tools', [])}
-        # A multi-hop recovery route is bounded by the frozen planner's READ
-        # backbone, never by the suite-wide tool inventory.
-        planned = set(annotations.get('anchor_metadata', {}).get('initial_trajectory', []) or [])
-        route = planned & evidence
-        return sorted(declared & evidence) or sorted(route) or list(evidence_tools)
+        missing_parameters = {
+            str(item).split(':', 1)[0] for item in (missing_conditions or [])
+            if str(item).split(':', 1)[0] not in {'*', ''}
+        }
+        obligations = [
+            *(annotations.get('unresolved_slots', []) or []),
+            *(annotations.get('derived_content_slots', []) or []),
+            *(annotations.get('origin_rules', []) or []),
+        ]
+        relevant = [
+            slot for slot in obligations
+            if not missing_parameters or slot.get('parameter') in missing_parameters
+        ]
+        target = {name for slot in relevant for name in slot.get('source_tools', [])} & evidence
+        planned = set(annotations.get('anchor_metadata', {}).get('initial_trajectory', []) or []) & evidence
+        try:
+            sourceflow_scope = json.loads(spec.recovery_scope or '[]') if spec is not None else []
+        except (TypeError, ValueError):
+            sourceflow_scope = []
+        sourceflow = {
+            item.get('tool') for item in sourceflow_scope
+            if isinstance(item, dict) and item.get('tool')
+        } & evidence
+        if not target:
+            target = sourceflow or planned
+        bridge = planned - target
+        allowed = target | bridge
+        if not allowed:
+            allowed = sourceflow or evidence
+        return {
+            'target_tools': sorted(target),
+            'bridge_tools': sorted(bridge),
+            'allowed_tools': sorted(allowed),
+        }
+
+    @staticmethod
+    def _slot_evidence_tools(spec, evidence_tools):
+        # Compatibility helper for existing callers and diagnostics.
+        return ExperimentalExecutor._evidence_route(spec, evidence_tools)['allowed_tools']
 
     @staticmethod
     def _is_evidence_producing_tool(contract):
@@ -600,7 +689,11 @@ class ExperimentalExecutor(ToolsExecutor):
                                           if self.constraint_source == 'task_anchor_v1' else None,
                                           defer_unknown=self.constraint_source == 'task_anchor_v1')
             if isinstance(outcome, dict) and outcome.get('rcvr_deferred'):
-                allowed = self._slot_evidence_tools(spec, evidence_tools)
+                route = self._evidence_route(
+                    spec, evidence_tools,
+                    outcome['decision'].get('missing_evidence_conditions', []),
+                )
+                allowed = route['allowed_tools']
                 previous_pending = self.pending_evidence if self.pending_evidence and self.pending_evidence.get('action_tool') == raw.function else None
                 budget = previous_pending['budget'] if previous_pending else max(4, self.gate.budget * 2)
                 attempts = previous_pending['attempts'] if previous_pending else 0
@@ -615,6 +708,8 @@ class ExperimentalExecutor(ToolsExecutor):
                 self.pending_evidence = {
                     'action_tool': raw.function,
                     'allowed_tools': allowed,
+                    'target_tools': route['target_tools'],
+                    'bridge_tools': route['bridge_tools'],
                     'missing_conditions': outcome['decision'].get('missing_evidence_conditions', []),
                     'attempts': attempts,
                     'used_tools': list(previous_pending.get('used_tools', [])) if previous_pending else [],
@@ -624,10 +719,13 @@ class ExperimentalExecutor(ToolsExecutor):
                 }
                 self.emit({'event': 'evidence_scheduler_opened', 'call_id': call.call_id,
                            'action_tool': raw.function, 'allowed_tools': allowed,
+                           'target_tools': route['target_tools'], 'bridge_tools': route['bridge_tools'],
                            'missing_conditions': self.pending_evidence['missing_conditions']})
                 appended.append({'role': 'tool',
                                  'content': '[RCVR NEED EVIDENCE] The action was held. Collect bounded READ evidence for: '
                                             + ', '.join(self.pending_evidence['missing_conditions'])
+                                            + '. Direct evidence tools: ' + ', '.join(route['target_tools'])
+                                            + '. Optional bridge READ tools: ' + ', '.join(route['bridge_tools'])
                                             + '. Allowed READ tools: ' + ', '.join(allowed),
                                  'error': '[RCVR NEED EVIDENCE]', 'tool_call_id': raw.id, 'tool_call': raw})
                 break

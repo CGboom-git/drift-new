@@ -121,6 +121,21 @@ class PlannerAnchorTests(unittest.TestCase):
             'source_tools': ['read_history'],
             'authority_basis': 'secure_planner_partial_binding_slot'}])
 
+    def test_content_source_becomes_derivation_obligation_not_exact_slot(self):
+        anchor = freeze_from_secure_plan('suite/user_task_x', 'Summarize the selected record.',
+            ['lookup_record', 'commit_effect'], json.dumps([
+                {'name': 'lookup_record', 'required parameters': {'limit': 1}, 'conditions': {}},
+                {'name': 'commit_effect', 'required parameters': {'content': None},
+                 'conditions': {'content': 'lookup_record'}},
+            ]), self.backbone, CONTRACTS)
+        action = json.loads(anchor.actions)[1]
+        self.assertEqual(action['unresolved_slots'], [])
+        self.assertEqual(action['derived_content_slots'][0]['parameter'], 'content')
+        self.assertEqual(action['derived_content_slots'][0]['source_tools'], ['lookup_record'])
+        spec = compile_anchor_spec(anchor, 'commit_effect', CONTRACTS)
+        self.assertEqual(json.loads(spec.source_annotations)['derived_content_slots'][0]['derivation'],
+                         'taint_isolated_evidence_composition')
+
     def test_contract_constrained_choice_materializes_relation(self):
         contracts = {'tools': {
             'read_records': {'tool_type': 'READ', 'args': {}, 'output_semantics': {'fields': {
