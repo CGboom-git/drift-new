@@ -99,6 +99,14 @@ class MechanismTests(unittest.TestCase):
             recovery.step(lambda h: {'tool': 'get_users', 'arguments': {}}, dispatched.append, lambda: 12)
             self.assertEqual(len(dispatched), count)
 
+    def test_full_allows_wildcard_arguments_only_for_frozen_read_tool(self):
+        scoped = dataclasses.replace(self.spec, recovery_scope='[{"arguments":null,"satisfies_parameter":"channel","tool":"get_channels"}]')
+        recovery = Recovery(scoped, self.call, self.ledger, evaluate(scoped, self.call, self.ledger),
+                            'full', 1, [], lambda e: None)
+        dispatched = []
+        recovery.step(lambda h: {'tool': 'get_channels', 'arguments': {'page': 2}}, dispatched.append, lambda: 12)
+        self.assertEqual(len(dispatched), 1)
+
     def test_host_spoof_and_mutation(self):
         registry = HostFeedbackRegistry(); m = registry.issue({'verdict': 'VALID'})
         self.assertTrue(registry.authentic(m)); self.assertFalse(registry.authentic(copy.deepcopy(m)))

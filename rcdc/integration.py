@@ -111,14 +111,44 @@ class ExperimentalExecutor(ToolsExecutor):
         elif getattr(flow, 'repair_required', False):
             verdict, reason = 'UNKNOWN', 'sourceflow_repair_required'
         else:
+            annotations = json.loads(spec.source_annotations)
+            # A runtime SourceFlow spec has no synthetic binding rule.  Once
+            # SourceFlow authorizes it, its deliberately empty binding set
+            # must not turn that authorization into ``missing_rule``.
+            if annotations.get('compiler') == 'sourceflow_runtime_v1':
+                witness = Witness(call.call_id, call.tool, '*', canonical({}), spec.constraint_id, None,
+                                  'sourceflow_runtime', 'unknown', 'provenance', True, 'VALID',
+                                  'sourceflow_allow', 'SF', 'sourceflow_runtime', self.ledger.revision)
+                return Decision('VALID', (witness,), (), digest(dataclasses.asdict(call)),
+                                spec.constraint_id, self.ledger.revision)
             return binding
         witness = Witness(call.call_id, call.tool, '*', canonical({}), spec.constraint_id, None,
                           'sourceflow_runtime', 'unknown', 'provenance', True, verdict,
                           reason, 'SF', 'sourceflow_runtime', self.ledger.revision)
         merged = tuple([*binding.witnesses, witness])
         final = 'INVALID' if any(w.verdict == 'INVALID' for w in merged) else 'UNKNOWN' if any(w.verdict == 'UNKNOWN' for w in merged) else 'VALID'
-        return Decision(final, merged, tuple(sorted(set([*binding.missing_evidence_conditions, f'*:{reason}']))),
+        flow_missing = [f'*:{reason}']
+        if getattr(flow, 'repair_required', False):
+            flow_missing.extend(
+                f"{str(item.get('arg_name') or item.get('sink') or '*')}:{reason}"
+                for item in (getattr(flow, 'repair_obligations', []) or [])
+            )
+        return Decision(final, merged, tuple(sorted(set([*binding.missing_evidence_conditions, *flow_missing]))),
                         digest(dataclasses.asdict(call)), spec.constraint_id, self.ledger.revision)
+
+    @staticmethod
+    def _sourceflow_recovery_scope(flow, read_tools):
+        """Compile a SourceFlow evidence gap into a bounded READ-only scope."""
+        if flow is None or not getattr(flow, 'repair_required', False):
+            return []
+        requested = set()
+        for obligation in getattr(flow, 'repair_obligations', []) or []:
+            requested.update(str(name) for name in obligation.get('expected_root_tools', []) if name)
+        allowed = sorted(requested & set(read_tools)) if requested else sorted(read_tools)
+        parameters = sorted({str(o.get('arg_name') or o.get('sink') or '*')
+                             for o in (getattr(flow, 'repair_obligations', []) or [])}) or ['*']
+        return [{'tool': tool, 'arguments': None, 'satisfies_parameter': parameter}
+                for tool in allowed for parameter in parameters]
 
     def query(self, query, runtime, env, messages, extra_args):
         if query != self.task:
@@ -167,6 +197,16 @@ class ExperimentalExecutor(ToolsExecutor):
                 from .schema import ConstraintSpec
                 spec = ConstraintSpec.create(self.task_id, None, raw.function,
                                              source_annotations={'compiler': 'sourceflow_runtime_v1'})
+            # Freeze the first evidence-only repair scope with the candidate.
+            # Revalidation can change the verdict but cannot widen this scope.
+            if spec is not None and self.constraint_source == 'task_anchor_v1':
+                initial_flow = self.llm._source_flow_validate_tool_calls(
+                    {'role': 'assistant', 'content': '', 'tool_calls': [raw]})
+                scope = self._sourceflow_recovery_scope(initial_flow, [
+                    name for name, c in self.contracts.get('tools', {}).items()
+                    if str(c.get('tool_type', '')).startswith('READ') and name in runtime.functions])
+                if scope:
+                    spec = dataclasses.replace(spec, recovery_scope=canonical(scope))
             self.spec = spec
             initial_revision = self.ledger.revision
             single = dict(messages[-1], tool_calls=[raw])
@@ -258,20 +298,28 @@ class ExperimentalExecutor(ToolsExecutor):
                 self.emit({'event': 'evidence_bounded_recovery_model_response', 'raw': answer})
                 return parse_recovery_proposal(answer)
 
+            active_recovery = [None]
+
             def acquire(proposal):
                 nonlocal runtime, env, extra_args
                 # Run proposed reads through the existing APDE validators before
                 # delegating to the unchanged tool executor.
                 read = FunctionCall(id=f'rcvr_read_{self.ledger.epoch}_{self.tick()}', function=proposal['tool'], args=proposal['arguments'])
                 output = {'role': 'assistant', 'content': '<function_call>' + canonical(proposal) + '</function_call>', 'tool_calls': [read]}
-                error, output = validate_original(output)
+                previous_sink = getattr(self.llm, '_rcvr_taer_repair_sink', None)
+                if active_recovery[0] is not None:
+                    self.llm._rcvr_taer_repair_sink = active_recovery[0].register_taer_repair
+                try:
+                    error, output = validate_original(output)
+                finally:
+                    self.llm._rcvr_taer_repair_sink = previous_sink
                 if error or not isinstance(output, dict) or not output.get('tool_calls') or len(output['tool_calls']) != 1:
                     self.emit({'event': 'recovery_apde_rejected', 'tool': read.function})
-                    return
+                    return {'success': False}
                 current = output['tool_calls'][0]
                 if current.function != read.function or canonical(current.args) != canonical(proposal['arguments']):
                     self.emit({'event': 'recovery_apde_changed_proposal', 'tool': read.function})
-                    return
+                    return {'success': False}
                 result = super(ExperimentalExecutor, self).query(query, runtime, env, [*messages[:-1], *recovery_messages, output], extra_args)
                 _, runtime, env, produced, extra_args = result
                 response = produced[-1]
@@ -283,6 +331,7 @@ class ExperimentalExecutor(ToolsExecutor):
                 # Feed real tool data through SourceFlow's existing recorder. Do
                 # not register that data as host feedback or auto-authorize it.
                 self.llm._source_flow_record_tool_message_at(produced, len(produced)-1)
+                return {'success': response.get('error') is None, 'tool_call_id': read.id}
 
             def freeze_unknown(decision):
                 if self.checkpoint_root is None:
@@ -309,6 +358,7 @@ class ExperimentalExecutor(ToolsExecutor):
                         if self.constraint_source == 'task_anchor_v1' else None)
             taer_state = getattr(self.llm, 'taer_state', None)
             taer_context = {
+                'state': taer_state,
                 'consumer_step_id': getattr(taer_state, 'active_consumer_step_id', None),
                 'authorization_lifetime': ('one_time' if getattr(self.llm, 'taer_ephemeral_enabled', lambda: False)()
                                            else 'task_scoped'),
@@ -317,7 +367,9 @@ class ExperimentalExecutor(ToolsExecutor):
             outcome = self.gate.candidate(spec, call, self.ledger, dispatch, propose,
                                           acquire, self.tick, reads, freeze_unknown,
                                           decision_provider=provider if self.constraint_source == 'task_anchor_v1' else None,
-                                          taer_context=taer_context if self.constraint_source == 'task_anchor_v1' else None)
+                                          taer_context=taer_context if self.constraint_source == 'task_anchor_v1' else None,
+                                          on_recovery_created=(lambda recovery: active_recovery.__setitem__(0, recovery))
+                                          if self.constraint_source == 'task_anchor_v1' else None)
             if isinstance(outcome, dict) and outcome.get('rcvr_stopped'):
                 self.stopped = True
                 self.last_recovery_stop = outcome

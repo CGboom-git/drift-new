@@ -2539,14 +2539,24 @@ Do not approve unrelated exploration or any new goal.
 
                     if relation == "REPAIR":
                         repair = create_repair_step(self.taer_state, achieved_func, tool_args, anchor_result)
-                        self._taer_pending_repairs[repair.repair_id] = {
-                            "repair": repair,
-                            "tool_name": achieved_func,
-                            "tool_args": dict(tool_args),
-                        }
-                        self.logger.info(
-                            f"TAER REPAIR stored as pending: {repair.repair_id} → consumer {repair.consumer_step_id}"
-                        )
+                        recovery_sink = getattr(self, "_rcvr_taer_repair_sink", None)
+                        if callable(recovery_sink):
+                            # Unified RCVR owns repairs created while it is
+                            # acquiring bounded evidence.  Legacy executions
+                            # retain their pending-repair lifecycle below.
+                            recovery_sink(repair)
+                            self.logger.info(
+                                f"TAER REPAIR attached to RCVR recovery: {repair.repair_id} → consumer {repair.consumer_step_id}"
+                            )
+                        else:
+                            self._taer_pending_repairs[repair.repair_id] = {
+                                "repair": repair,
+                                "tool_name": achieved_func,
+                                "tool_args": dict(tool_args),
+                            }
+                            self.logger.info(
+                                f"TAER REPAIR stored as pending: {repair.repair_id} → consumer {repair.consumer_step_id}"
+                            )
                         self.taer_state.active_consumer_step_id = repair.consumer_step_id
 
                     self._grant_taer_authorization(achieved_func, tool_args)

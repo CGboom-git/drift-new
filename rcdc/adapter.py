@@ -23,7 +23,7 @@ class Gate:
 
     def candidate(self, spec, call, ledger, continue_original, propose_read=None,
                   execute_read=None, position=None, ordinary_read_tools=(), on_unknown=None,
-                  decision_provider=None, taer_context=None):
+                  decision_provider=None, taer_context=None, on_recovery_created=None):
         if self.mode == 'off':
             return continue_original()
         if spec is None:
@@ -58,6 +58,8 @@ class Gate:
         if decision.verdict == 'UNKNOWN' and self.mode in ('retry', 'full'):
             recovery = Recovery(spec, call, ledger, decision, self.mode, self.budget, ordinary_read_tools,
                                 self.emit, self.relation_mode, decision_provider, taer_context)
+            if on_recovery_created is not None:
+                on_recovery_created(recovery)
             while recovery.context.status not in ('VALID', 'INVALID', 'STOP'):
                 decision = recovery.step(propose_read, execute_read, position)
         if decision.verdict == 'VALID':
