@@ -45,6 +45,11 @@ class SecurePlannerParserTests(unittest.TestCase):
         self.assertTrue(DRIFTLLM._structured_relation_matches_return_schema(valid, schema))
         self.assertFalse(DRIFTLLM._structured_relation_matches_return_schema(invalid, schema))
 
+    def test_checklist_json_can_be_extracted_from_code_fence(self):
+        text = '```json\n[{"name":"lookup","required parameters":{},"conditions":{}}]\n```'
+        self.assertEqual(DRIFTLLM._extract_checklist_json(text),
+                         '[{"name":"lookup","required parameters":{},"conditions":{}}]')
+
 
 if __name__ == '__main__':
     unittest.main()
