@@ -2922,7 +2922,10 @@ Do not approve unrelated exploration or any new goal.
             error_messages = self._wrap_function_error(error_message, output)
             return query, runtime, env, [*messages, output, *error_messages], extra_args
 
-        if self.args.dynamic_validation:
+        # Generic RCVR moves TAER/SourceFlow verdict construction into the
+        # executor's unified three-valued validator.  Legacy and ablation
+        # paths retain the original pre-dispatch validation exactly.
+        if self.args.dynamic_validation and not getattr(self, '_rcvr_unified_final_owner', False):
             pre_validation_output = copy.deepcopy(output)
             error_message, output = self.trajectory_constraint_validation(to_call_function, output, query, messages)
             if not isinstance(output, dict):

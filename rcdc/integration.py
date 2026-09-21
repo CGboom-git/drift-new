@@ -301,7 +301,10 @@ class ExperimentalExecutor(ToolsExecutor):
                 if spec and self.ledger.revision != initial_revision:
                     # Recovery evidence can change APDE's view. Recheck the
                     # identical candidate; never dispatch a validator rewrite.
-                    error, checked = validate_original(copy.deepcopy(single))
+                    if getattr(self.llm, '_rcvr_unified_final_owner', False):
+                        error, checked = None, copy.deepcopy(single)
+                    else:
+                        error, checked = validate_original(copy.deepcopy(single))
                     checked_calls = checked.get('tool_calls') or [] if isinstance(checked, dict) else []
                     if error or len(checked_calls) != 1 or checked_calls[0].function != raw.function or canonical(checked_calls[0].args) != call.arguments:
                         self.stopped = True
@@ -372,13 +375,20 @@ class ExperimentalExecutor(ToolsExecutor):
                 # delegating to the unchanged tool executor.
                 read = FunctionCall(id=f'rcvr_read_{self.ledger.epoch}_{self.tick()}', function=proposal['tool'], args=proposal['arguments'])
                 output = {'role': 'assistant', 'content': '<function_call>' + canonical(proposal) + '</function_call>', 'tool_calls': [read]}
-                previous_sink = getattr(self.llm, '_rcvr_taer_repair_sink', None)
-                if active_recovery[0] is not None:
-                    self.llm._rcvr_taer_repair_sink = active_recovery[0].register_taer_repair
-                try:
-                    error, output = validate_original(output)
-                finally:
-                    self.llm._rcvr_taer_repair_sink = previous_sink
+                if getattr(self.llm, '_rcvr_unified_final_owner', False):
+                    # The immutable obligation and Runtime Validator already
+                    # authorize this non-consequential evidence request.
+                    # Calling legacy APDE here would reintroduce TAER as a
+                    # second final-decision owner.
+                    error = None
+                else:
+                    previous_sink = getattr(self.llm, '_rcvr_taer_repair_sink', None)
+                    if active_recovery[0] is not None:
+                        self.llm._rcvr_taer_repair_sink = active_recovery[0].register_taer_repair
+                    try:
+                        error, output = validate_original(output)
+                    finally:
+                        self.llm._rcvr_taer_repair_sink = previous_sink
                 if error or not isinstance(output, dict) or not output.get('tool_calls') or len(output['tool_calls']) != 1:
                     self.emit({'event': 'recovery_apde_rejected', 'tool': read.function})
                     return {'success': False}

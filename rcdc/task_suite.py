@@ -75,6 +75,9 @@ class RCVRTaskSuite(DRIFTTaskSuite):
         # SourceFlow supplies evidence to ExperimentalExecutor, which maps it
         # into the single RCVR three-valued decision provider.
         llm._rcvr_sourceflow_final = False
+        # The generic anchor path owns the final verdict in RCVR.  Legacy
+        # regex B1 keeps its historical DRIFT/TAER pre-dispatch path.
+        llm._rcvr_unified_final_owner = constraint_source == 'task_anchor_v1'
         task_anchor = None
         if constraint_source == 'task_anchor_v1':
             # DRIFT calls this after its initial secure planner builds the
@@ -136,7 +139,7 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             result = super().run_task_with_pipeline(rcvr_pipeline, user_task, injection_task,
                                                     injections, *args, **kwargs)
         finally:
-            for attr in ('_rcvr_task_anchor_callback', '_rcvr_task_anchor'):
+            for attr in ('_rcvr_task_anchor_callback', '_rcvr_task_anchor', '_rcvr_unified_final_owner'):
                 if hasattr(llm, attr):
                     delattr(llm, attr)
             if hasattr(self, '_capture_pre_environment_for_rcvr'):
