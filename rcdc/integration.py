@@ -307,9 +307,17 @@ class ExperimentalExecutor(ToolsExecutor):
 
             provider = (lambda rebound: self._unified_decision(spec, rebound, raw)
                         if self.constraint_source == 'task_anchor_v1' else None)
+            taer_state = getattr(self.llm, 'taer_state', None)
+            taer_context = {
+                'consumer_step_id': getattr(taer_state, 'active_consumer_step_id', None),
+                'authorization_lifetime': ('one_time' if getattr(self.llm, 'taer_ephemeral_enabled', lambda: False)()
+                                           else 'task_scoped'),
+                'boundary_required': bool(getattr(self.llm, 'taer_boundary_enabled', lambda: False)()),
+            }
             outcome = self.gate.candidate(spec, call, self.ledger, dispatch, propose,
                                           acquire, self.tick, reads, freeze_unknown,
-                                          decision_provider=provider if self.constraint_source == 'task_anchor_v1' else None)
+                                          decision_provider=provider if self.constraint_source == 'task_anchor_v1' else None,
+                                          taer_context=taer_context if self.constraint_source == 'task_anchor_v1' else None)
             if isinstance(outcome, dict) and outcome.get('rcvr_stopped'):
                 self.stopped = True
                 self.last_recovery_stop = outcome

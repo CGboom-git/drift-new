@@ -17,11 +17,17 @@ class RecoveryContext:
     steps: int = 0
     llm_calls: int = 0
     tool_calls: int = 0
+    # TAER is recovery policy, not a competing final-decision owner.
+    taer_consumer_step_id: str | None = None
+    taer_repair_id: str | None = None
+    taer_authorization_lifetime: str | None = None
+    taer_boundary_required: bool = False
 
 
 class Recovery:
     def __init__(self, spec, call, ledger, decision, mode, budget, ordinary_read_tools,
-                 emit=lambda e: None, relation_mode='full', decision_provider=None):
+                 emit=lambda e: None, relation_mode='full', decision_provider=None,
+                 taer_context=None):
         if decision.verdict != 'UNKNOWN':
             raise ValueError('recovery_only_for_unknown')
         if mode not in ('retry', 'full') or not isinstance(budget, int) or budget < 0:
@@ -38,7 +44,12 @@ class Recovery:
         self.relation_mode = relation_mode
         self.decision_provider = decision_provider
         allowed = tuple(sorted({x['tool'] for x in self.requests})) if mode == 'full' else tuple(sorted(ordinary_read_tools))
-        self.context = RecoveryContext(call, spec, decision.missing_evidence_conditions, allowed, budget)
+        taer_context = taer_context or {}
+        self.context = RecoveryContext(call, spec, decision.missing_evidence_conditions, allowed, budget,
+                                       taer_consumer_step_id=taer_context.get('consumer_step_id'),
+                                       taer_repair_id=taer_context.get('repair_id'),
+                                       taer_authorization_lifetime=taer_context.get('authorization_lifetime'),
+                                       taer_boundary_required=bool(taer_context.get('boundary_required')))
         self.decision = decision
 
     def step(self, propose_read, execute_read, position):
