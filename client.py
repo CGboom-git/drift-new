@@ -87,7 +87,7 @@ class OpenAIModel():
                 model=self.model,
                 temperature=self.temperature,
                 messages=messages,
-                max_completion_tokens=max_tokens,
+                max_tokens=max_tokens,
                 extra_body=({"enable_thinking": False if enable_thinking is None else enable_thinking} if self.model.startswith("qwen") else ({"enable_thinking": enable_thinking} if enable_thinking is not None and self.model.startswith("deepseek-") else None)),
             )
         except Exception as e:
@@ -133,7 +133,7 @@ class OpenAIModel():
                     { "role": "system", "content": SystemPrompt},
                     { "role": "user", "content": UserPrompt}
                 ],
-                max_completion_tokens=max_tokens,
+                max_tokens=max_tokens,
                 extra_body=({"enable_thinking": False if enable_thinking is None else enable_thinking} if self.model.startswith("qwen") else ({"enable_thinking": enable_thinking} if enable_thinking is not None and self.model.startswith("deepseek-") else None)),
             ) 
             response_content = response.choices[0].message.content
@@ -233,7 +233,7 @@ class OpenRouterModel():
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            max_completion_tokens=max_tokens,
+            max_tokens=max_tokens,
                 extra_body=({"enable_thinking": False if enable_thinking is None else enable_thinking} if self.model.startswith("qwen") else ({"enable_thinking": enable_thinking} if enable_thinking is not None and self.model.startswith("deepseek-") else None)),
         )
 
@@ -271,7 +271,7 @@ class OpenRouterModel():
                     { "role": "system", "content": SystemPrompt},
                     { "role": "user", "content": UserPrompt}
                 ],
-                max_completion_tokens=max_tokens,
+                max_tokens=max_tokens,
                 extra_body=({"enable_thinking": False if enable_thinking is None else enable_thinking} if self.model.startswith("qwen") else ({"enable_thinking": enable_thinking} if enable_thinking is not None and self.model.startswith("deepseek-") else None)),
             ) 
             response_content = response.choices[0].message.content
