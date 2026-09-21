@@ -1668,6 +1668,7 @@ Do not approve unrelated exploration or any new goal.
         self._runtime_read_extensions = {}
         self._taer_persistent_auth = []
         self.initial_planner_complete = False
+        self._rcvr_anchor_frozen = False
         text = completion[0] if isinstance(completion, list) and completion else str(completion)
 
         if re.search(r"<\s*(?:function_trajectory|traj-1)\s*>", text, re.IGNORECASE):
@@ -1937,6 +1938,7 @@ Do not approve unrelated exploration or any new goal.
                 self.node_checklist = self.initial_node_checklist = candidate
                 if self._initial_plan_complete(user_query):
                     self.initial_planner_complete = True
+                    self._rcvr_anchor_frozen = True
                     self._notify_rcvr_task_anchor()
                     return True
         instruction = """Return ONLY a JSON list of constrained RelationChoice objects.
@@ -2003,6 +2005,7 @@ emit only kind operational_default with policy host_execution_time. Do not emit 
             self.taer_state = init_taer_backbone(self.function_trajectory, self.node_checklist,
                                                  candidate, self.source_flow_contract_helper)
         self.initial_planner_complete = True
+        self._rcvr_anchor_frozen = True
         # The relation compiler runs after the normal planner callbacks.  Notify
         # RCVR here so its immutable anchor is frozen from this completed
         # checklist before the first runtime tool response.
@@ -2912,7 +2915,10 @@ emit only kind operational_default with policy host_execution_time. Do not emit 
         thought_match = thought_pattern.search(output["content"])
         thought_content = thought_match.group(1) if thought_match else ""
 
-        self.node_checklist = self.node_json_formatting(query=query, node_checklist=self.node_checklist)
+        # The compiled anchor is already canonical JSON.  A later legacy LLM
+        # formatter can overwrite its structured binding conditions.
+        if not getattr(self, '_rcvr_anchor_frozen', False):
+            self.node_checklist = self.node_json_formatting(query=query, node_checklist=self.node_checklist)
         try:
             node_check_result, node_judge_reason = self.node_check(node_checklist=self.node_checklist, target_functions=json_tool_calls)
         except:
