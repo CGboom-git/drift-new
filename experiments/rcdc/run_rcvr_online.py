@@ -120,12 +120,41 @@ def validate_agentdyn_scope(config, manifest, base_args, profile):
         raise ValueError('agentdyn_target_scope_differs_from_frozen_manifest')
 
 
+def validate_manifest_attack_scope(manifest, base_args):
+    """Require an attack run to match the frozen manifest exactly.
+
+    ``pipeline_main`` selects attack cases only when ``--do_attack`` is set.
+    Checking it here prevents a syntactically valid RCVR invocation from
+    silently falling back to clean-only execution while still reporting the
+    manifest's attack-case count.
+    """
+    selection = manifest.get('selection', {})
+    expected_suites = selection.get('suites')
+    expected_users = selection.get('user_task_ids')
+    expected_injections = selection.get('injection_task_ids')
+    expected_attack = selection.get('attack_type')
+    # Older manifests that are not case selections retain their historical
+    # runner behavior.  Every current targeted RCVR manifest has all fields.
+    if not all((expected_suites, expected_users, expected_injections, expected_attack)):
+        return
+    actual_suites = [item.strip() for item in base_args.suites.split(',') if item.strip()]
+    actual_users = normalized_task_ids(base_args.target_user_tasks, 'user_task_')
+    actual_injections = normalized_task_ids(base_args.target_injection_tasks, 'injection_task_')
+    if (not base_args.do_attack
+            or actual_suites != expected_suites
+            or actual_users != expected_users
+            or actual_injections != expected_injections
+            or base_args.attack_type != expected_attack):
+        raise ValueError('online_attack_scope_differs_from_frozen_manifest')
+
+
 def dry_run(known, base_args):
     config, manifest_path = load_config(known.config_id, known.preflight_root)
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
     profile, _ = load_contracts(base_args)
     if config.get('contract_profile', 'agentdojo') != profile:
         raise ValueError(f'config_contract_profile_mismatch:{profile}')
+    validate_manifest_attack_scope(manifest, base_args)
     validate_agentdyn_scope(config, manifest, base_args, profile)
     result = {
         'method_name': 'RCVR', 'online_started': False,
@@ -157,7 +186,13 @@ def run(known, base_args):
     profile, contracts = load_contracts(base_args)
     if config.get('contract_profile', 'agentdojo') != profile:
         raise ValueError(f'config_contract_profile_mismatch:{profile}')
-    validate_agentdyn_scope(config, json.loads(manifest_path.read_text(encoding='utf-8')), base_args, profile)
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    validate_manifest_attack_scope(manifest, base_args)
+    validate_agentdyn_scope(config, manifest, base_args, profile)
+    # Give pipeline_main the same immutable case list used for the preflight
+    # check.  It then skips every Cartesian-product member not in the manifest.
+    if manifest.get('cases'):
+        base_args.target_case_manifest = str(manifest_path)
     if config.get('contract_schema_hash') and config['contract_schema_hash'] != contracts.get('schema_hash'):
         raise ValueError('contract_schema_hash_changed')
     events_root = known.preflight_root / 'online_events' / base_args.run_tag
