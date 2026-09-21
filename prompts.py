@@ -49,6 +49,12 @@ CONSTRAINTS_BUILD_PROMPT = """
         relation, provide at least one predicate grounded in an explicit user
         value or a fixed parameter of the same ACTION; otherwise use the bare
         source-tool condition and leave the value unresolved.
+        Translate relational wording in the user request into those predicates:
+        terms such as from, sent by, received by, owned by, named, on, or for
+        identify record fields and their authorized values. When the relation
+        refers to the ACTION's fixed destination, participant, resource, or
+        other fixed parameter, use ``value_from_parameter`` rather than
+        repeating a new literal.
         If an ACTION has a null parameter that must be determined from a
         runtime record, include the necessary READ tool before that ACTION in
         the trajectory. Its checklist must carry the exact READ request, and
