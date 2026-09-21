@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from rcdc.constraint_spec import compile_anchor_spec
-from rcdc.task_planner import freeze_from_secure_plan
+from rcdc.task_planner import compile_relation_choices, freeze_from_secure_plan
 
 
 CONTRACTS = {'tools': {
@@ -80,6 +80,48 @@ class PlannerAnchorTests(unittest.TestCase):
             ]), self.backbone, CONTRACTS)
         action = json.loads(anchor.actions)[1]
         self.assertEqual(action['binding_rules'], [])
+
+    def test_contract_constrained_choice_materializes_relation(self):
+        contracts = {'tools': {
+            'read_records': {'tool_type': 'READ', 'args': {}, 'output_semantics': {'fields': {
+                'id': {'role': 'identity'}, 'owner': {'role': 'principal_owner'},
+                'amount': {'role': 'financial_value'}}}},
+            'commit_effect': {'tool_type': 'WRITE', 'args': {
+                'amount': {'sink_role': 'control'}}},
+        }, 'binding_capabilities': {
+            'relation_types': ['unique_selected_record_field'],
+            'parameter_role_compatibility': {'control': ['financial_value']},
+        }}
+        checklist = [
+            {'name': 'read_records', 'required parameters': {}, 'conditions': {}},
+            {'name': 'commit_effect', 'required parameters': {'amount': None}, 'conditions': {}},
+        ]
+        result = compile_relation_choices(checklist, ['read_records', 'commit_effect'], contracts, [{
+            'action_tool': 'commit_effect', 'parameter': 'amount', 'source_tool': 'read_records',
+            'relation': 'unique_selected_record_field', 'value_field': 'amount', 'identity_field': 'id',
+            'selection': [{'field': 'owner', 'value': {'kind': 'user_literal', 'value': 'Alice'}}],
+        }], 'Pay Alice the selected amount.')
+        self.assertEqual(result[1]['conditions']['amount']['value_field'], 'amount')
+        self.assertEqual(result[1]['conditions']['amount']['predicates'][0]['value'], 'Alice')
+
+    def test_contract_constrained_choice_rejects_incompatible_target_field(self):
+        contracts = {'tools': {
+            'read_records': {'tool_type': 'READ', 'args': {}, 'output_semantics': {'fields': {
+                'amount': {'role': 'financial_value'}}}},
+            'commit_effect': {'tool_type': 'WRITE', 'args': {
+                'target': {'sink_role': 'target'}}},
+        }, 'binding_capabilities': {
+            'relation_types': ['unique_selected_record_field'],
+            'parameter_role_compatibility': {'target': ['principal']},
+        }}
+        checklist = [{'name': 'read_records', 'required parameters': {}, 'conditions': {}},
+                     {'name': 'commit_effect', 'required parameters': {'target': None}, 'conditions': {}}]
+        result = compile_relation_choices(checklist, ['read_records', 'commit_effect'], contracts, [{
+            'action_tool': 'commit_effect', 'parameter': 'target', 'source_tool': 'read_records',
+            'relation': 'unique_selected_record_field', 'value_field': 'amount', 'selection': [
+                {'field': 'amount', 'value': {'kind': 'user_literal', 'value': '10'}}],
+        }], 'Use 10.')
+        self.assertIsNone(result)
 
 
 if __name__ == '__main__':

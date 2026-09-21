@@ -117,6 +117,104 @@ def _binding_rule(parameter, condition, fixed_values, contracts):
     return rule
 
 
+def _semantic_role(role):
+    """Collapse contract field labels to the capability vocabulary."""
+    if not isinstance(role, str):
+        return ""
+    if role.startswith("principal"):
+        return "principal"
+    return role
+
+
+def compile_relation_choices(checklist, trajectory, contracts, choices, user_query):
+    """Materialize model *choices* into auditable binding conditions.
+
+    The model may select only declared tools, fields and relation kinds.  This
+    compiler owns every literal and final checklist mutation, so a model cannot
+    smuggle a new source, field, target or runtime observation into an anchor.
+    ``choices`` deliberately has a smaller surface than the legacy checklist:
+    each item describes one action parameter and record relation.
+    """
+    if not isinstance(checklist, list) or not isinstance(choices, list):
+        return None
+    tools = contracts.get("tools", {}) if isinstance(contracts, dict) else {}
+    caps = contracts.get("binding_capabilities", {}) if isinstance(contracts, dict) else {}
+    allowed_relations = set(caps.get("relation_types", []))
+    compatibility = caps.get("parameter_role_compatibility", {})
+    nodes = [dict(node, **{"required parameters": dict(node.get("required parameters", {})),
+                            "conditions": dict(node.get("conditions", {}))})
+             for node in checklist]
+    by_tool = {node.get("name"): node for node in nodes if isinstance(node, dict)}
+    query = str(user_query).lower()
+
+    for choice in choices:
+        if not isinstance(choice, dict):
+            return None
+        action = choice.get("action_tool")
+        parameter = choice.get("parameter")
+        node = by_tool.get(action)
+        action_args = tools.get(action, {}).get("args", {})
+        if action not in trajectory or not isinstance(parameter, str) or parameter not in action_args or node is None:
+            return None
+        if choice.get("kind") == "operational_default":
+            sink_role = action_args[parameter].get("sink_role", "")
+            policy = choice.get("policy")
+            if not ((sink_role == "content" and policy is None)
+                    or (sink_role == "control" and parameter == "date" and policy == "host_execution_time")):
+                return None
+            node["required parameters"][parameter] = None
+            node["conditions"][parameter] = {"kind": "operational_default", **(
+                {"policy": policy} if policy else {})}
+            continue
+        source = choice.get("source_tool")
+        relation = choice.get("relation")
+        value_field = choice.get("value_field")
+        identity_field = choice.get("identity_field", "")
+        source_node = tools.get(source, {})
+        fields = source_node.get("output_semantics", {}).get("fields", {})
+        if (not isinstance(source, str) or not str(source_node.get("tool_type", "")).startswith("READ")
+                or relation not in allowed_relations or not isinstance(value_field, str)
+                or value_field not in fields or (identity_field and identity_field not in fields)):
+            return None
+        sink_role = action_args[parameter].get("sink_role", "")
+        value_role = _semantic_role(fields[value_field].get("role")) if isinstance(fields[value_field], dict) else ""
+        if value_role not in set(compatibility.get(sink_role, [])):
+            return None
+        predicates = []
+        for item in choice.get("selection", []):
+            if not isinstance(item, dict) or item.get("operator", "equals") not in {"equals", "prefix", "date"}:
+                return None
+            field, value = item.get("field"), item.get("value")
+            if not isinstance(field, str) or field not in fields or not isinstance(value, dict):
+                return None
+            kind = value.get("kind")
+            if kind == "user_literal":
+                literal = value.get("value")
+                if not isinstance(literal, (str, int, float)) or str(literal).lower() not in query:
+                    return None
+                predicate = {"field": field, "value": literal, "operator": item.get("operator", "equals")}
+            elif kind == "fixed_action_parameter":
+                reference = value.get("parameter")
+                fixed = node.get("required parameters", {}).get(reference)
+                if not isinstance(reference, str) or fixed is None:
+                    return None
+                predicate = {"field": field, "value_from_parameter": reference,
+                             "operator": item.get("operator", "equals")}
+            else:
+                return None
+            predicates.append(predicate)
+        if not predicates:
+            return None
+        node["required parameters"][parameter] = None
+        node["conditions"][parameter] = {
+            "source_tool": source, "request": choice.get("request", {}), "predicates": predicates,
+            "value_field": value_field, "identity_field": identity_field,
+            "comparison": choice.get("comparison", "exact"), "rule_id": "R3",
+            "selection_relation": relation,
+        }
+    return nodes
+
+
 def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_checklist,
                             backbone, contracts):
     """Create ``C_t`` without re-planning or using runtime observations."""
