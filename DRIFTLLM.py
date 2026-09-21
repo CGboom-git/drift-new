@@ -211,6 +211,34 @@ class DRIFTLLM(PromptingLLM):
             "provenance": self._action_instance_provenance(tool_name, tool_args or {}),
         })
 
+    def _rcvr_commit_approved_call(self, tool_name, tool_args):
+        """Commit host state only after RCVR approved a successful call.
+
+        This is intentionally separate from TAER assessment: a verdict does
+        not mutate the trajectory, and a failed tool response never consumes
+        an authorization or completes a backbone step.
+        """
+        self.achieved_function_trajectory.append(tool_name)
+        if self._is_action_tool(tool_name):
+            self._record_authorized_action_instance(tool_name, tool_args)
+        state = getattr(self, 'taer_state', None)
+        if state is None:
+            return
+        match = match_candidate_to_backbone(tool_name, tool_args, state)
+        if match.status != 'UNIQUE' or not match.step_id:
+            return
+        step = state.backbone_steps.get(match.step_id)
+        if step is None:
+            return
+        if getattr(step, 'fan_out_mode', None):
+            count = getattr(step, 'fan_out_matched_count', 0) + 1
+            setattr(step, 'fan_out_matched_count', count)
+            limit = getattr(step, 'fan_out_limit', None)
+            if step.fan_out_mode == 'TOP-K' and limit and count >= limit:
+                step.status = 'done'
+        else:
+            step.status = 'done'
+
     def _in_plan_action_instance_compatible(self, tool_name, tool_args):
         authorized_instances = getattr(self, "_authorized_action_instances", [])
         if not isinstance(authorized_instances, list):

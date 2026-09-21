@@ -292,6 +292,8 @@ class ExperimentalExecutor(ToolsExecutor):
                 response = produced[-1]
                 payload, ok = parsed_response(response)
                 self.ledger.record_response(call, payload, self.tick(), ok)
+                if response.get('error') is None and getattr(self.llm, '_rcvr_unified_final_owner', False):
+                    self.llm._rcvr_commit_approved_call(raw.function, raw.args)
                 self.emit({'event': 'effect_or_read_response', 'call': vars(call), 'error': response.get('error'),
                            'successful_response': response.get('error') is None})
                 return response
