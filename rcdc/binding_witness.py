@@ -63,7 +63,12 @@ def select(payload, rule):
         for predicate in rule.get('predicates', []):
             value = field(row, predicate['field'])
             if predicate['operator'] == 'equals':
-                fits &= equal(value, predicate['value'])
+                # Runtime self is a contract-level identity relation, never a
+                # task literal. Backends may expose it as a stable self alias.
+                if predicate['value'] == '__RCVR_RUNTIME_SELF__':
+                    fits &= isinstance(value, str) and value.strip().lower() in {'me', 'self', 'current_user'}
+                else:
+                    fits &= equal(value, predicate['value'])
             elif predicate['operator'] == 'prefix':
                 if not isinstance(value, str):
                     raise ValueError('unknown_field_type')

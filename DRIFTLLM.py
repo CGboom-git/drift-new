@@ -1921,6 +1921,12 @@ Do not approve unrelated exploration or any new goal.
                                         'request': read_nodes.get(source, {}).get('required parameters', {}),
                                         'selection': [{'field': selector, 'operator': 'equals',
                                                        'value': {'kind': 'user_literal', 'value': fixed_value}}]})
+                            candidates.append({'action_tool': action, 'parameter': parameter, 'source_tool': source,
+                                'relation': 'opposite_principal', 'value_field': value_field,
+                                'identity_field': 'id' if 'id' in fields else '',
+                                'request': read_nodes.get(source, {}).get('required parameters', {}),
+                                'selection': [{'field': selector, 'operator': 'equals',
+                                               'value': {'kind': 'runtime_self'}}]})
         if candidates:
             choice_prompt = "Return ONLY a JSON list of integer candidate ids that express the user task. Do not write objects."
             ids_text = self.client.llm_run(choice_prompt, json.dumps({'user_query': user_query,

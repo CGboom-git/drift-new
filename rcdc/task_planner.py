@@ -200,6 +200,9 @@ def _compile_relation_choices_atomic(checklist, trajectory, contracts, choices, 
                     return None
                 predicate = {"field": field, "value_from_parameter": reference,
                              "operator": item.get("operator", "equals")}
+            elif kind == "runtime_self":
+                predicate = {"field": field, "value": "__RCVR_RUNTIME_SELF__",
+                             "operator": item.get("operator", "equals")}
             else:
                 return None
             predicates.append(predicate)
