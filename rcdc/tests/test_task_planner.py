@@ -88,6 +88,39 @@ class PlannerAnchorTests(unittest.TestCase):
         action = json.loads(anchor.actions)[1]
         self.assertEqual(action['binding_rules'], [])
 
+    def test_partial_anchor_retains_an_unresolved_binding_slot(self):
+        anchor = freeze_from_secure_plan('suite/user_task_x', 'Apply the requested effect.',
+            ['lookup_record', 'commit_effect'], json.dumps([
+                {'name': 'lookup_record', 'required parameters': {'limit': 1}, 'conditions': {}},
+                {'name': 'commit_effect', 'required parameters': {'target': None}, 'conditions': {}},
+            ]), self.backbone, CONTRACTS)
+        action = json.loads(anchor.actions)[1]
+        self.assertEqual(action['binding_rules'], [])
+        self.assertEqual(action['unresolved_slots'][0]['parameter'], 'target')
+        self.assertEqual(action['unresolved_slots'][0]['source_tools'], ['lookup_record'])
+        spec = compile_anchor_spec(anchor, 'commit_effect', CONTRACTS)
+        self.assertEqual(json.loads(spec.source_annotations)['unresolved_slots'][0]['parameter'], 'target')
+
+    def test_action_level_source_condition_becomes_one_partial_slot(self):
+        contracts = {'tools': {
+            'read_history': {'tool_type': 'READ', 'args': {}},
+            'schedule': {'tool_type': 'WRITE', 'args': {
+                'amount': {'sink_role': 'control'},
+                'date': {'sink_role': 'control'}}},
+        }}
+        backbone = SimpleNamespace(initialized=True, backbone_order=[], backbone_steps={})
+        anchor = freeze_from_secure_plan('suite/u', 'Use the history amount.',
+            ['read_history', 'schedule'], json.dumps([
+                {'name': 'read_history', 'required parameters': {}, 'conditions': {}},
+                {'name': 'schedule', 'required parameters': {'amount': None, 'date': None},
+                 'conditions': {'source_tool': 'read_history'}},
+            ]), backbone, contracts)
+        action = json.loads(anchor.actions)[1]
+        self.assertEqual(action['unresolved_slots'], [{
+            'parameter': 'amount', 'sink_role': 'control',
+            'source_tools': ['read_history'],
+            'authority_basis': 'secure_planner_partial_binding_slot'}])
+
     def test_contract_constrained_choice_materializes_relation(self):
         contracts = {'tools': {
             'read_records': {'tool_type': 'READ', 'args': {}, 'output_semantics': {'fields': {

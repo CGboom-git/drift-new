@@ -95,6 +95,10 @@ class ExperimentalExecutor(ToolsExecutor):
         self.last_recovery_stop = None
         self.checkpoint_root = None
         self.checkpoint_context = None
+        # TAER schedules evidence acquisition across ordinary model turns.
+        # It never authorizes an action: a pending action must re-enter the
+        # same RCVR verifier after each bounded READ sequence.
+        self.pending_evidence = None
 
     def tick(self):
         self.clock += 1
@@ -126,7 +130,7 @@ class ExperimentalExecutor(ToolsExecutor):
 
     def _unified_decision(self, spec, call, raw, query=None, messages=None):
         """One three-valued verdict from immutable constraints and SourceFlow."""
-        binding = evaluate(spec, call, self.ledger, self.gate.relation_mode)
+        binding = self._evaluate_runtime_slots(spec, call)
         taer_state = getattr(self.llm, 'taer_state', None)
         taer = assess_deterministic_candidate(
             call.tool, json.loads(call.arguments), taer_state,
@@ -157,6 +161,21 @@ class ExperimentalExecutor(ToolsExecutor):
         if getattr(flow, 'reject', False):
             verdict, reason = 'INVALID', 'sourceflow_reject'
         elif getattr(flow, 'repair_required', False):
+            annotations = json.loads(spec.source_annotations)
+            # A host-verified runtime slot witness is stronger than a legacy
+            # SourceFlow root guess.  SourceFlow still rejects tainted flows
+            # above, but cannot force another identical READ after a valid
+            # record-level binding has already been established.
+            defaults = {item.get('parameter') for item in annotations.get('operational_defaults', [])
+                        if isinstance(item, dict) and item.get('policy') == 'host_execution_time'}
+            obligations = list(getattr(flow, 'repair_obligations', []) or [])
+            non_default_obligations = [
+                item for item in obligations
+                if str(item.get('arg_name') or item.get('sink') or '').split('.')[-1] not in defaults
+            ]
+            if binding.verdict == 'VALID' and (
+                    annotations.get('unresolved_slots') or (obligations and not non_default_obligations)):
+                return binding
             verdict, reason = 'UNKNOWN', 'sourceflow_repair_required'
         else:
             annotations = json.loads(spec.source_annotations)
@@ -183,6 +202,103 @@ class ExperimentalExecutor(ToolsExecutor):
             )
         return Decision(final, merged, tuple(sorted(set([*binding.missing_evidence_conditions, *flow_missing]))),
                         digest(dataclasses.asdict(call)), spec.constraint_id, self.ledger.revision)
+
+    @staticmethod
+    def _payload_scalars(value):
+        # Tool executors retain the raw response in the ledger. Parse only
+        # structured YAML/JSON text before comparing scalar evidence; plain
+        # prose stays opaque and cannot create a binding.
+        if isinstance(value, str):
+            try:
+                parsed = yaml.load(value, Loader=UniqueLoader)
+            except (yaml.YAMLError, TypeError, ValueError):
+                parsed = value
+            if parsed is not value and isinstance(parsed, (dict, list)):
+                yield from ExperimentalExecutor._payload_scalars(parsed)
+            else:
+                yield value
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from ExperimentalExecutor._payload_scalars(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from ExperimentalExecutor._payload_scalars(item)
+        elif isinstance(value, (int, float, bool)) or value is None:
+            yield value
+
+    def _injected_value(self, value):
+        """Reject a slot value explicitly introduced by injected text."""
+        target = str(value)
+        for record in list(getattr(getattr(self.llm, 'source_label_store', None), 'records', []) or []):
+            labels = set(getattr(record, 'source_labels', []) or [])
+            if 'injected_instruction' in labels and target and target in str(getattr(record, 'value', '')):
+                return True
+        return False
+
+    def _evaluate_runtime_slots(self, spec, call):
+        """Resolve partial-anchor slots only from prior, host-recorded READ data."""
+        base = evaluate(spec, call, self.ledger, self.gate.relation_mode)
+        annotations = json.loads(spec.source_annotations)
+        slots = annotations.get('unresolved_slots') or []
+        if not slots:
+            return base
+        args = json.loads(call.arguments)
+        roles = json.loads(spec.parameter_roles)
+        witnesses = [w for w in base.witnesses if not (w.rule_id == 'SCOPE' and w.reason == 'missing_rule')]
+        missing = list(base.missing_evidence_conditions)
+        for slot in slots:
+            parameter = slot.get('parameter')
+            allowed = set(slot.get('source_tools') or [])
+            value = args.get(parameter)
+            matching = []
+            for evidence in self.ledger.evidence():
+                if (evidence.task_id != call.task_id or evidence.epoch != call.epoch
+                        or evidence.position >= call.position or not evidence.success
+                        or (allowed and evidence.tool not in allowed)):
+                    continue
+                try:
+                    payload = json.loads(evidence.payload)
+                except (TypeError, ValueError):
+                    continue
+                if any(canonical(item) == canonical(value) for item in self._payload_scalars(payload)):
+                    matching.append(evidence)
+            if value is None or not matching:
+                verdict, reason, source = 'UNKNOWN', 'missing_runtime_binding', None
+            elif self._injected_value(value):
+                verdict, reason, source = 'INVALID', 'injected_value_for_binding_slot', matching[-1]
+            else:
+                verdict, reason, source = 'VALID', 'runtime_binding_slot_satisfied', matching[-1]
+            witnesses.append(Witness(call.call_id, call.tool, parameter, canonical(value), spec.constraint_id,
+                                     source.source_id if source else None,
+                                     source.tool if source else slot.get('authority_basis', 'host'),
+                                     roles.get(parameter, slot.get('sink_role', 'unknown')),
+                                     'runtime_binding_slot', bool(source), verdict, reason,
+                                     'RUNTIME_SLOT', slot.get('authority_basis', 'host'),
+                                     source.revision if source else None))
+            if verdict == 'UNKNOWN':
+                missing.append(f'{parameter}:{reason}')
+        verdict = ('INVALID' if any(w.verdict == 'INVALID' for w in witnesses)
+                   else 'UNKNOWN' if any(w.verdict == 'UNKNOWN' for w in witnesses) else 'VALID')
+        return Decision(verdict, tuple(witnesses), tuple(sorted(set(missing))),
+                        digest(dataclasses.asdict(call)), spec.constraint_id, self.ledger.revision)
+
+    @staticmethod
+    def _slot_evidence_tools(spec, evidence_tools):
+        # A frozen binding rule already declares its exact recovery source.
+        # Prefer it over the broad suite READ inventory.  Partial anchors use
+        # their unresolved slots; only a truly unspecified case may fall back.
+        evidence = set(evidence_tools)
+        try:
+            scope = json.loads(spec.recovery_scope or '[]') if spec is not None else []
+        except (TypeError, ValueError):
+            scope = []
+        scoped = {item.get('tool') for item in scope if isinstance(item, dict) and item.get('tool')}
+        if scoped & evidence:
+            return sorted(scoped & evidence)
+        annotations = json.loads(spec.source_annotations) if spec is not None else {}
+        declared = {name for slot in annotations.get('unresolved_slots', []) or []
+                    for name in slot.get('source_tools', [])}
+        return sorted(declared & evidence) or list(evidence_tools)
 
     @staticmethod
     def _is_evidence_producing_tool(contract):
@@ -256,6 +372,29 @@ class ExperimentalExecutor(ToolsExecutor):
             # READs are evidence acquisition, as in the original APDE path.
             # Only effects without an anchor receive a generic runtime scope.
             tool_type = str(self.contracts.get('tools', {}).get(raw.function, {}).get('tool_type', ''))
+            if self.pending_evidence is not None:
+                pending = self.pending_evidence
+                if tool_type.startswith('READ'):
+                    if (raw.function not in set(pending['allowed_tools'])
+                            or pending['attempts'] >= pending['budget']):
+                        self.emit({'event': 'evidence_scheduler_read_rejected',
+                                   'tool': raw.function, 'pending_action': pending['action_tool'],
+                                   'attempts': pending['attempts']})
+                        appended.append({'role': 'tool',
+                                         'content': '[RCVR NEED EVIDENCE] This READ is outside the bounded evidence route.',
+                                         'error': '[RCVR NEED EVIDENCE]', 'tool_call_id': raw.id, 'tool_call': raw})
+                        break
+                    pending['attempts'] += 1
+                    self.emit({'event': 'evidence_scheduler_read_allowed', 'tool': raw.function,
+                               'pending_action': pending['action_tool'], 'attempt': pending['attempts'],
+                               'budget': pending['budget']})
+                elif raw.function != pending['action_tool']:
+                    self.emit({'event': 'evidence_scheduler_action_deferred',
+                               'tool': raw.function, 'pending_action': pending['action_tool']})
+                    appended.append({'role': 'tool',
+                                     'content': '[RCVR NEED EVIDENCE] Complete the pending original action evidence path before a different action.',
+                                     'error': '[RCVR NEED EVIDENCE]', 'tool_call_id': raw.id, 'tool_call': raw})
+                    break
             if (spec is None and self.constraint_source == 'task_anchor_v1'
                     and not tool_type.startswith('READ')):
                 from .schema import ConstraintSpec
@@ -445,7 +584,39 @@ class ExperimentalExecutor(ToolsExecutor):
                                           decision_provider=provider if self.constraint_source == 'task_anchor_v1' else None,
                                           taer_context=taer_context if self.constraint_source == 'task_anchor_v1' else None,
                                           on_recovery_created=(lambda recovery: active_recovery.__setitem__(0, recovery))
-                                          if self.constraint_source == 'task_anchor_v1' else None)
+                                          if self.constraint_source == 'task_anchor_v1' else None,
+                                          defer_unknown=self.constraint_source == 'task_anchor_v1')
+            if isinstance(outcome, dict) and outcome.get('rcvr_deferred'):
+                allowed = self._slot_evidence_tools(spec, evidence_tools)
+                previous_pending = self.pending_evidence if self.pending_evidence and self.pending_evidence.get('action_tool') == raw.function else None
+                budget = previous_pending['budget'] if previous_pending else max(4, self.gate.budget * 2)
+                attempts = previous_pending['attempts'] if previous_pending else 0
+                if attempts >= budget:
+                    self.stopped = True
+                    self.emit({'event': 'evidence_scheduler_exhausted', 'call_id': call.call_id,
+                               'action_tool': raw.function, 'attempts': attempts, 'budget': budget})
+                    appended.append({'role': 'tool', 'content': '[CALL ERROR] RCVR evidence budget exhausted.',
+                                     'error': '[CALL ERROR] RCVR evidence budget exhausted.',
+                                     'tool_call_id': raw.id, 'tool_call': raw})
+                    break
+                self.pending_evidence = {
+                    'action_tool': raw.function,
+                    'allowed_tools': allowed,
+                    'missing_conditions': outcome['decision'].get('missing_evidence_conditions', []),
+                    'attempts': attempts,
+                    # Multiple READs are a TAER scheduling path, not the old
+                    # two-call recovery retry.  It remains bounded per action.
+                    'budget': budget,
+                }
+                self.emit({'event': 'evidence_scheduler_opened', 'call_id': call.call_id,
+                           'action_tool': raw.function, 'allowed_tools': allowed,
+                           'missing_conditions': self.pending_evidence['missing_conditions']})
+                appended.append({'role': 'tool',
+                                 'content': '[RCVR NEED EVIDENCE] The action was held. Collect bounded READ evidence for: '
+                                            + ', '.join(self.pending_evidence['missing_conditions'])
+                                            + '. Allowed READ tools: ' + ', '.join(allowed),
+                                 'error': '[RCVR NEED EVIDENCE]', 'tool_call_id': raw.id, 'tool_call': raw})
+                break
             if isinstance(outcome, dict) and outcome.get('rcvr_stopped'):
                 self.stopped = True
                 self.last_recovery_stop = outcome
@@ -459,6 +630,11 @@ class ExperimentalExecutor(ToolsExecutor):
                                      'tool_call_id': pending.id, 'tool_call': pending})
                 break
             appended.append(outcome)
+            if (self.pending_evidence is not None and raw.function == self.pending_evidence['action_tool']
+                    and isinstance(outcome, dict) and not outcome.get('error')):
+                self.emit({'event': 'evidence_scheduler_action_revalidated',
+                           'tool': raw.function, 'attempts': self.pending_evidence['attempts']})
+                self.pending_evidence = None
             if self.stopped:
                 break
         if self.stopped:

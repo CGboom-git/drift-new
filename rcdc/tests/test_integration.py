@@ -90,6 +90,10 @@ class IntegrationTests(unittest.TestCase):
         self.assertFalse(ex.stopped)
         self.assertTrue(any(e.get('event') == 'evidence_isolation_observation' for e in events))
 
+    def test_runtime_slot_scalars_parse_structured_tool_text(self):
+        payload = '- amount: 50.0\n  subject: Spotify Premium\n'
+        self.assertIn(50.0, list(ExperimentalExecutor._payload_scalars(payload)))
+
     def test_duplicate_yaml_key_unknown(self):
         self.assertEqual(parsed_response({'content': '- id: 1\n  id: 2\n', 'error': None}), (None, False))
 

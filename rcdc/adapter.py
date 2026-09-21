@@ -23,7 +23,8 @@ class Gate:
 
     def candidate(self, spec, call, ledger, continue_original, propose_read=None,
                   execute_read=None, position=None, ordinary_read_tools=(), on_unknown=None,
-                  decision_provider=None, taer_context=None, on_recovery_created=None):
+                  decision_provider=None, taer_context=None, on_recovery_created=None,
+                  defer_unknown=False):
         if self.mode == 'off':
             return continue_original()
         if spec is None:
@@ -46,6 +47,10 @@ class Gate:
         if decision.verdict == 'UNKNOWN' and on_unknown is not None:
             # The callback runs before any recovery proposal or tool effect.
             on_unknown(decision)
+        if decision.verdict == 'UNKNOWN' and defer_unknown:
+            self.emit({'event': 'evidence_scheduler_deferred_action', 'call_id': call.call_id,
+                       'missing_conditions': list(decision.missing_evidence_conditions)})
+            return {'rcvr_deferred': True, 'verdict': 'UNKNOWN', 'decision': decision.json()}
         if self.mode == 'shadow':
             return continue_original()
         # UNKNOWN is not INVALID.  This ablation deliberately treats it as a

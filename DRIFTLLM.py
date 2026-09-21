@@ -1868,6 +1868,50 @@ Do not approve unrelated exploration or any new goal.
         start, end = text.find('['), text.rfind(']')
         return text[start:end + 1] if start >= 0 and end > start else None
 
+    def _repair_ungrounded_content_literals(self, checklist, trajectory, contract, user_query):
+        """Replace only planner content values that are not verbatim user text.
+
+        This is a constrained planner-stage repair: the model selects an exact
+        span already present in the user request, and host validation rejects
+        every other tool, parameter, or value. It prevents a history lookup
+        label from silently replacing the content of a requested action.
+        """
+        candidates = []
+        query_lower = str(user_query).lower()
+        for node in checklist:
+            tool = node.get("name")
+            for parameter, value in (node.get("required parameters", {}) or {}).items():
+                arg = contract.get("tools", {}).get(tool, {}).get("args", {}).get(parameter, {})
+                if (tool in trajectory and arg.get("sink_role") == "content"
+                        and isinstance(value, str) and value.lower() not in query_lower):
+                    candidates.append({"action_tool": tool, "parameter": parameter, "current_value": value})
+        if not candidates:
+            return checklist
+        prompt = """Return ONLY a JSON list of replacements for the listed content parameters.
+Each replacement is {"action_tool":..., "parameter":..., "value":...}. The value must be one
+contiguous verbatim span from user_query that expresses the requested action content. Do not
+use a label that only identifies a record to read. Return [] if no exact user span applies."""
+        answer = self.client.llm_run(prompt, json.dumps({"user_query": user_query,
+            "candidates": candidates}, ensure_ascii=False), max_tokens=512, enable_thinking=False)
+        try:
+            replacements = json.loads(self._extract_checklist_json(answer) or "")
+        except (TypeError, ValueError):
+            return checklist
+        if not isinstance(replacements, list):
+            return checklist
+        result = [dict(node, **{"required parameters": dict(node.get("required parameters", {}))})
+                  for node in checklist]
+        nodes = {node.get("name"): node for node in result}
+        for item in replacements:
+            if not isinstance(item, dict):
+                continue
+            tool, parameter, value = item.get("action_tool"), item.get("parameter"), item.get("value")
+            arg = contract.get("tools", {}).get(tool, {}).get("args", {}).get(parameter, {})
+            if (tool in nodes and isinstance(value, str) and value
+                    and value.lower() in query_lower and arg.get("sink_role") == "content"):
+                nodes[tool]["required parameters"][parameter] = value
+        return result
+
     def _compile_structured_anchor_relations(self, user_query):
         """Compile constrained model relation choices into a frozen checklist.
 
@@ -1882,6 +1926,8 @@ Do not approve unrelated exploration or any new goal.
                          if isinstance(item, dict) and isinstance(item.get('tools'), dict)), None)
         if contract is None:
             return False
+        existing = self._repair_ungrounded_content_literals(
+            existing, self.initial_function_trajectory, contract, user_query)
         action_tools = set(self.initial_function_trajectory)
         allowed_tools = {
             name: {"tool_type": data.get("tool_type"), "args": data.get("args", {}),
@@ -1889,79 +1935,12 @@ Do not approve unrelated exploration or any new goal.
             for name, data in contract.get("tools", {}).items()
             if name in action_tools or str(data.get("tool_type", "")).startswith("READ")
         }
-        # Enumerate complete, contract-valid choices.  The model will select an
-        # id only; it never writes a source, field, predicate, or literal.
-        candidates = []
-        caps = contract.get('binding_capabilities', {})
-        compat = caps.get('parameter_role_compatibility', {})
-        read_nodes = {node.get('name'): node for node in existing}
-        for node in existing:
-            action = node.get('name')
-            args = contract.get('tools', {}).get(action, {}).get('args', {})
-            for parameter, current in node.get('required parameters', {}).items():
-                if current is not None or parameter not in args:
-                    continue
-                for source, source_spec in allowed_tools.items():
-                    if source not in self.initial_function_trajectory or not str(source_spec.get('tool_type', '')).startswith('READ'):
-                        continue
-                    fields = source_spec.get('output_semantics', {}).get('fields', {})
-                    for value_field, value_info in fields.items():
-                        role = str(value_info.get('role', ''))
-                        role = 'principal' if role.startswith('principal') else role
-                        if role not in compat.get(args[parameter].get('sink_role'), []):
-                            continue
-                        for selector, selector_info in fields.items():
-                            if not str(selector_info.get('role', '')).startswith('principal'):
-                                continue
-                            for fixed_name, fixed_value in node.get('required parameters', {}).items():
-                                if fixed_value is not None and self._planner_action_value_is_grounded(fixed_value, user_query):
-                                    candidates.append({'action_tool': action, 'parameter': parameter, 'source_tool': source,
-                                        'relation': 'unique_selected_record_field', 'value_field': value_field,
-                                        'identity_field': 'id' if 'id' in fields else '',
-                                        'request': read_nodes.get(source, {}).get('required parameters', {}),
-                                        'selection': [{'field': selector, 'operator': 'equals',
-                                                       'value': {'kind': 'user_literal', 'value': fixed_value}}]})
-                            candidates.append({'action_tool': action, 'parameter': parameter, 'source_tool': source,
-                                'relation': 'opposite_principal', 'value_field': value_field,
-                                'identity_field': 'id' if 'id' in fields else '',
-                                'request': read_nodes.get(source, {}).get('required parameters', {}),
-                                'selection': [{'field': selector, 'operator': 'equals',
-                                               'value': {'kind': 'runtime_self'}}]})
-        if candidates:
-            choice_prompt = """Return ONLY a JSON list of integer candidate ids that express the user task. Do not write objects.
-`runtime_self` means the authenticated user in the selected runtime record. For a request such as a refund,
-select the candidate whose record direction matches the natural-language relation: money sent *to me* has
-recipient=runtime_self, and the counterparty is its sender. Never select a candidate merely because a value
-looks similar; choose the relation expressed by the task."""
-            ids_text = self.client.llm_run(choice_prompt, json.dumps({'user_query': user_query,
-                'candidates': [{'id': i, 'choice': c} for i, c in enumerate(candidates)]}, ensure_ascii=False),
-                max_tokens=256, enable_thinking=False)
-            try:
-                ids = json.loads(self._extract_checklist_json(ids_text) or '')
-                selected = []
-                seen_parameters = set()
-                for i in ids:
-                    if not isinstance(i, int) or not 0 <= i < len(candidates):
-                        continue
-                    choice = candidates[i]
-                    key = (choice['action_tool'], choice['parameter'])
-                    if key not in seen_parameters:
-                        selected.append(choice)
-                        seen_parameters.add(key)
-                if self.logger:
-                    self.logger.info("Contract relation candidate ids: %s; selected=%s", ids, selected)
-            except (TypeError, ValueError):
-                selected = []
-            parsed = compile_relation_choices(existing, self.initial_function_trajectory, contract, selected, user_query,
-                                               allow_partial=True) if selected else None
-            if parsed is not None:
-                candidate = json.dumps(parsed, ensure_ascii=False)
-                self.node_checklist = self.initial_node_checklist = candidate
-                if self._initial_plan_complete(user_query):
-                    self.initial_planner_complete = True
-                    self._rcvr_anchor_frozen = True
-                    self._notify_rcvr_task_anchor()
-                    return True
+        # Do not synthesize record-selection rules from an unrelated fixed
+        # action argument. For example, a transaction destination may occur
+        # in history but does not identify the record whose amount is needed.
+        # The constrained semantic compiler below may freeze a relation only
+        # when it supplies an explicit task-grounded selector; otherwise the
+        # anchor keeps an unresolved slot for runtime evidence binding.
         instruction = """Return ONLY a JSON list of constrained RelationChoice objects.
 You are selecting relations for an already frozen plan, not writing the plan. Each object has
 action_tool, parameter, source_tool, relation, value_field, identity_field, request and selection.

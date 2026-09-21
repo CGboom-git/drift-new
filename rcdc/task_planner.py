@@ -126,6 +126,29 @@ def _semantic_role(role):
     return role
 
 
+def _unresolved_slot_sources(trajectory, contracts, sink_role):
+    """Return planned READ tools whose declared fields can fill a sink role.
+
+    This is deliberately contract-only: it records possible evidence routes
+    without selecting a runtime record or value during planning.
+    """
+    tools = contracts.get("tools", {}) if isinstance(contracts, dict) else {}
+    compatibility = contracts.get("binding_capabilities", {}).get("parameter_role_compatibility", {})
+    accepted = set(compatibility.get(sink_role, []))
+    planned_reads = [name for name in trajectory
+                     if str(tools.get(name, {}).get("tool_type", "")).startswith("READ")]
+    compatible = []
+    for name in planned_reads:
+        fields = tools.get(name, {}).get("output_semantics", {}).get("fields", {})
+        roles = {_semantic_role(info.get("role")) for info in fields.values() if isinstance(info, dict)}
+        if roles & accepted:
+            compatible.append(name)
+    # Some backends expose an unstructured payload.  The planned READ still
+    # remains a bounded evidence route, but the runtime verifier must find an
+    # actual matching value before it can satisfy the slot.
+    return compatible or planned_reads
+
+
 def _compile_relation_choices_atomic(checklist, trajectory, contracts, choices, user_query):
     """Materialize model *choices* into auditable binding conditions.
 
@@ -275,7 +298,44 @@ def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_chec
         required = required if isinstance(required, dict) else {}
         conditions = conditions if isinstance(conditions, dict) else {}
         contract_args = contracts.get("tools", {}).get(tool, {}).get("args", {})
-        fixed_constraints, origin_rules, binding_rules = [], [], []
+        # Older secure-planner responses may place a single source condition on
+        # the action node instead of under its parameter. Normalize only when
+        # there is one non-operational unresolved argument, preserving the
+        # frozen planner's source without inventing a record-selection rule.
+        if any(key in conditions for key in ("source_tool", "source_tools", "tool")):
+            source_condition = dict(conditions)
+            candidates = [name for name, value in required.items()
+                          if name in contract_args and value is None and name != "date"]
+            # A user-named content label may identify a longer structured
+            # record title (for example, "Spotify" -> "Spotify Premium").
+            # Prefix matching is safe here because the witness still requires
+            # a unique selected record; ambiguity remains UNKNOWN.
+            source = source_condition.get("source_tool")
+            fields = contracts.get("tools", {}).get(source, {}).get("output_semantics", {}).get("fields", {})
+            normalized_predicates = []
+            for predicate in source_condition.get("predicates", []) or []:
+                item = dict(predicate) if isinstance(predicate, dict) else predicate
+                field, value = (item.get("field"), item.get("value")) if isinstance(item, dict) else (None, None)
+                role = _semantic_role(fields.get(field, {}).get("role")) if isinstance(fields.get(field), dict) else ""
+                if (isinstance(item, dict) and item.get("operator", "equals") == "equals"
+                        and role == "content" and isinstance(value, str)
+                        and value.lower() in str(user_task).lower()):
+                    item["operator"] = "prefix"
+                normalized_predicates.append(item)
+            source_condition["predicates"] = normalized_predicates
+            conditions = ({candidates[0]: source_condition} if len(candidates) == 1 else {})
+        # Date is an approved execution-time default, never a task-semantic
+        # value to derive from an arbitrary prior READ response.
+        for parameter, value in required.items():
+            if parameter in contract_args and value is None and parameter == "date":
+                conditions.setdefault(parameter, {
+                    "kind": "operational_default", "policy": "host_execution_time"})
+        fixed_constraints, origin_rules, binding_rules, unresolved_slots = [], [], [], []
+        operational_defaults = [
+            {"parameter": parameter, "policy": condition.get("policy")}
+            for parameter, condition in conditions.items()
+            if isinstance(condition, dict) and condition.get("kind") == "operational_default"
+        ]
         for parameter, value in required.items():
             if parameter not in contract_args or value is None:
                 continue
@@ -295,9 +355,26 @@ def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_chec
                 rule = _binding_rule(parameter, condition, fixed_values, contracts)
                 if rule is not None:
                     binding_rules.append(rule)
+        bound = {rule["parameter"] for rule in binding_rules}
+        for parameter, value in required.items():
+            if parameter not in contract_args or value is not None or parameter in bound:
+                continue
+            condition = conditions.get(parameter)
+            if isinstance(condition, dict) and condition.get("kind") == "operational_default":
+                continue
+            sink_role = contract_args[parameter].get("sink_role", "unknown")
+            source_tools = [name for name in _source_tools(condition)
+                            if str(contracts.get("tools", {}).get(name, {}).get("tool_type", "")).startswith("READ")]
+            unresolved_slots.append({
+                "parameter": parameter,
+                "sink_role": sink_role,
+                "source_tools": source_tools or _unresolved_slot_sources(trajectory, contracts, sink_role),
+                "authority_basis": "secure_planner_partial_binding_slot",
+            })
         actions.append({"tool": tool, "consumer_step_id": getattr(step, "step_id", None),
                         "fixed_constraints": fixed_constraints, "binding_rules": binding_rules,
-                        "origin_rules": origin_rules})
+                        "origin_rules": origin_rules, "unresolved_slots": unresolved_slots,
+                        "operational_defaults": operational_defaults})
 
     return TaskAnchor.create(task_id, user_task, actions, {
         "source": "drift_secure_planner_and_sourceflow_contract",

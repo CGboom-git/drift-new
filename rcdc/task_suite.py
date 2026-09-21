@@ -90,7 +90,15 @@ class RCVRTaskSuite(DRIFTTaskSuite):
                                    'reason': 'anchor_already_frozen',
                                    'anchor_id': existing.anchor_id})
                     return existing
-                if not planner_complete:
+                try:
+                    checklist = json.loads(initial_checklist) if isinstance(initial_checklist, str) else initial_checklist
+                    structural_ready = (isinstance(checklist, list)
+                                        and len(checklist) == len(initial_trajectory or [])
+                                        and all(isinstance(node, dict) and node.get('name') == tool
+                                                for node, tool in zip(checklist, initial_trajectory or [])))
+                except (TypeError, ValueError):
+                    structural_ready = False
+                if not planner_complete and not structural_ready:
                     events.append({'event': 'task_anchor_incomplete',
                                    'reason': 'secure_planner_missing_or_misaligned_checklist',
                                    'initial_trajectory': list(initial_trajectory or [])})
@@ -101,7 +109,8 @@ class RCVRTaskSuite(DRIFTTaskSuite):
                 llm._rcvr_binding_ir = from_anchor(anchor)
                 events.append({'event': 'task_anchor_frozen', 'anchor_id': anchor.anchor_id,
                                'planner_version': anchor.planner_version,
-                               'planner_metadata': json.loads(anchor.planner_metadata)})
+                               'planner_metadata': json.loads(anchor.planner_metadata),
+                               'binding_completion': 'complete' if planner_complete else 'partial'})
                 return anchor
             llm._rcvr_task_anchor_callback = freeze_anchor
             llm._rcvr_task_anchor = None
