@@ -44,7 +44,9 @@ class DRIFTLLM(PromptingLLM):
         self.tool_permissions = {}
         self.source_label_store = SourceLabelStore()
         self.source_flow_contract_helper = ContractHelper(
-            "contracts", benchmark=self.contract_profile()
+            "contracts", benchmark=self.contract_profile(),
+            contract_version=("pact_drift_ifc_global_semantic_review_output_v2"
+                              if self.contract_profile() == "agentdojo" else None),
         )
         self.source_flow_compiler = FlowExpectationCompiler(self.source_flow_contract_helper)
         self.source_flow_resolver = SinkEvidenceResolver()
@@ -1824,6 +1826,9 @@ Do not approve unrelated exploration or any new goal.
         return all(not field or field in fields for field in referenced)
 
     def _tool_return_schema(self, tool_name):
+        contract_schema = self.source_flow_contract_helper.get_output_semantics(tool_name).get('schema')
+        if isinstance(contract_schema, dict):
+            return contract_schema
         for tool in getattr(self, 'tools_docs_list', []):
             if tool.get('name') == tool_name:
                 return tool.get('return_schema')
@@ -1866,7 +1871,8 @@ Do not approve unrelated exploration or any new goal.
         existing = self._normalize_initial_checklist(self.initial_node_checklist)
         if not self.initial_function_trajectory or existing is None:
             return False
-        tool_schemas = [{key: tool.get(key) for key in ('name', 'parameters', 'return_schema')}
+        tool_schemas = [{**{key: tool.get(key) for key in ('name', 'parameters')},
+                         'return_schema': self._tool_return_schema(tool.get('name', ''))}
                         for tool in self.tools_docs_list]
         instruction = """You compile an immutable task-binding checklist. Return ONLY a JSON list.
 Keep exactly this trajectory and node order. For ACTION parameters, retain a non-null

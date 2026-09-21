@@ -19,7 +19,7 @@ from utils import get_args, set_seed
 
 PREFLIGHT = REPO / 'reports' / 'rcvr_ablation_preflight'
 CONTRACTS_BY_PROFILE = {
-    'agentdojo': REPO / 'contracts' / 'agentdojo_ifc_global_tool_contract_semantic_review_gpt55.json',
+    'agentdojo': REPO / 'contracts' / 'agentdojo_ifc_global_tool_contract_semantic_review_gpt55_output_v2.json',
     'agentdyn': REPO / 'contracts' / 'agentdyn_ifc_global_tool_contract_semantic_review_v2_fixed.json',
 }
 EXPECTED = {

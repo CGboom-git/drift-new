@@ -125,9 +125,11 @@ class FlowValidationDecision:
 
 
 class ContractHelper:
-    def __init__(self, contracts_dir: str | Path = "contracts", benchmark: str | None = None) -> None:
+    def __init__(self, contracts_dir: str | Path = "contracts", benchmark: str | None = None,
+                 contract_version: str | None = None) -> None:
         self.contracts_dir = Path(contracts_dir)
         self.benchmark = benchmark
+        self.contract_version = contract_version
         self.contracts = self._load_contracts()
 
     def get_tool_type(self, tool_name: str) -> str:
@@ -235,10 +237,17 @@ class ContractHelper:
                     or not contract.get("contract_version")
                 ):
                     continue
+                if self.contract_version is not None and contract.get("contract_version") != self.contract_version:
+                    continue
                 contracts.append(contract)
             except Exception:
                 continue
         return contracts
+
+    def get_output_semantics(self, tool_name: str) -> dict:
+        node = self._find_tool_node(tool_name)
+        value = node.get("output_semantics") if isinstance(node, dict) else None
+        return value if isinstance(value, dict) else {}
 
     def _find_contract_value(self, tool_name: str, keys: set[str]) -> Any:
         tool_node = self._find_tool_node(tool_name)
