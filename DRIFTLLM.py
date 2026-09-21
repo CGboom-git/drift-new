@@ -2936,12 +2936,14 @@ Do not approve unrelated exploration or any new goal.
                     return query, runtime, env, [*messages, rejection_output, *error_messages], extra_args
 
         source_flow_decision = self._source_flow_validate_tool_calls(output)
-        if getattr(self.args, "taer_mode", "off") == "on" and source_flow_decision is not None:
+        if (getattr(self.args, "taer_mode", "off") == "on" and source_flow_decision is not None
+                and getattr(self, "_rcvr_sourceflow_final", False) is not True):
             self.logger.info(
                 "SourceFlow: TAER ON evidence-only mode — recording evidence only, not rejecting"
             )
             source_flow_decision = None
-        if self._final_decision_owner and source_flow_decision is not None:
+        if (self._final_decision_owner and source_flow_decision is not None
+                and getattr(self, "_rcvr_sourceflow_final", False) is not True):
             self.logger.info(
                 f"SourceFlow: final decision already made (owner={getattr(self.args, 'taer_mode', '')}) — recording evidence only, not rejecting"
             )

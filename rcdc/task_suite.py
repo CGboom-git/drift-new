@@ -69,6 +69,10 @@ class RCVRTaskSuite(DRIFTTaskSuite):
             raise ValueError('task_identity_or_prompt_missing')
         events = []
         constraint_source = config.get('constraint_source', 'task_anchor_v1')
+        # The generic path retains the original APDE SourceFlow validator as
+        # the runtime decision owner.  Legacy B1 regex runs preserve their
+        # historical evidence-only composition for reproducibility.
+        llm._rcvr_sourceflow_final = (constraint_source == 'task_anchor_v1')
         task_anchor = None
         if constraint_source == 'task_anchor_v1':
             # DRIFT calls this after its initial secure planner builds the
