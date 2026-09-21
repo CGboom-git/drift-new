@@ -1926,8 +1926,15 @@ use a label that only identifies a record to read. Return [] if no exact user sp
                          if isinstance(item, dict) and isinstance(item.get('tools'), dict)), None)
         if contract is None:
             return False
-        existing = self._repair_ungrounded_content_literals(
+        corrected_content = self._repair_ungrounded_content_literals(
             existing, self.initial_function_trajectory, contract, user_query)
+        # Content repairs are independently host-validated against user text.
+        # Retain them even when no record relation can be compiled.
+        if corrected_content != existing:
+            existing = corrected_content
+            self.node_checklist = self.initial_node_checklist = json.dumps(existing, ensure_ascii=False)
+        else:
+            existing = corrected_content
         action_tools = set(self.initial_function_trajectory)
         allowed_tools = {
             name: {"tool_type": data.get("tool_type"), "args": data.get("args", {}),
