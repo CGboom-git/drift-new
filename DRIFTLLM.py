@@ -1932,6 +1932,10 @@ ACTION parameter that can be safely compiled; return [] if none can be expressed
             self.taer_state = init_taer_backbone(self.function_trajectory, self.node_checklist,
                                                  candidate, self.source_flow_contract_helper)
         self.initial_planner_complete = True
+        # The relation compiler runs after the normal planner callbacks.  Notify
+        # RCVR here so its immutable anchor is frozen from this completed
+        # checklist before the first runtime tool response.
+        self._notify_rcvr_task_anchor()
         return True
 
     def _extract_user_explicit_entities(self, query_text):
