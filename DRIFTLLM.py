@@ -1711,7 +1711,7 @@ Do not approve unrelated exploration or any new goal.
                 self.logger.info(f"TAER backbone initialized with {len(self.taer_state.backbone_order)} steps")
                 self.logger.info(f"User explicit entities: {self._user_explicit_entities}")
 
-        self.initial_planner_complete = self._initial_plan_complete()
+        self.initial_planner_complete = self._initial_plan_complete(raw_user_query)
 
         if notify_anchor:
             self._notify_rcvr_task_anchor()
@@ -1756,12 +1756,52 @@ Do not approve unrelated exploration or any new goal.
             normalized.append({'name': name, 'required parameters': required, 'conditions': conditions})
         return normalized
 
-    def _initial_plan_complete(self):
+    @staticmethod
+    def _planner_action_value_is_grounded(value, user_query):
+        """Whether an initial ACTION constant came from the user task itself.
+
+        The initial plan is created before tool observations exist.  A value
+        absent from the user request therefore cannot be frozen as an action
+        constant; it needs a runtime binding rule instead.
+        """
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return str(value).lower() in str(user_query).lower()
+        if isinstance(value, (int, float, str)):
+            text = str(value).strip().lower()
+            return bool(text) and text in str(user_query).lower()
+        return False
+
+    @staticmethod
+    def _is_structured_runtime_relation(condition):
+        return (isinstance(condition, dict)
+                and isinstance(condition.get('source_tool'), str)
+                and bool(condition.get('source_tool'))
+                and isinstance(condition.get('request'), dict)
+                and isinstance(condition.get('predicates'), list)
+                and bool(condition.get('predicates'))
+                and isinstance(condition.get('value_field'), str)
+                and bool(condition.get('value_field')))
+
+    def _initial_plan_complete(self, user_query=""):
         checklist = self._normalize_initial_checklist(self.initial_node_checklist)
         if not self.initial_function_trajectory or checklist is None:
             return False
-        return (len(checklist) == len(self.initial_function_trajectory)
-                and all(node['name'] == tool for node, tool in zip(checklist, self.initial_function_trajectory)))
+        if (len(checklist) != len(self.initial_function_trajectory)
+                or any(node['name'] != tool for node, tool in zip(checklist, self.initial_function_trajectory))):
+            return False
+        for node in checklist:
+            tool = node['name']
+            if not self._is_action_tool(tool):
+                continue
+            for parameter, value in node['required parameters'].items():
+                if value is None:
+                    if not self._is_structured_runtime_relation(node['conditions'].get(parameter)):
+                        return False
+                elif not self._planner_action_value_is_grounded(value, user_query):
+                    return False
+        return True
 
     def _extract_user_explicit_entities(self, query_text):
         entities = set()
@@ -2792,7 +2832,11 @@ Do not approve unrelated exploration or any new goal.
                         "Return the complete initial secure plan again. Include exactly one "
                         "<function_trajectory>...</function_trajectory> and one "
                         "<parameter_checklist>...</parameter_checklist>. The checklist must be a JSON list "
-                        "with one node, in the same order, for every trajectory function.")}
+                        "with one node, in the same order, for every trajectory function. For every ACTION "
+                        "parameter, retain only literals explicitly present in the user request. Set every "
+                        "runtime-derived value to null and give it a structured condition with source_tool, "
+                        "request, a nonempty predicate list, and value_field. Do not guess record values or "
+                        "use a bare source-tool condition.")}
                     completion = self.client.agent_run([*openai_messages, retry], self.tools_docs_list,
                                                        max_tokens=4096, enable_thinking=False)
                     self.initial_constraints_build(completion, query, notify_anchor=False)
