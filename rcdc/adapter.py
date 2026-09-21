@@ -56,6 +56,9 @@ class Gate:
                        'call_id': call.call_id, 'original_verdict': 'UNKNOWN'})
             return continue_original()
         if decision.verdict == 'UNKNOWN' and self.mode in ('retry', 'full'):
+            # ``ordinary_read_tools`` is retained as a public argument for
+            # experiment compatibility.  Recovery treats it as the generic
+            # evidence-producing tool set, never as permission for an action.
             recovery = Recovery(spec, call, ledger, decision, self.mode, self.budget, ordinary_read_tools,
                                 self.emit, self.relation_mode, decision_provider, taer_context)
             if on_recovery_created is not None:

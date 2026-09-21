@@ -12,7 +12,7 @@ from agentdojo.task_suite.load_suites import get_suite
 from DRIFTLLM import DRIFTLLM
 from DRIFTToolsExecutionLoop import DRIFTToolsExecutionLoop
 from authorization_audit_20260908.online_runner.full_pilot import args_full
-from rcdc.integration import components, parsed_response, parse_recovery_proposal
+from rcdc.integration import ExperimentalExecutor, components, parsed_response, parse_recovery_proposal
 from rcdc.constraint_spec import compile_spec
 from rcdc.schema import Call
 from rcdc.events import EvidenceLedger
@@ -99,6 +99,19 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(parse_recovery_proposal('```json\n{"tool":"get_channels","arguments":{}}\n```'), expected)
         self.assertIsNone(parse_recovery_proposal('prefix {"tool":"get_channels","arguments":{}}'))
         self.assertIsNone(parse_recovery_proposal('```json\n[]\n```'))
+
+    def test_evidence_scope_uses_contract_semantics_not_tool_name(self):
+        self.assertTrue(ExperimentalExecutor._is_evidence_producing_tool({'tool_type': 'READ_SENSITIVE'}))
+        self.assertTrue(ExperimentalExecutor._is_evidence_producing_tool({'non_consequential_evidence': True}))
+        self.assertFalse(ExperimentalExecutor._is_evidence_producing_tool({'tool_type': 'ACTION'}))
+        flow = SimpleNamespace(repair_required=True, repair_obligations=[{
+            'arg_name': 'recipient', 'expected_root_tools': ['lookup_recipient', 'send_money'],
+        }])
+        scope = ExperimentalExecutor._sourceflow_recovery_scope(flow, ['lookup_recipient'])
+        self.assertEqual(scope, [{
+            'tool': 'lookup_recipient', 'arguments': None, 'satisfies_parameter': 'recipient',
+            'kind': 'evidence', 'origin': 'sourceflow_binding_delta',
+        }])
 
     def test_six_real_task_schemas_bind_their_ground_truth(self):
         for suite_name, task_id in [('banking','user_task_4'), ('workspace','user_task_8'),

@@ -10,7 +10,7 @@ class RecoveryContext:
     original_call: Call
     immutable_constraint_spec: ConstraintSpec
     missing_conditions: tuple
-    allowed_read_tools: tuple
+    allowed_evidence_tools: tuple
     recovery_budget: int
     attempted_evidence: list = field(default_factory=list)
     status: str = 'PENDING'
@@ -25,7 +25,7 @@ class RecoveryContext:
 
 
 class Recovery:
-    def __init__(self, spec, call, ledger, decision, mode, budget, ordinary_read_tools,
+    def __init__(self, spec, call, ledger, decision, mode, budget, ordinary_evidence_tools,
                  emit=lambda e: None, relation_mode='full', decision_provider=None,
                  taer_context=None):
         if decision.verdict != 'UNKNOWN':
@@ -48,7 +48,7 @@ class Recovery:
         # DRIFTLLM's legacy pending-repair map.
         self._taer_state = taer_context.get('state') if taer_context else None
         self._taer_repair = None
-        allowed = tuple(sorted({x['tool'] for x in self.requests})) if mode == 'full' else tuple(sorted(ordinary_read_tools))
+        allowed = tuple(sorted({x['tool'] for x in self.requests})) if mode == 'full' else tuple(sorted(ordinary_evidence_tools))
         taer_context = taer_context or {}
         self.context = RecoveryContext(call, spec, decision.missing_evidence_conditions, allowed, budget,
                                        taer_consumer_step_id=taer_context.get('consumer_step_id'),
@@ -93,7 +93,7 @@ class Recovery:
                    'tool_call_id': call_id})
         self._taer_repair = None
 
-    def step(self, propose_read, execute_read, position):
+    def step(self, propose_evidence, execute_evidence, position):
         ctx = self.context
         if ctx.immutable_constraint_spec != self.spec or self.spec.constraint_id != self.fingerprint or ctx.original_call != self.call:
             ctx.status = 'STOP'
@@ -112,12 +112,12 @@ class Recovery:
                 'attempted_evidence': list(ctx.attempted_evidence)}
         if self.mode == 'full':
             hint.update(missing_conditions=ctx.missing_conditions, allowed_requests=self.requests)
-        proposal = propose_read(hint)
+        proposal = propose_evidence(hint)
         self.emit({'event': 'evidence_bounded_recovery_proposal', 'step': ctx.steps, 'proposal': proposal})
         if not isinstance(proposal, dict) or not isinstance(proposal.get('arguments'), dict):
             allowed = False
         else:
-            allowed = proposal.get('tool') in ctx.allowed_read_tools
+            allowed = proposal.get('tool') in ctx.allowed_evidence_tools
             if self.mode == 'full':
                 allowed &= any(proposal['tool'] == r['tool']
                                and (r.get('arguments') is None or canonical(proposal['arguments']) == canonical(r['arguments']))
@@ -127,10 +127,10 @@ class Recovery:
         if allowed and not duplicate:
             ctx.attempted_evidence.append(request_key)
             ctx.tool_calls += 1
-            result = execute_read(proposal)
+            result = execute_evidence(proposal)
             self._complete_taer_repair(result)
         else:
-            self.emit({'event': 'evidence_bounded_recovery_read_rejected', 'reason': 'duplicate_read' if duplicate else 'outside_scope'})
+            self.emit({'event': 'evidence_bounded_recovery_request_rejected', 'reason': 'duplicate_request' if duplicate else 'outside_scope'})
         # Always construct a new call-time witness, including after failed reads.
         rebound = Call(self.call.task_id, self.call.call_id, self.call.tool, self.call.arguments, position(), self.call.epoch)
         self.decision = (self.decision_provider(rebound) if self.decision_provider is not None
