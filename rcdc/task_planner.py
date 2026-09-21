@@ -42,6 +42,19 @@ def _checklist(value):
     return value if isinstance(value, list) else []
 
 
+def _planner_value_is_user_grounded(value, user_task):
+    """Keep only literals that the user supplied in a pre-runtime anchor."""
+    query = str(user_task).lower()
+    if isinstance(value, bool):
+        return str(value).lower() in query
+    if isinstance(value, (str, int, float)):
+        text = str(value).strip().lower()
+        return bool(text) and text in query
+    if isinstance(value, (list, tuple)):
+        return bool(value) and all(_planner_value_is_user_grounded(item, user_task) for item in value)
+    return False
+
+
 def _source_tools(condition):
     """Extract declared source tools from DRIFT's checklist condition field."""
     if isinstance(condition, str):
@@ -302,6 +315,15 @@ def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_chec
         required = required if isinstance(required, dict) else {}
         conditions = conditions if isinstance(conditions, dict) else {}
         contract_args = contracts.get("tools", {}).get(tool, {}).get("args", {})
+        # A planner runs before runtime observations. It can preserve only
+        # user-supplied literals; any other proposed action value becomes an
+        # evidence obligation instead of a hidden task prediction.
+        required = {
+            parameter: (value if parameter not in contract_args
+                        or value is None
+                        or _planner_value_is_user_grounded(value, user_task) else None)
+            for parameter, value in required.items()
+        }
         # Older secure-planner responses may place a single source condition on
         # the action node instead of under its parameter. Normalize only when
         # there is one non-operational unresolved argument, preserving the

@@ -136,6 +136,20 @@ class PlannerAnchorTests(unittest.TestCase):
         self.assertEqual(json.loads(spec.source_annotations)['derived_content_slots'][0]['derivation'],
                          'taint_isolated_evidence_composition')
 
+    def test_planner_predicted_value_is_demoted_to_runtime_content_obligation(self):
+        anchor = freeze_from_secure_plan('suite/user_task_x', 'Send a summary to object-17.',
+            ['lookup_record', 'commit_effect'], json.dumps([
+                {'name': 'lookup_record', 'required parameters': {'limit': 1}, 'conditions': {}},
+                {'name': 'commit_effect', 'required parameters': {
+                    'target': 'object-17', 'content': 'private database summary'}, 'conditions': {}},
+            ]), self.backbone, CONTRACTS)
+        action = json.loads(anchor.actions)[1]
+        self.assertEqual(action['fixed_constraints'], [{
+            'parameter': 'target', 'kind': 'equals', 'value': 'object-17',
+            'comparison': 'exact', 'authority_basis': 'secure_planner_user_requirement'}])
+        self.assertEqual(action['derived_content_slots'][0]['parameter'], 'content')
+        self.assertNotIn('private database summary', json.dumps(action))
+
     def test_contract_constrained_choice_materializes_relation(self):
         contracts = {'tools': {
             'read_records': {'tool_type': 'READ', 'args': {}, 'output_semantics': {'fields': {
