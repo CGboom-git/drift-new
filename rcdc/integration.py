@@ -159,7 +159,11 @@ class ExperimentalExecutor(ToolsExecutor):
         for call_index, raw in enumerate(calls):
             call = Call.create(self.task_id, raw.id, raw.function, raw.args, self.tick(), self.ledger.epoch)
             spec = self._spec_for(raw.function, query)
-            if spec is None and self.constraint_source == 'task_anchor_v1':
+            # READs are evidence acquisition, as in the original APDE path.
+            # Only effects without an anchor receive a generic runtime scope.
+            tool_type = str(self.contracts.get('tools', {}).get(raw.function, {}).get('tool_type', ''))
+            if (spec is None and self.constraint_source == 'task_anchor_v1'
+                    and not tool_type.startswith('READ')):
                 from .schema import ConstraintSpec
                 spec = ConstraintSpec.create(self.task_id, None, raw.function,
                                              source_annotations={'compiler': 'sourceflow_runtime_v1'})
