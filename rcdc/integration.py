@@ -13,7 +13,7 @@ from .schema import Call, Decision, Witness, canonical, digest
 from .binding_witness import evaluate
 from .checkpoint import capture as capture_checkpoint
 from .task_spec_registry import coverage as task_spec_coverage
-from .taer_policy import assess_deterministic_candidate
+from .taer_policy import analyze_anchor_candidate, assess_deterministic_candidate
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -111,6 +111,12 @@ class ExperimentalExecutor(ToolsExecutor):
             contract_helper=getattr(self.llm, 'source_flow_contract_helper', None),
             explicit_entities=getattr(self.llm, '_user_explicit_entities', []),
         ) if getattr(getattr(self.llm, 'args', None), 'taer_mode', 'off') == 'on' else None
+        if taer is None and getattr(getattr(self.llm, 'args', None), 'taer_mode', 'off') == 'on':
+            taer = analyze_anchor_candidate(self.llm, self.task, call.tool, json.loads(call.arguments))
+        if taer is not None:
+            self.emit({'event': 'taer_validator_evidence', 'call_id': call.call_id,
+                       'verdict': taer.verdict, 'reason': taer.reason,
+                       'consumer_step_id': taer.consumer_step_id, 'anchor': taer.anchor})
         if taer is not None and taer.verdict == 'INVALID':
             witness = Witness(call.call_id, call.tool, '*', canonical({}), spec.constraint_id, None,
                               'taer_backbone', 'task_anchor', 'authorization', True, 'INVALID',

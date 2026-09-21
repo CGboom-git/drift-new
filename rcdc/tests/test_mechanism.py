@@ -2,6 +2,7 @@ import argparse
 import copy
 import dataclasses
 import unittest
+from types import SimpleNamespace
 from rcdc import add_arguments
 from rcdc.schema import Call, ConstraintSpec
 from rcdc.constraint_spec import binding, pred, fixed, compile_spec
@@ -9,7 +10,7 @@ from rcdc.events import EvidenceLedger, HostFeedbackRegistry
 from rcdc.binding_witness import evaluate, fresh
 from rcdc.recovery import Recovery
 from rcdc.adapter import Gate, attach
-from rcdc.taer_policy import assess_deterministic_candidate
+from rcdc.taer_policy import analyze_anchor_candidate, assess_deterministic_candidate
 
 
 class MechanismTests(unittest.TestCase):
@@ -147,6 +148,19 @@ class MechanismTests(unittest.TestCase):
             source_records=[], contract_helper=None, explicit_entities=[])
         self.assertEqual((allowed.verdict, allowed.reason),
                          ('VALID', 'taer_backbone_direct_effect'))
+
+    def test_taer_anchor_new_goal_becomes_invalid_evidence_without_mutation(self):
+        from taer.models import TAERState
+        client = SimpleNamespace(llm_run=lambda *args, **kwargs: '{"relation":"NEW_GOAL","confidence":"HIGH","consumer_step_id":null}')
+        llm = SimpleNamespace(
+            taer_state=TAERState(initialized=True), client=client,
+            _user_explicit_entities=set(), achieved_function_trajectory=[],
+            _action_targets_authorized=lambda *args: False,
+            _action_has_delegated_source_support=lambda *args: False,
+        )
+        evidence = analyze_anchor_candidate(llm, 'refund a payment', 'send_money', {'recipient': 'US133'})
+        self.assertEqual((evidence.verdict, evidence.reason), ('INVALID', 'taer_anchor_new_goal'))
+        self.assertEqual(llm.taer_state.repair_steps, {})
 
     def test_host_spoof_and_mutation(self):
         registry = HostFeedbackRegistry(); m = registry.issue({'verdict': 'VALID'})
