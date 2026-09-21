@@ -1902,7 +1902,7 @@ Do not approve unrelated exploration or any new goal.
                 if current is not None or parameter not in args:
                     continue
                 for source, source_spec in allowed_tools.items():
-                    if not str(source_spec.get('tool_type', '')).startswith('READ'):
+                    if source not in self.initial_function_trajectory or not str(source_spec.get('tool_type', '')).startswith('READ'):
                         continue
                     fields = source_spec.get('output_semantics', {}).get('fields', {})
                     for value_field, value_info in fields.items():
@@ -1938,7 +1938,16 @@ looks similar; choose the relation expressed by the task."""
                 max_tokens=256, enable_thinking=False)
             try:
                 ids = json.loads(self._extract_checklist_json(ids_text) or '')
-                selected = [candidates[i] for i in ids if isinstance(i, int) and 0 <= i < len(candidates)]
+                selected = []
+                seen_parameters = set()
+                for i in ids:
+                    if not isinstance(i, int) or not 0 <= i < len(candidates):
+                        continue
+                    choice = candidates[i]
+                    key = (choice['action_tool'], choice['parameter'])
+                    if key not in seen_parameters:
+                        selected.append(choice)
+                        seen_parameters.add(key)
                 if self.logger:
                     self.logger.info("Contract relation candidate ids: %s; selected=%s", ids, selected)
             except (TypeError, ValueError):
