@@ -21,7 +21,7 @@ class RecoveryContext:
 
 class Recovery:
     def __init__(self, spec, call, ledger, decision, mode, budget, ordinary_read_tools,
-                 emit=lambda e: None, relation_mode='full'):
+                 emit=lambda e: None, relation_mode='full', decision_provider=None):
         if decision.verdict != 'UNKNOWN':
             raise ValueError('recovery_only_for_unknown')
         if mode not in ('retry', 'full') or not isinstance(budget, int) or budget < 0:
@@ -36,6 +36,7 @@ class Recovery:
         self.fingerprint = spec.constraint_id
         self.requests = json.loads(spec.recovery_scope)
         self.relation_mode = relation_mode
+        self.decision_provider = decision_provider
         allowed = tuple(sorted({x['tool'] for x in self.requests})) if mode == 'full' else tuple(sorted(ordinary_read_tools))
         self.context = RecoveryContext(call, spec, decision.missing_evidence_conditions, allowed, budget)
         self.decision = decision
@@ -78,7 +79,8 @@ class Recovery:
             self.emit({'event': 'evidence_bounded_recovery_read_rejected', 'reason': 'duplicate_read' if duplicate else 'outside_scope'})
         # Always construct a new call-time witness, including after failed reads.
         rebound = Call(self.call.task_id, self.call.call_id, self.call.tool, self.call.arguments, position(), self.call.epoch)
-        self.decision = evaluate(self.spec, rebound, self.ledger, self.relation_mode)
+        self.decision = (self.decision_provider(rebound) if self.decision_provider is not None
+                         else evaluate(self.spec, rebound, self.ledger, self.relation_mode))
         ctx.missing_conditions = self.decision.missing_evidence_conditions
         ctx.status = self.decision.verdict if self.decision.verdict != 'UNKNOWN' else 'STOP' if ctx.steps >= ctx.recovery_budget else 'PENDING'
         self.emit({'event': 'binding_reverification', 'step': ctx.steps, 'decision': self.decision.json(), 'status': ctx.status,

@@ -72,7 +72,9 @@ class RCVRTaskSuite(DRIFTTaskSuite):
         # The generic path retains the original APDE SourceFlow validator as
         # the runtime decision owner.  Legacy B1 regex runs preserve their
         # historical evidence-only composition for reproducibility.
-        llm._rcvr_sourceflow_final = (constraint_source == 'task_anchor_v1')
+        # SourceFlow supplies evidence to ExperimentalExecutor, which maps it
+        # into the single RCVR three-valued decision provider.
+        llm._rcvr_sourceflow_final = False
         task_anchor = None
         if constraint_source == 'task_anchor_v1':
             # DRIFT calls this after its initial secure planner builds the

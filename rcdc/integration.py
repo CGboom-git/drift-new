@@ -1,5 +1,6 @@
 """Independent executor and loop integration. Original Full files stay untouched."""
 import copy
+import dataclasses
 import json
 import yaml
 from agentdojo.agent_pipeline import ToolsExecutor
@@ -8,7 +9,8 @@ from DRIFTToolsExecutionLoop import DRIFTToolsExecutionLoop
 from .adapter import Gate
 from .constraint_spec import compile_spec, compile_anchor_spec
 from .events import EvidenceLedger, HostFeedbackRegistry
-from .schema import Call, canonical
+from .schema import Call, Decision, Witness, canonical, digest
+from .binding_witness import evaluate
 from .checkpoint import capture as capture_checkpoint
 from .task_spec_registry import coverage as task_spec_coverage
 
@@ -97,6 +99,27 @@ class ExperimentalExecutor(ToolsExecutor):
         self.clock += 1
         return self.clock
 
+    def _unified_decision(self, spec, call, raw):
+        """One three-valued verdict from immutable constraints and SourceFlow."""
+        binding = evaluate(spec, call, self.ledger, self.gate.relation_mode)
+        flow = self.llm._source_flow_validate_tool_calls(
+            {'role': 'assistant', 'content': '', 'tool_calls': [raw]})
+        if flow is None:
+            return binding
+        if getattr(flow, 'reject', False):
+            verdict, reason = 'INVALID', 'sourceflow_reject'
+        elif getattr(flow, 'repair_required', False):
+            verdict, reason = 'UNKNOWN', 'sourceflow_repair_required'
+        else:
+            return binding
+        witness = Witness(call.call_id, call.tool, '*', canonical({}), spec.constraint_id, None,
+                          'sourceflow_runtime', 'unknown', 'provenance', True, verdict,
+                          reason, 'SF', 'sourceflow_runtime', self.ledger.revision)
+        merged = tuple([*binding.witnesses, witness])
+        final = 'INVALID' if any(w.verdict == 'INVALID' for w in merged) else 'UNKNOWN' if any(w.verdict == 'UNKNOWN' for w in merged) else 'VALID'
+        return Decision(final, merged, tuple(sorted(set([*binding.missing_evidence_conditions, f'*:{reason}']))),
+                        digest(dataclasses.asdict(call)), spec.constraint_id, self.ledger.revision)
+
     def query(self, query, runtime, env, messages, extra_args):
         if query != self.task:
             raise ValueError('task_identity_changed')
@@ -136,6 +159,10 @@ class ExperimentalExecutor(ToolsExecutor):
         for call_index, raw in enumerate(calls):
             call = Call.create(self.task_id, raw.id, raw.function, raw.args, self.tick(), self.ledger.epoch)
             spec = self._spec_for(raw.function, query)
+            if spec is None and self.constraint_source == 'task_anchor_v1':
+                from .schema import ConstraintSpec
+                spec = ConstraintSpec.create(self.task_id, None, raw.function,
+                                             source_annotations={'compiler': 'sourceflow_runtime_v1'})
             self.spec = spec
             initial_revision = self.ledger.revision
             single = dict(messages[-1], tool_calls=[raw])
@@ -274,8 +301,11 @@ class ExperimentalExecutor(ToolsExecutor):
                            'call_id': call.call_id, 'spec_id': spec.constraint_id,
                            'evidence_revision': self.ledger.revision})
 
+            provider = (lambda rebound: self._unified_decision(spec, rebound, raw)
+                        if self.constraint_source == 'task_anchor_v1' else None)
             outcome = self.gate.candidate(spec, call, self.ledger, dispatch, propose,
-                                          acquire, self.tick, reads, freeze_unknown)
+                                          acquire, self.tick, reads, freeze_unknown,
+                                          decision_provider=provider if self.constraint_source == 'task_anchor_v1' else None)
             if isinstance(outcome, dict) and outcome.get('rcvr_stopped'):
                 self.stopped = True
                 self.last_recovery_stop = outcome
