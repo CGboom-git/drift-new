@@ -105,7 +105,7 @@ class FlowExpectationCompiler:
         raw_text = " ".join(
             text for text in [self._stringify(required_value), self._stringify(condition)] if text
         )
-        expected_roots = self._extract_root_tools(raw_text)
+        expected_roots = self._condition_root_tools(condition, raw_text)
         semantic_type = self._semantic_type(arg_name, required_value)
         sink_role = self._sink_role(tool_name, arg_name)
         placeholder = self._placeholder(required_value, raw_text)
@@ -173,6 +173,16 @@ class FlowExpectationCompiler:
                 if "_" in token and token.lower() not in {"summary_content", "extracted_url"}:
                     roots.append(token)
         return self._dedupe(roots)
+
+    def _condition_root_tools(self, condition: Any, fallback_text: str) -> list[str]:
+        """Read structured planner relations without treating schema keys as tools."""
+        if isinstance(condition, dict):
+            source = condition.get("source_tool", condition.get("source_tools"))
+            if isinstance(source, str) and source:
+                return [source]
+            if isinstance(source, (list, tuple)):
+                return self._dedupe([item for item in source if isinstance(item, str) and item])
+        return self._extract_root_tools(fallback_text)
 
     def _placeholder(self, required_value: Any, raw_text: str) -> str | None:
         value_text = self._stringify(required_value)
