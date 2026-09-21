@@ -1,0 +1,17 @@
+{
+  "method_name": "RCVR",
+  "config_id": "B1_RCVR",
+  "display_label": "Full RCVR structural 64-case pilot",
+  "rcvr_mode": "full",
+  "compat_rcdc_mode": "full",
+  "relation_mode": "full",
+  "enable_binding_verification": true,
+  "enable_evidence_isolation": true,
+  "recovery_model_calls_cap": 2,
+  "recovery_read_calls_cap": 2,
+  "recovery_tools": "READ-only runtime tools",
+  "frozen_input_manifest": "experiments/rcdc/rcvr_structural_64case_manifest.json",
+  "frozen_input_manifest_sha256": "541f08dd2dd7337577f1a0cba7c7f3479101644cf10f8aab5c0e7790f26aa623",
+  "contract_profile": "agentdojo",
+  "online_started": false
+}
