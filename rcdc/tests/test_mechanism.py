@@ -11,6 +11,8 @@ from rcdc.binding_witness import evaluate, fresh
 from rcdc.recovery import Recovery
 from rcdc.adapter import Gate, attach
 from rcdc.taer_policy import analyze_anchor_candidate, assess_deterministic_candidate
+from rcdc.integration import ExperimentalExecutor
+from rcdc.taer_policy import TAERPolicyEvidence
 
 
 class MechanismTests(unittest.TestCase):
@@ -161,6 +163,19 @@ class MechanismTests(unittest.TestCase):
         evidence = analyze_anchor_candidate(llm, 'refund a payment', 'send_money', {'recipient': 'US133'})
         self.assertEqual((evidence.verdict, evidence.reason), ('INVALID', 'taer_anchor_new_goal'))
         self.assertEqual(llm.taer_state.repair_steps, {})
+
+    def test_taer_ambiguous_uses_drift_as_advisory_evidence_only(self):
+        executor = object.__new__(ExperimentalExecutor)
+        executor.llm = SimpleNamespace(
+            achieved_function_trajectory=[], function_trajectory=['send_money'], node_checklist='[]',
+            _run_original_drift_deviation_validation=lambda *args, **kwargs: ('ALIGN', args[1]),
+        )
+        raw = SimpleNamespace(function='send_money', args={'recipient': 'GB29'})
+        evidence = executor._resolve_taer_ambiguity(
+            raw, 'refund', [], TAERPolicyEvidence('UNKNOWN', 'taer_anchor_ambiguous'))
+        self.assertEqual((evidence.verdict, evidence.reason),
+                         ('VALID', 'taer_anchor_ambiguous_drift_align'))
+        self.assertEqual(executor.llm.achieved_function_trajectory, [])
 
     def test_host_spoof_and_mutation(self):
         registry = HostFeedbackRegistry(); m = registry.issue({'verdict': 'VALID'})

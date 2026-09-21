@@ -100,7 +100,31 @@ class ExperimentalExecutor(ToolsExecutor):
         self.clock += 1
         return self.clock
 
-    def _unified_decision(self, spec, call, raw):
+    def _resolve_taer_ambiguity(self, raw, query, messages, taer):
+        """Reuse DRIFT only as an advisory evidence predicate.
+
+        The advisory call is deliberately unable to extend the trajectory or
+        authorize execution.  Its result is consumed by the unified RCVR
+        verdict below.
+        """
+        try:
+            index = len(getattr(self.llm, 'achieved_function_trajectory', []) or [])
+            trajectory = list(getattr(self.llm, 'function_trajectory', []) or [])
+            trajectory.insert(index, raw.function)
+            checklist = json.loads(getattr(self.llm, 'node_checklist', '[]'))
+            if isinstance(checklist, list):
+                checklist.insert(index, {'name': raw.function, 'required parameters': None, 'conditions': None})
+            output = {'role': 'assistant', 'content': '', 'tool_calls': [raw]}
+            latest = messages[-1].get('content', '') if messages and messages[-1].get('role') == 'tool' else 'No Called Functions.'
+            advice, _ = self.llm._run_original_drift_deviation_validation(
+                raw.function, output, query, messages, trajectory, checklist, '', latest, advisory_only=True)
+        except Exception:
+            advice = 'UNKNOWN'
+        verdict = 'VALID' if advice == 'ALIGN' else 'INVALID'
+        return dataclasses.replace(taer, verdict=verdict,
+                                   reason=f'taer_anchor_ambiguous_drift_{str(advice).lower()}')
+
+    def _unified_decision(self, spec, call, raw, query=None, messages=None):
         """One three-valued verdict from immutable constraints and SourceFlow."""
         binding = evaluate(spec, call, self.ledger, self.gate.relation_mode)
         taer_state = getattr(self.llm, 'taer_state', None)
@@ -113,6 +137,9 @@ class ExperimentalExecutor(ToolsExecutor):
         ) if getattr(getattr(self.llm, 'args', None), 'taer_mode', 'off') == 'on' else None
         if taer is None and getattr(getattr(self.llm, 'args', None), 'taer_mode', 'off') == 'on':
             taer = analyze_anchor_candidate(self.llm, self.task, call.tool, json.loads(call.arguments))
+        if (taer is not None and taer.verdict == 'UNKNOWN'
+                and taer.reason.startswith('taer_anchor_') and query is not None):
+            taer = self._resolve_taer_ambiguity(raw, query, messages or [], taer)
         if taer is not None:
             self.emit({'event': 'taer_validator_evidence', 'call_id': call.call_id,
                        'verdict': taer.verdict, 'reason': taer.reason,
@@ -393,7 +420,7 @@ class ExperimentalExecutor(ToolsExecutor):
                            'call_id': call.call_id, 'spec_id': spec.constraint_id,
                            'evidence_revision': self.ledger.revision})
 
-            provider = (lambda rebound: self._unified_decision(spec, rebound, raw)
+            provider = (lambda rebound: self._unified_decision(spec, rebound, raw, query, messages)
                         if self.constraint_source == 'task_anchor_v1' else None)
             taer_state = getattr(self.llm, 'taer_state', None)
             taer_context = {
