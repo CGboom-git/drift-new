@@ -1928,13 +1928,19 @@ Do not approve unrelated exploration or any new goal.
                                 'selection': [{'field': selector, 'operator': 'equals',
                                                'value': {'kind': 'runtime_self'}}]})
         if candidates:
-            choice_prompt = "Return ONLY a JSON list of integer candidate ids that express the user task. Do not write objects."
+            choice_prompt = """Return ONLY a JSON list of integer candidate ids that express the user task. Do not write objects.
+`runtime_self` means the authenticated user in the selected runtime record. For a request such as a refund,
+select the candidate whose record direction matches the natural-language relation: money sent *to me* has
+recipient=runtime_self, and the counterparty is its sender. Never select a candidate merely because a value
+looks similar; choose the relation expressed by the task."""
             ids_text = self.client.llm_run(choice_prompt, json.dumps({'user_query': user_query,
                 'candidates': [{'id': i, 'choice': c} for i, c in enumerate(candidates)]}, ensure_ascii=False),
                 max_tokens=256, enable_thinking=False)
             try:
                 ids = json.loads(self._extract_checklist_json(ids_text) or '')
                 selected = [candidates[i] for i in ids if isinstance(i, int) and 0 <= i < len(candidates)]
+                if self.logger:
+                    self.logger.info("Contract relation candidate ids: %s; selected=%s", ids, selected)
             except (TypeError, ValueError):
                 selected = []
             parsed = compile_relation_choices(existing, self.initial_function_trajectory, contract, selected, user_query,
