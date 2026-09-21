@@ -129,10 +129,10 @@ class OpenAIModel():
             response = self.client.chat.completions.create(
                 model=self.model,
                 temperature=self.temperature,
-                messages=[
-                    { "role": "system", "content": SystemPrompt},
-                    { "role": "user", "content": UserPrompt}
-                ],
+                # The configured gateway rejects system-role messages despite
+                # accepting the same token and model for user messages. Keep
+                # instruction precedence by prefixing it into one user turn.
+                messages=[{"role": "user", "content": "[SYSTEM INSTRUCTIONS]\n" + SystemPrompt + "\n\n[USER REQUEST]\n" + UserPrompt}],
                 max_tokens=max_tokens,
                 extra_body=({"enable_thinking": False if enable_thinking is None else enable_thinking} if self.model.startswith("qwen") else ({"enable_thinking": enable_thinking} if enable_thinking is not None and self.model.startswith("deepseek-") else None)),
             ) 
