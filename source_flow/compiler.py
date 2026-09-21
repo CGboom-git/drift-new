@@ -19,6 +19,7 @@ class SinkSpec:
     fallback_behavior: str = "warn"
     raw_condition: Any = None
     raw_required_value: Any = None
+    operational_default: bool = False
 
 
 class FlowExpectationCompiler:
@@ -145,6 +146,8 @@ class FlowExpectationCompiler:
             fallback_behavior="warn" if mode == "track_only" else "validate",
             raw_condition=condition,
             raw_required_value=required_value,
+            operational_default=(isinstance(condition, dict)
+                                 and condition.get("kind") == "operational_default"),
         )
 
     def _parse_nodes(self, node_checklist: Any) -> list[dict[str, Any]]:

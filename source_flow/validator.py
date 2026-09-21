@@ -444,6 +444,13 @@ class FlowAwareValidator:
                         evidence.actual_origin_tools, evidence.source_labels)
                 continue
 
+            default_policy = spec.raw_condition.get("policy") if isinstance(spec.raw_condition, dict) else None
+            if (spec.operational_default and (
+                    (sink_role == "content" and not self.contract_helper.is_high_risk_arg(tool_name, arg_name))
+                    or (sink_role == "control" and arg_name == "date" and default_policy == "host_execution_time"))):
+                valid_args[arg_name] = value
+                continue
+
             # --- Hard reject: constant mismatch ---
             if spec.mode == "constant_check" and high_risk:
                 if self._matches_expected(value, spec.expected_values):
