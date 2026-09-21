@@ -298,7 +298,11 @@ class ExperimentalExecutor(ToolsExecutor):
         annotations = json.loads(spec.source_annotations) if spec is not None else {}
         declared = {name for slot in annotations.get('unresolved_slots', []) or []
                     for name in slot.get('source_tools', [])}
-        return sorted(declared & evidence) or list(evidence_tools)
+        # A multi-hop recovery route is bounded by the frozen planner's READ
+        # backbone, never by the suite-wide tool inventory.
+        planned = set(annotations.get('anchor_metadata', {}).get('initial_trajectory', []) or [])
+        route = planned & evidence
+        return sorted(declared & evidence) or sorted(route) or list(evidence_tools)
 
     @staticmethod
     def _is_evidence_producing_tool(contract):
@@ -384,6 +388,15 @@ class ExperimentalExecutor(ToolsExecutor):
                                          'content': '[RCVR NEED EVIDENCE] This READ is outside the bounded evidence route.',
                                          'error': '[RCVR NEED EVIDENCE]', 'tool_call_id': raw.id, 'tool_call': raw})
                         break
+                    used = set(pending.setdefault('used_tools', []))
+                    if raw.function in used:
+                        self.emit({'event': 'evidence_scheduler_read_rejected',
+                                   'tool': raw.function, 'pending_action': pending['action_tool'],
+                                   'reason': 'duplicate_evidence_read'})
+                        appended.append({'role': 'tool', 'content': '[RCVR NEED EVIDENCE] This READ was already used in the current evidence route.',
+                                         'error': '[RCVR NEED EVIDENCE]', 'tool_call_id': raw.id, 'tool_call': raw})
+                        break
+                    pending['used_tools'].append(raw.function)
                     pending['attempts'] += 1
                     self.emit({'event': 'evidence_scheduler_read_allowed', 'tool': raw.function,
                                'pending_action': pending['action_tool'], 'attempt': pending['attempts'],
@@ -604,6 +617,7 @@ class ExperimentalExecutor(ToolsExecutor):
                     'allowed_tools': allowed,
                     'missing_conditions': outcome['decision'].get('missing_evidence_conditions', []),
                     'attempts': attempts,
+                    'used_tools': list(previous_pending.get('used_tools', [])) if previous_pending else [],
                     # Multiple READs are a TAER scheduling path, not the old
                     # two-call recovery retry.  It remains bounded per action.
                     'budget': budget,
