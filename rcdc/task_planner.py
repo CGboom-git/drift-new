@@ -71,6 +71,29 @@ def _source_tools(condition):
     return []
 
 
+def _declared_output_supports_field(contract, field):
+    """Reject object-field relations against declared scalar/array outputs.
+
+    An absent output declaration preserves compatibility with early contracts.
+    Once a contract declares a schema, a relation may name only an actual
+    object field; a list of strings cannot prove a fabricated field.
+    """
+    semantics = (contract or {}).get("output_semantics", {})
+    fields = semantics.get("fields", {})
+    if isinstance(fields, dict) and fields:
+        return field in fields
+    schema = semantics.get("schema")
+    if not isinstance(schema, dict):
+        return True
+    current = schema
+    while current.get("type") == "array":
+        current = current.get("items", {}) if isinstance(current.get("items"), dict) else {}
+    if current.get("type") == "object":
+        properties = current.get("properties", {})
+        return isinstance(properties, dict) and field in properties
+    return False
+
+
 def _binding_rule(parameter, condition, fixed_values, contracts):
     """Compile a planner-declared record relation without consulting runtime data.
 
@@ -93,6 +116,11 @@ def _binding_rule(parameter, condition, fixed_values, contracts):
     if (not isinstance(request, dict) or not isinstance(predicates, list) or not predicates
             or not isinstance(value_field, str) or not value_field
             or not isinstance(identity_field, str)):
+        return None
+    source_contract = contracts.get("tools", {}).get(source_tool, {})
+    if not _declared_output_supports_field(source_contract, value_field):
+        return None
+    if identity_field and not _declared_output_supports_field(source_contract, identity_field):
         return None
     normalized_predicates = []
     for predicate in predicates:
@@ -369,18 +397,32 @@ def freeze_from_secure_plan(task_id, user_task, initial_trajectory, initial_chec
                                       "comparison": "exact",
                                       "authority_basis": "secure_planner_user_requirement"})
         fixed_values = {rule["parameter"]: rule["value"] for rule in fixed_constraints}
-        for parameter, condition in conditions.items():
+        for parameter, condition in list(conditions.items()):
             if parameter not in contract_args:
                 continue
             sources = [name for name in _source_tools(condition)
                        if str(contracts.get("tools", {}).get(name, {}).get("tool_type", "")).startswith("READ")]
             if sources:
-                origin_rules.append({"parameter": parameter, "source_tools": sources,
-                                     "sink_role": contract_args[parameter].get("sink_role", "unknown"),
-                                     "authority_basis": "secure_planner_condition_plus_sourceflow_contract"})
                 rule = _binding_rule(parameter, condition, fixed_values, contracts)
+                structured_record_claim = (
+                    isinstance(condition, dict)
+                    and any(key in condition for key in ("value_field", "identity_field", "predicates", "selection"))
+                )
                 if rule is not None:
+                    origin_rules.append({"parameter": parameter, "source_tools": sources,
+                                         "sink_role": contract_args[parameter].get("sink_role", "unknown"),
+                                         "authority_basis": "secure_planner_condition_plus_sourceflow_contract"})
                     binding_rules.append(rule)
+                elif structured_record_claim:
+                    # A declared scalar/array output cannot be reinterpreted
+                    # as a record with a planner-invented field. Demote it to
+                    # a normal runtime slot so host evidence, not a false
+                    # relation, determines the subsequent recovery route.
+                    conditions.pop(parameter, None)
+                else:
+                    origin_rules.append({"parameter": parameter, "source_tools": sources,
+                                         "sink_role": contract_args[parameter].get("sink_role", "unknown"),
+                                         "authority_basis": "secure_planner_condition_plus_sourceflow_contract"})
         bound = {rule["parameter"] for rule in binding_rules}
         for parameter, value in required.items():
             if parameter not in contract_args or value is not None or parameter in bound:

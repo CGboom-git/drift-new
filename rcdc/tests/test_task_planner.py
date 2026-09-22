@@ -150,6 +150,26 @@ class PlannerAnchorTests(unittest.TestCase):
         self.assertEqual(action['derived_content_slots'][0]['parameter'], 'content')
         self.assertNotIn('private database summary', json.dumps(action))
 
+    def test_scalar_output_cannot_be_compiled_as_record_field_relation(self):
+        contracts = {'tools': {
+            'list_names': {'tool_type': 'READ', 'output_semantics': {
+                'schema': {'type': 'array', 'items': {'type': 'string'}}, 'fields': {}}},
+            'commit_effect': {'tool_type': 'WRITE', 'args': {
+                'target': {'sink_role': 'target'}}},
+        }}
+        anchor = freeze_from_secure_plan('suite/u', 'Apply the selected target.',
+            ['list_names', 'commit_effect'], json.dumps([
+                {'name': 'list_names', 'required parameters': {}, 'conditions': {}},
+                {'name': 'commit_effect', 'required parameters': {'target': None}, 'conditions': {
+                    'target': {'source_tool': 'list_names', 'request': {}, 'predicates': [
+                        {'field': 'name', 'value': 'Alice'}], 'value_field': 'name',
+                        'identity_field': ''}}},
+            ]), SimpleNamespace(initialized=True, backbone_order=[], backbone_steps={}), contracts)
+        action = json.loads(anchor.actions)[1]
+        self.assertEqual(action['binding_rules'], [])
+        self.assertEqual(action['origin_rules'], [])
+        self.assertEqual(action['unresolved_slots'][0]['source_tools'], ['list_names'])
+
     def test_contract_constrained_choice_materializes_relation(self):
         contracts = {'tools': {
             'read_records': {'tool_type': 'READ', 'args': {}, 'output_semantics': {'fields': {
