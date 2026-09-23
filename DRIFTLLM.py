@@ -350,6 +350,11 @@ class DRIFTLLM(PromptingLLM):
         for index in range(len(messages) - 1, -1, -1):
             if messages[index].get("role") != "tool":
                 break
+            # RCVR host controls are trusted scheduling state. They reach the
+            # agent, but never enter SourceFlow's untrusted tool-observation
+            # or injection-detection path.
+            if messages[index].get("rcvr_host_control") is True:
+                continue
             indexes.append(index)
         return list(reversed(indexes))
 
