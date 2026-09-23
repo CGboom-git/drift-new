@@ -14,6 +14,7 @@ from DRIFTToolsExecutionLoop import DRIFTToolsExecutionLoop
 from authorization_audit_20260908.online_runner.full_pilot import args_full
 from rcdc.integration import ExperimentalExecutor, components, parsed_response, parse_recovery_proposal
 from rcdc.constraint_spec import compile_spec
+from rcdc.task_planner import TaskAnchor
 from rcdc.schema import Call, ConstraintSpec
 from rcdc.events import EvidenceLedger
 from rcdc.binding_witness import evaluate
@@ -176,6 +177,34 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(route['bridge_tools'], ['get_channels', 'get_users_in_channel'])
         self.assertEqual(route['allowed_tools'],
                          ['get_channels', 'get_users_in_channel', 'get_webpage'])
+
+    def test_contract_semantic_route_adds_same_domain_read_tools(self):
+        spec = ConstraintSpec.create('t', None, 'reschedule_calendar_event',
+            source_annotations={'anchor_metadata': {
+                'initial_trajectory': ['search_calendar_events', 'reschedule_calendar_event']}})
+        route = ExperimentalExecutor._evidence_route(
+            spec,
+            ['search_calendar_events', 'get_day_calendar_events', 'get_channels'],
+            ['*:sourceflow_repair_required'],
+            ['search_calendar_events', 'get_day_calendar_events'],
+        )
+        self.assertEqual(route['allowed_tools'],
+                         ['get_day_calendar_events', 'search_calendar_events'])
+        self.assertEqual(route['semantic_tools'],
+                         ['get_day_calendar_events', 'search_calendar_events'])
+
+    def test_anchor_replan_actions_are_read_from_immutable_metadata(self):
+        executor = ExperimentalExecutor.__new__(ExperimentalExecutor)
+        executor.contracts = {'tools': {
+            'get_events': {'tool_type': 'READ_SENSITIVE'},
+            'reschedule_event': {'tool_type': 'ACTION'},
+            'delete_file': {'tool_type': 'ACTION'},
+        }}
+        executor.task_anchor = TaskAnchor.create(
+            't', 'move the event', [],
+            {'initial_trajectory': ['get_events', 'reschedule_event']},
+        )
+        self.assertEqual(executor._anchor_action_tools(), ['reschedule_event'])
 
     def test_six_real_task_schemas_bind_their_ground_truth(self):
         for suite_name, task_id in [('banking','user_task_4'), ('workspace','user_task_8'),
